@@ -1,0 +1,101 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Minimum supported (must match the `go` directive in go.mod) and the
+        # latest stable release. Keep the first entry in sync with go.mod — see
+        # COMPATIBILITY.md.
+        go-version: ["1.26.5", "stable"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Run Go tests
+        run: |
+          go test ./...
+          (cd key/aws && go test ./...)
+
+  release-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Run static analysis
+        run: |
+          go vet ./...
+          (cd key/aws && go vet ./...)
+          go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+          (cd key/aws && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
+
+      # Config lives in .golangci.yml at the repo root; the key/aws module is a
+      # separate go.mod and needs its own invocation.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.1
+
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.1
+          working-directory: key/aws
+
+      - name: Run race tests
+        run: |
+          go test -race ./...
+          (cd key/aws && go test -race ./...)
+
+      - name: Check module files are tidy
+        run: |
+          go mod tidy -diff
+          (cd key/aws && go mod tidy -diff)
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "stable"
+          cache: true
+
+      # Every exported identifier in the public packages must have a doc
+      # comment (internal/, cmd/, and examples/ are deliberately not passed).
+      - name: Lint exported doc comments
+        run: |
+          go run github.com/mgechev/revive@v1.15.0 -config revive.toml \
+            . ./jose/... ./oidc/... ./httpsig/... ./webbotauth/... ./log/...
+          (cd key/aws && go run github.com/mgechev/revive@v1.15.0 -config ../../revive.toml ./...)
+
+      # Advisory only: the regen-docs workflow pushes regenerated reference
+      # docs to same-repo PR branches automatically. The warning matters for
+      # fork PRs, where the bot cannot push. See docs/AGENTS.md.
+      - name: Check generated reference docs are fresh
+        run: |
+          ./scripts/gen-docs.sh
+          git diff --exit-code docs/reference/ || {
+            echo "::warning::docs/reference/ is stale — the auto-regen workflow pushes the fix to same-repo PRs; fork authors run ./scripts/gen-docs.sh and commit the result"
+            exit 0
+          }

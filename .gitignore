@@ -1,0 +1,25 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supervisor workflow artifacts (never commit)
+TASK.md
+TASK-*.md
+REDIRECT.md
+DESIGN_TODO.md
+/STARLIGHT_ISSUES.md
+.pi-pr-comments-*.json
+.claude/
+
+# Local CLI build + coverage outputs
+/dnsid
+coverage.out
+bin/
+.dev
+**/**/keys.json

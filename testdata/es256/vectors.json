@@ -1,0 +1,18 @@
+[
+  {
+    "kid": "es256-vector-1",
+    "d": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE",
+    "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+    "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    "payload": "dnsid es256 vector one",
+    "signature": "BL4Jp_3sGRxJtaLGg6OEt5y0CIcx4A1ciISwH6_o0w1Tr1DgcJj05ntGC_dX02h_LC8sLsFbwF3VBGwEDGPhrA"
+  },
+  {
+    "kid": "es256-vector-2",
+    "d": "EjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjQ",
+    "x": "WsC47gnmV2e7bH00QLvhXLkS1K_hC24aF_-h7NHy5Uk",
+    "y": "l7Q01lg9SplrrmhgYwyz1R3X1Bz9FkzOfi9m_n4RqRQ",
+    "payload": "dnsid es256 vector two",
+    "signature": "3SdtQcGYw4ua8tm9-kI9mGLDLouTPRXIe0D8bFtxQsQAPNcgNGOHb21YHNjtfg7U_2fdIzEebDVcXQ86zBDxlg"
+  }
+]

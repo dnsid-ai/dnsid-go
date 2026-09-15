@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+      github.event.pull_request.head.ref == 'release/next' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat .release-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Tag release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          VERSION="${{ steps.version.outputs.version }}"
+          AWS_TAG="key/aws/$VERSION"
+          ROOT_EXISTS=false
+          AWS_EXISTS=false
+          git show-ref --verify --quiet "refs/tags/$VERSION" && ROOT_EXISTS=true
+          git show-ref --verify --quiet "refs/tags/$AWS_TAG" && AWS_EXISTS=true
+          if $ROOT_EXISTS && $AWS_EXISTS; then
+            echo "Tags $VERSION and $AWS_TAG already exist, skipping"
+          elif $ROOT_EXISTS || $AWS_EXISTS; then
+            echo "Only one release tag exists; refusing a partial release" >&2
+            exit 1
+          else
+            git tag -a "$VERSION" -m "Release $VERSION"
+            git tag -a "$AWS_TAG" -m "Release $AWS_TAG"
+            git push --atomic origin "refs/tags/$VERSION" "refs/tags/$AWS_TAG"
+          fi
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release view "$VERSION" >/dev/null 2>&1 ||
+            gh release create "$VERSION" \
+              --verify-tag \
+              --title "$VERSION" \
+              --generate-notes

@@ -1,0 +1,15 @@
+[
+  { "label": "Overview", "slug": "reference/go/overview" },
+  { "label": "Core: IdentityManager", "slug": "reference/go/dnsid" },
+  { "label": "Records & keys", "slug": "reference/go/dnsid-records" },
+  { "label": "Profile: JOSE", "slug": "reference/go/jose" },
+  { "label": "Profile: HTTP signatures", "slug": "reference/go/httpsig" },
+  { "label": "Profile: Web Bot Auth", "slug": "reference/go/webbotauth" },
+  { "label": "Profile: OIDC", "slug": "reference/go/oidc" },
+  { "label": "Key providers", "slug": "reference/go/dnsid-keys" },
+  { "label": "Key providers: AWS KMS", "slug": "reference/go/key-aws" },
+  { "label": "Registry", "slug": "reference/go/dnsid-registry" },
+  { "label": "Lifecycle log", "slug": "reference/go/log" },
+  { "label": "Transparency log", "slug": "reference/go/log-c2sptlog" },
+  { "label": "Errors & enums", "slug": "reference/go/dnsid-errors" }
+]

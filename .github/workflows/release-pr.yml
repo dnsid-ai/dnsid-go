@@ -1,0 +1,64 @@
+name: Update Release PR
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-release-pr:
+    if: "!contains(github.event.head_commit.message, 'release/next') && !startsWith(github.event.head_commit.message, 'chore: update changelog and version') && !startsWith(github.event.head_commit.message, 'Release v')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@5bf6ce016fd2e72eefc647cbca1e4213f65955b8 # v2
+        with:
+          tool: git-cliff
+
+      - name: Compute next version and changelog
+        id: prep
+        run: |
+          LAST_TAG=$(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || true)
+          RANGE=${LAST_TAG:+$LAST_TAG..HEAD}
+          RANGE=${RANGE:-HEAD}
+
+          # Keep merge-commit PR links without duplicating commits from merged branches.
+          CLIFF_SKIP_ARGS=()
+          while IFS= read -r COMMIT; do
+            CLIFF_SKIP_ARGS+=(--skip-commit "$COMMIT")
+          done < <(comm -23 \
+            <(git rev-list "$RANGE" | sort) \
+            <(git rev-list --first-parent "$RANGE" | sort))
+
+          NEXT=$(git cliff --bumped-version "${CLIFF_SKIP_ARGS[@]}" | head -1)
+          [ -n "$NEXT" ] || { echo "ERROR: git-cliff --bumped-version returned an empty version"; exit 1; }
+
+          CURRENT=$(cat .release-version)
+          if [ "$NEXT" = "$CURRENT" ]; then
+            echo "No releasable commits found (computed: ${NEXT}, current: ${CURRENT}). Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+            echo "$NEXT" > .release-version
+            (cd key/aws && go mod edit -require github.com/dnsid-ai/dnsid-go@$NEXT)
+            git cliff --unreleased --tag "$NEXT" "${CLIFF_SKIP_ARGS[@]}" --prepend CHANGELOG.md
+            git cliff --unreleased --tag "$NEXT" "${CLIFF_SKIP_ARGS[@]}" > /tmp/release-notes.md
+          fi
+
+      - name: Open or update release PR
+        if: steps.prep.outputs.skip != 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        with:
+          branch: release/next
+          title: "Release ${{ steps.prep.outputs.version }}"
+          body-path: /tmp/release-notes.md
+          commit-message: "chore: update changelog and version"
+          labels: autorelease

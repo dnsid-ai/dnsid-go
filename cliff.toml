@@ -1,0 +1,55 @@
+[changelog]
+header = """
+# Changelog\n
+"""
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.breaking %}[**breaking**] {% endif %}\
+{{ commit.message | split(pat="\n") | first }}\
+{% endfor %}
+{% endfor %}\n
+"""
+footer = ""
+trim = true
+
+[bump]
+initial_tag = "v0.1.0"
+breaking_always_bump_major = false
+
+[git]
+conventional_commits = false
+filter_unconventional = false
+split_commits = false
+commit_preprocessors = [
+  # Transform "Merge pull request #N from branch\n\nPR title" → "PR title ([#N](url))"
+  { pattern = "Merge pull request #(\\d+) from [^\\n]+\\n\\n(.*)", replace = "${2} ([#${1}](https://github.com/dnsid-ai/dnsid-go/pull/${1}))" },
+  # Fallback for body-less merge commits (no PR title in body): use the branch name so the PR still appears.
+  { pattern = "Merge pull request #(\\d+) from [^/\\n]+/([^\\n]+)", replace = "${2} ([#${1}](https://github.com/dnsid-ai/dnsid-go/pull/${1}))" },
+  # Squash merge: first line "feat: title (#N)" → "feat: title ([#N](url))"
+  # Matches only the first line so multi-line squash commit bodies are preserved.
+  { pattern = "\\A([^\\n]+) \\(#(\\d+)\\)(\\n|\\z)", replace = "${1} ([#${2}](https://github.com/dnsid-ai/dnsid-go/pull/${2}))${3}" },
+]
+commit_parsers = [
+  { message = "^chore: update changelog and version$|^Release v[0-9]", skip = true },
+  # Include PR merge/squash commits after preprocessing, plus direct conventional commits.
+  { message = "(?i)(?:^feat|^add)(?:.*\\[#\\d+\\]|(?:\\([^)]*\\))?!?:.*$)", group = "<!-- 0 -->Features", increment = "minor" },
+  { message = "(?i)(?:^fix|^bug)(?:.*\\[#\\d+\\]|(?:\\([^)]*\\))?!?:.*$)", group = "<!-- 1 -->Bug Fixes", increment = "patch" },
+  { message = "(?i)^doc(?:.*\\[#\\d+\\]|(?:\\([^)]*\\))?!?:.*$)", group = "<!-- 2 -->Documentation", increment = "patch" },
+  { message = "(?i)(?:^test|^ci)(?:.*\\[#\\d+\\]|(?:\\([^)]*\\))?!?:.*$)", group = "<!-- 3 -->Testing", increment = "patch" },
+  { message = "(?i)(?:^refactor|^chore|^update|^bump|^deps)(?:.*\\[#\\d+\\]|(?:\\([^)]*\\))?!?:.*$)", group = "<!-- 4 -->Chores", increment = "patch" },
+  { message = ".*\\[#\\d+\\]", group = "<!-- 5 -->Other", increment = "patch" },
+  { message = ".*", skip = true },
+]
+filter_commits = true
+tag_pattern = "v[0-9]*"
+skip_tags = ""
+ignore_tags = ""
+topo_order = false
+sort_commits = "oldest"

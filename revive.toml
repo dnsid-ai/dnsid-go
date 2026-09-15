@@ -1,0 +1,13 @@
+# Doc-comment lint gate for the public packages: every exported identifier
+# must carry a Go doc comment (revive "exported" rule). Run by the docs job in
+# .github/workflows/test.yml, scoped to public packages only (internal/, cmd/,
+# and examples/ are not passed to revive).
+severity = "warning"
+confidence = 0.8
+errorCode = 1
+warningCode = 1
+
+# disableStutteringCheck: renaming exported types is an API break, not a docs
+# fix — this gate only enforces doc-comment presence and form.
+[rule.exported]
+arguments = ["disableStutteringCheck"]
