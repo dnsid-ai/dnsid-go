@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	dnsid "github.com/dnsid-ai/dnsid-go"
-	"github.com/dnsid-ai/dnsid-go/internal/cryptoutil"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/internal/cryptoutil"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
