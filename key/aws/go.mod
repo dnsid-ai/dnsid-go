@@ -3,10 +3,10 @@ module github.com/dnsid-ai/dnsid-go/key/aws
 go 1.26.5
 
 require (
-	github.com/dnsid-ai/dnsid-go v0.33.1
 	github.com/aws/aws-sdk-go-v2 v1.47.0
 	github.com/aws/aws-sdk-go-v2/service/kms v1.59.0
-	github.com/lestrrat-go/jwx/v3 v3.2.0
+	github.com/dnsid-ai/dnsid-go v0.33.1
+	github.com/lestrrat-go/jwx/v3 v3.3.0
 )
 
 require (
