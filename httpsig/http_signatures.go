@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	wbahttpsig "github.com/WebDecoy/web-bot-auth/httpsig"
 	"github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/internal/joseutil"
-	wbahttpsig "github.com/WebDecoy/web-bot-auth/httpsig"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/digest"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/sfv"
 	"github.com/lestrrat-go/jwx/v3/jwk"

@@ -12,8 +12,8 @@ import (
 	"math/big"
 	"testing"
 
-	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
