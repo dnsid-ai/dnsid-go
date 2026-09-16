@@ -8,7 +8,7 @@ jobs:
   compliance:
     # Forks cannot access the private compliance harness or its checkout token.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    uses: dnsid-ai/dnsid-sdk-compliance/.github/workflows/sdk-compliance.yaml@5abe44d351303fae4315839b0c0140eef97467de
+    uses: dnsid-ai/dnsid-sdk-compliance/.github/workflows/sdk-compliance.yaml@main
     secrets: inherit # pragma: allowlist secret
     with:
       sdk: go
