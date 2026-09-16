@@ -8,7 +8,7 @@ require (
 	github.com/lestrrat-go/jwx/v3 v3.2.0
 	github.com/transparency-dev/formats v0.1.1
 	github.com/transparency-dev/merkle v0.0.2
-	golang.org/x/mod v0.38.0
+	golang.org/x/mod v0.41.0
 	golang.org/x/net v0.58.0
 )
 
