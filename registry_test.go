@@ -1664,11 +1664,11 @@ func TestIdentityManagerPublishClientControlledRecord_TwoKeyDelegatedGovernance(
 	entityKP := GenerateES256KeyProvider()
 	opKP := GenerateES256KeyProvider()
 	cfg := IdentityConfig{
-		Domain:       "agent.otherdomain.com",
+		Domain:       "agent.otherdomain.example",
 		GovernanceID: "governance.example.com",
 		LogRef:       "algorand:ADDR",
-		StatusURL:    "https://agent.otherdomain.com/status.json",
-		KeyURL:       "https://agent.otherdomain.com/ku.json",
+		StatusURL:    "https://agent.otherdomain.example/status.json",
+		KeyURL:       "https://agent.otherdomain.example/ku.json",
 		EntityKeyURL: "https://governance.example.com/ek.json",
 	}
 	manager, err := NewIdentityManager(Config{Identity: &cfg}, opKP, WithEntityKeyProvider(entityKP))

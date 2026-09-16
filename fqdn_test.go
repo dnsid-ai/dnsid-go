@@ -115,11 +115,11 @@ func TestNormalizeFQDNInvalid(t *testing.T) {
 		},
 		{
 			name:  "leading hyphen",
-			input: "-leading-hyphen.com",
+			input: "-leading-hyphen.test",
 		},
 		{
 			name:  "invalid punycode",
-			input: "xn--.com",
+			input: "xn--.test",
 		},
 	}
 
