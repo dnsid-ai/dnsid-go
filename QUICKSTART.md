@@ -4,14 +4,14 @@
 Go, in a few minutes.**
 
 Step 1 needs nothing but the SDK. Steps 2–4 sign on an agent's behalf, so they need a DNSid
-identity on disk (`~/.dnsid`), created once with the DNSid CLI.
+identity, created with the DNSid CLI — locally with `dnsid local`, or hosted with `dnsid init`.
 
 ## Prerequisites
 
 | Tool | For |
 |---|---|
 | **Go 1.26.5+** — [go.dev/dl](https://go.dev/dl/) | building and running the SDK |
-| **DNSid CLI** (`dnsid`) — [docs.dnsid.ai](https://docs.dnsid.ai) | Steps 2–4: `dnsid auth login` + `dnsid init` to create an agent identity |
+| **DNSid CLI** (`dnsid`) — [docs.dnsid.ai](https://docs.dnsid.ai) | Steps 2–4: `dnsid local up` (Docker) or `dnsid init` to create an agent identity |
 
 ```sh
 go get github.com/dnsid-ai/dnsid-go
@@ -54,17 +54,30 @@ Replace `your-agent.example.com` with a DNSid-enabled domain.
 
 ## Step 2 — Load your agent identity
 
-Log in and create an identity once with the CLI:
+**Local (default).** Start the local registry and run your program as an agent under it:
 
 ```sh
-dnsid auth login                 # one-time org login          -> ~/.dnsid/auth.json
-dnsid init --env production --domain <your-fqdn>   # create an agent identity -> ~/.dnsid/<your-fqdn>/
+dnsid local up                          # local registry, DNS, and CA in Docker
+dnsid local run my-agent -- go run .    # registers my-agent if needed, runs with DNSID_* set
 ```
 
-Then load it. `NewIdentityManagerFromDnsid("", dnsid.Config{})` reads the current identity from
-`~/.dnsid/config.json` and loads its operational key from
-`~/.dnsid/<your-fqdn>/private.jwk`, giving you a manager that can both verify *and* sign as your
-agent:
+`dnsid local run` exports `DNSID_CONFIG_DIR` (the agent's identity) plus `DNSID_REGISTRY_URL` and
+`DNSID_API_KEY` for the local registry. To export the same variables into your shell instead:
+`eval "$(dnsid local env my-agent)"`. Nothing talks to a hosted service; the SDK's registry client
+defaults to `http://127.0.0.1:7755` and `dnsid.NewRegistryClientFromEnv()` picks up the exported
+URL and key.
+
+**Hosted.** Log in and create an identity once, then set `DNSID_REGISTRY_URL` and `DNSID_API_KEY`
+from the console for any registry calls:
+
+```sh
+dnsid auth login                                   # one-time org login -> ~/.dnsid/auth.json
+dnsid init --env production --domain <your-fqdn>   # agent identity     -> ~/.dnsid/<your-fqdn>/
+```
+
+Either way, `NewIdentityManagerFromDnsid("", dnsid.Config{})` reads the identity from
+`$DNSID_CONFIG_DIR` (or `~/.dnsid`) and loads its operational key, giving you a manager that can
+both verify *and* sign as your agent:
 
 ```go
 idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})

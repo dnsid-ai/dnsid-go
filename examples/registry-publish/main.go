@@ -10,24 +10,17 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintf(os.Stderr, "usage: %s <registry-url>\n", os.Args[0])
-		os.Exit(2)
-	}
-	registryURL := os.Args[1]
-
-	token := os.Getenv("DNSID_TOKEN")
-	if token == "" {
-		fmt.Fprintln(os.Stderr, "set DNSID_TOKEN to a registry bearer token")
+	if len(os.Args) != 1 {
+		fmt.Fprintf(os.Stderr, "usage: %s (reads DNSID_REGISTRY_URL and DNSID_API_KEY; unset means the local registry)\n", os.Args[0])
 		os.Exit(2)
 	}
 
 	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
 	if err != nil {
-		die("creating identity manager from ~/.dnsid", err)
+		die("creating identity manager from $DNSID_CONFIG_DIR or ~/.dnsid", err)
 	}
 
-	client, err := dnsid.NewRegistryClientWithOptions(registryURL, dnsid.WithAuthToken(token))
+	client, err := dnsid.NewRegistryClientFromEnv()
 	if err != nil {
 		die("creating registry client", err)
 	}
