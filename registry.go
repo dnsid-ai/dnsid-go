@@ -11,12 +11,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
+	"github.com/dnsid-ai/dnsid-go/internal/netguard"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
@@ -500,6 +504,34 @@ type RegistryClient interface {
 	VerifyDomainRemote(ctx context.Context, req *VerifyDomainRequest) (*VerifyDomainResponse, error)
 }
 
+// DefaultRegistryURL is the local registry started by `dnsid local up`. It is
+// used when no base URL is passed; hosted use requires an explicit URL (see
+// NewRegistryClientFromEnv).
+const DefaultRegistryURL = "http://127.0.0.1:7755"
+
+// NewRegistryClientFromEnv builds a registry client from the variables that
+// `dnsid local env` exports: DNSID_REGISTRY_URL (empty means DefaultRegistryURL)
+// and DNSID_API_KEY. Explicit opts win. This is the only constructor that reads
+// the environment.
+func NewRegistryClientFromEnv(opts ...RegistryClientOption) (*HTTPRegistryClient, error) {
+	if key := os.Getenv("DNSID_API_KEY"); key != "" {
+		opts = append([]RegistryClientOption{WithAuthToken(key)}, opts...)
+	}
+	return NewRegistryClientWithOptions(os.Getenv("DNSID_REGISTRY_URL"), opts...)
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback IP.
+func isLoopbackHost(host string) bool {
+	ip := net.ParseIP(host)
+	return host == "localhost" || ip != nil && ip.IsLoopback()
+}
+
+// plaintextAllowed reports whether a bearer token may travel over u: HTTPS
+// always, HTTP only on loopback or with WithInsecureHTTP.
+func (c *HTTPRegistryClient) plaintextAllowed(u *url.URL) bool {
+	return u.Scheme == "https" || c.allowInsecure || (u.Scheme == "http" && isLoopbackHost(u.Hostname()))
+}
+
 // HTTPRegistryClient implements RegistryClient against the standard DNSid registry endpoints.
 type HTTPRegistryClient struct {
 	baseURL       string
@@ -546,11 +578,12 @@ func WithInsecureHTTP() RegistryClientOption {
 }
 
 // SetAuthToken updates the Bearer token on an existing client (e.g. after refresh).
-// It returns an error if the client is configured for plaintext HTTP without WithInsecureHTTP.
+// It returns an error if the client is configured for plaintext HTTP on a
+// non-loopback host without WithInsecureHTTP.
 func (c *HTTPRegistryClient) SetAuthToken(token string) error {
-	if token != "" && !c.allowInsecure {
+	if token != "" {
 		u, err := url.Parse(c.baseURL)
-		if err == nil && u.Scheme != "https" {
+		if err == nil && !c.plaintextAllowed(u) {
 			return NewArgumentError("dnsid: refusing to send bearer token over plaintext HTTP (use WithInsecureHTTP for local testing)", nil)
 		}
 	}
@@ -558,48 +591,61 @@ func (c *HTTPRegistryClient) SetAuthToken(token string) error {
 	return nil
 }
 
-// NewRegistryClient creates an HTTP registry client for baseURL.
-// Only HTTPS URLs are accepted for production use.
+// NewRegistryClient creates an HTTP registry client for baseURL. An empty
+// baseURL means DefaultRegistryURL (the local registry). HTTPS is required
+// except on loopback hosts.
 func NewRegistryClient(baseURL string, transportConfig ...TransportConfig) (*HTTPRegistryClient, error) {
-	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" {
-		return nil, NewArgumentError(fmt.Sprintf("dnsid: registryUrl must be an HTTPS URL (got %q)", baseURL), nil)
+	if len(transportConfig) == 0 {
+		return NewRegistryClientWithOptions(baseURL)
 	}
-	if u.User != nil {
-		return nil, NewArgumentError("dnsid: registryUrl must not include userinfo", nil)
-	}
-	cfg := TransportConfig{}
-	if len(transportConfig) > 0 {
-		cfg = transportConfig[0]
-	}
-	client, err := CreateDnsidHTTPClient(cfg)
+	client, err := CreateDnsidHTTPClient(transportConfig[0])
 	if err != nil {
 		return nil, err
 	}
-	return &HTTPRegistryClient{baseURL: u.String(), client: client}, nil
+	return NewRegistryClientWithOptions(baseURL, WithRegistryHTTPClient(client))
 }
 
-// NewRegistryClientWithOptions creates an HTTP registry client with functional options.
-// By default only HTTPS URLs are accepted. Use WithInsecureHTTP() for local testing.
+// NewRegistryClientWithOptions creates an HTTP registry client with functional
+// options. URL rules follow NewRegistryClient.
 func NewRegistryClientWithOptions(baseURL string, opts ...RegistryClientOption) (*HTTPRegistryClient, error) {
-	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
+	if baseURL == "" {
+		baseURL = DefaultRegistryURL
+	}
+	resolved := strings.TrimRight(baseURL, "/")
+	u, err := url.Parse(resolved)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" {
-		return nil, NewArgumentError(fmt.Sprintf("dnsid: registryUrl must be an HTTP or HTTPS URL (got %q)", baseURL), nil)
+		return nil, NewArgumentError(fmt.Sprintf("dnsid: registryUrl must be an HTTPS URL, or HTTP on loopback (got %q)", resolved), nil)
 	}
 	if u.User != nil {
 		return nil, NewArgumentError("dnsid: registryUrl must not include userinfo", nil)
 	}
-	client, err := CreateDnsidHTTPClient(TransportConfig{})
-	if err != nil {
-		return nil, err
-	}
-	c := &HTTPRegistryClient{baseURL: u.String(), client: client}
+	c := &HTTPRegistryClient{baseURL: u.String()}
 	for _, opt := range opts {
 		opt(c)
 	}
-	// Enforce HTTPS when a bearer token is configured, unless explicitly opted into insecure mode.
-	if c.token != "" && u.Scheme != "https" && !c.allowInsecure {
-		return nil, NewArgumentError("dnsid: refusing to send bearer token over plaintext HTTP (use WithInsecureHTTP for local testing)", nil)
+	if c.client == nil {
+		if u.Scheme == "http" && isLoopbackHost(u.Hostname()) {
+			// The SSRF-safe default transport refuses loopback; the operator
+			// chose this URL, so dial loopback and nothing else.
+			c.client = &http.Client{
+				Transport: netguard.LoopbackOnlyTransport(),
+				Timeout:   defaultHTTPClientTimeout,
+				CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+					if !isLoopbackHost(req.URL.Hostname()) {
+						return fmt.Errorf("dnsid: refusing redirect off loopback to %s", req.URL.Host)
+					}
+					return nil
+				},
+			}
+		} else if c.client, err = CreateDnsidHTTPClient(TransportConfig{}); err != nil {
+			return nil, err
+		}
+	}
+	if !c.plaintextAllowed(u) {
+		if c.token != "" {
+			return nil, NewArgumentError("dnsid: refusing to send bearer token over plaintext HTTP (use WithInsecureHTTP for local testing)", nil)
+		}
+		return nil, NewArgumentError(fmt.Sprintf("dnsid: registryUrl must be an HTTPS URL, or HTTP on loopback (got %q)", resolved), nil)
 	}
 	return c, nil
 }
@@ -653,27 +699,28 @@ func (c *HTTPRegistryClient) PublishSignature(ctx context.Context, domain, sig s
 
 // CreateAgent registers a non-Live agent through the HTTP 201 flow. It rejects
 // a request whose PublicKey contains private JWK members before anything is
-// sent to the registry. When Environment is empty it defaults to "sandbox".
-// Sandbox and zone registrations are registry-managed even when Managed is
-// false. Self-managed registrations require an explicit production environment
-// and a domain. Use CreateLiveAgent for tier="live".
+// sent to the registry. Environment is always "production"; any other value is
+// rejected. Zone registrations are registry-managed even when Managed is
+// false, and Managed without ZoneID is rejected. Self-managed registrations
+// require a domain. Use CreateLiveAgent for tier="live".
 func (c *HTTPRegistryClient) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*CreateAgentResponse, error) {
 	if req == nil {
 		return nil, NewArgumentError("dnsid: create agent request is required", nil)
 	}
 	normalized := *req
 	if normalized.Environment == "" {
-		normalized.Environment = "sandbox"
+		normalized.Environment = "production"
 	}
-	switch normalized.Environment {
-	case "sandbox", "production":
-	default:
-		return nil, NewArgumentError("dnsid: environment must be \"sandbox\" or \"production\"", nil)
+	if normalized.Environment != "production" {
+		return nil, NewArgumentError("dnsid: environment must be \"production\"", nil)
 	}
 	if normalized.Domain != "" && normalized.ZoneID != "" {
 		return nil, NewArgumentError("dnsid: domain and zone_id cannot both be supplied", nil)
 	}
-	managed := normalized.Managed || normalized.Environment == "sandbox" || normalized.ZoneID != ""
+	if normalized.Managed && normalized.ZoneID == "" {
+		return nil, NewArgumentError("dnsid: managed registration requires zone_id", nil)
+	}
+	managed := normalized.Managed || normalized.ZoneID != ""
 	if managed && normalized.Domain != "" {
 		return nil, NewArgumentError("dnsid: domain must not be supplied for managed registrations; the registry assigns it", nil)
 	}
@@ -1418,13 +1465,16 @@ func (c *HTTPRegistryClient) doRequest(ctx context.Context, method, path string,
 	}
 	req.Header.Set("Accept", "application/json")
 	if c.token != "" {
-		if !c.allowInsecure && req.URL.Scheme != "https" {
+		if !c.plaintextAllowed(req.URL) {
 			return nil, nil, 0, NewArgumentError("dnsid: refusing to send bearer token over plaintext HTTP (use WithInsecureHTTP for local testing)", nil)
 		}
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
+		if errors.Is(err, syscall.ECONNREFUSED) && isLoopbackHost(req.URL.Hostname()) {
+			err = fmt.Errorf("no registry at %s; run `dnsid local up` or set DNSID_REGISTRY_URL: %w", req.URL.Host, err)
+		}
 		return nil, nil, 0, &RegistryAPIError{Cause: err}
 	}
 	defer resp.Body.Close()

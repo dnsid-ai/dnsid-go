@@ -473,27 +473,28 @@ func TestHTTPRegistryClient_CreateAgentValidatesEnvironment(t *testing.T) {
 		}
 		requests = append(requests, req)
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(CreateAgentResponse{Domain: "assigned.sandbox.dnsid.ai"})
+		json.NewEncoder(w).Encode(CreateAgentResponse{Domain: "assigned.zone.example"})
 	}))
 	defer srv.Close()
 
 	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client(), allowInsecure: true}
-	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
-		t.Fatalf("CreateAgent sandbox default: %v", err)
+	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{Domain: "agent.example.com", PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
+		t.Fatalf("CreateAgent production default: %v", err)
 	}
-	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{ZoneID: "zone-1", Environment: "production", PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
+	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{ZoneID: "zone-1", PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
 		t.Fatalf("CreateAgent zone managed: %v", err)
 	}
-	if len(requests) != 2 || requests[0].Environment != "sandbox" || requests[0].Domain != "" || requests[1].ZoneID != "zone-1" || requests[1].Domain != "" {
-		t.Fatalf("managed requests = %+v", requests)
+	if len(requests) != 2 || requests[0].Environment != "production" || requests[0].Domain != "agent.example.com" || requests[1].Environment != "production" || requests[1].ZoneID != "zone-1" || requests[1].Domain != "" {
+		t.Fatalf("requests = %+v", requests)
 	}
 	for _, req := range []*CreateAgentRequest{
-		{Domain: "agent.example.com"},
+		{},
 		{Domain: "agent.example.com", Environment: "sandbox"},
 		{Domain: "agent.example.com", Environment: "development"},
 		{Domain: "agent.example.com", Environment: "staging"},
 		{Domain: "agent.example.com", ZoneID: "zone-1", Environment: "production"},
 		{Domain: "agent.example.com", Managed: true, Environment: "production"},
+		{Managed: true},
 		{Environment: "production"},
 	} {
 		if _, err := client.CreateAgent(context.Background(), req); err == nil {
@@ -1538,6 +1539,66 @@ func TestHTTPRegistryClient_SetAuthToken_BlocksHTTP(t *testing.T) {
 	}
 	if client.token != "secret" {
 		t.Fatal("token should have been stored")
+	}
+
+	// Loopback HTTP is allowed without opting in.
+	local := &HTTPRegistryClient{baseURL: "http://127.0.0.1:7755", client: http.DefaultClient}
+	if err := local.SetAuthToken("testnet"); err != nil || local.token != "testnet" {
+		t.Fatalf("loopback SetAuthToken: err=%v token=%q", err, local.token)
+	}
+}
+
+func TestNewRegistryClient_DefaultsToLocal(t *testing.T) {
+	t.Setenv("DNSID_REGISTRY_URL", "http://localhost:9999/")
+	t.Setenv("DNSID_API_KEY", "testnet")
+
+	// Plain constructors never read the environment.
+	c, err := NewRegistryClient("")
+	if err != nil || c.baseURL != DefaultRegistryURL || c.token != "" {
+		t.Fatalf("NewRegistryClient(\"\") = %+v, %v", c, err)
+	}
+
+	c, err = NewRegistryClientFromEnv()
+	if err != nil || c.baseURL != "http://localhost:9999" || c.token != "testnet" {
+		t.Fatalf("env-resolved client = %+v, %v", c, err)
+	}
+
+	// Explicit options win over the environment; unset env means local, no token.
+	c, err = NewRegistryClientFromEnv(WithAuthToken("k"))
+	if err != nil || c.token != "k" {
+		t.Fatalf("explicit option client = %+v, %v", c, err)
+	}
+	t.Setenv("DNSID_REGISTRY_URL", "")
+	t.Setenv("DNSID_API_KEY", "")
+	c, err = NewRegistryClientFromEnv()
+	if err != nil || c.baseURL != DefaultRegistryURL || c.token != "" {
+		t.Fatalf("unset env client = %+v, %v", c, err)
+	}
+
+	// Plaintext HTTP off loopback is rejected, token or not.
+	if _, err := NewRegistryClientWithOptions("http://example.com"); err == nil {
+		t.Fatal("expected rejection of non-loopback HTTP")
+	}
+	if _, err := NewRegistryClient("http://example.com"); err == nil {
+		t.Fatal("expected rejection of non-loopback HTTP")
+	}
+	if _, err := NewRegistryClientWithOptions("http://example.com", WithInsecureHTTP()); err != nil {
+		t.Fatalf("WithInsecureHTTP should still permit non-loopback HTTP: %v", err)
+	}
+}
+
+func TestHTTPRegistryClient_ConnectionRefusedOnLoopbackHints(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	addr := srv.URL
+	srv.Close() // nothing listening now
+
+	c, err := NewRegistryClientWithOptions(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.GetAgentStatus(context.Background(), "agent.example.com")
+	if err == nil || !strings.Contains(err.Error(), "run `dnsid local up`") {
+		t.Fatalf("expected local-registry hint, got: %v", err)
 	}
 }
 

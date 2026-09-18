@@ -11,8 +11,8 @@ import (
 	"golang.org/x/mod/sumdb/note"
 )
 
-// This policy is trusted configuration for the public log used by the DNSid
-// sandbox. Production applications should select their own trusted policy.
+// This policy is trusted configuration for DNSid's public test log.
+// Production applications should select their own trusted policy.
 const policyURL = "https://log.dnsid.dev/dnsid-policy"
 
 func main() {

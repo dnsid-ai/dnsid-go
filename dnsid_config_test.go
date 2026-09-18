@@ -26,7 +26,7 @@ func TestNewIdentityManagerFromDnsid(t *testing.T) {
 		"domain":        domain,
 		"governance_id": "example.com",
 		"status_url":    "https://api.dnsid.ai/v1/status/agent.example.com",
-		"environment":   "sandbox",
+		"environment":   "production",
 	})
 
 	m, err := NewIdentityManagerFromDnsid(dir, Config{})
@@ -256,7 +256,7 @@ func TestNewIdentityManagerFromDnsidDerivesStatusURL(t *testing.T) {
 		"agent_id":      "ag_123",
 		"domain":        configDomain,
 		"governance_id": "example.com",
-		"environment":   "sandbox",
+		"environment":   "production",
 	})
 
 	m, err := NewIdentityManagerFromDnsid(dir, Config{})
