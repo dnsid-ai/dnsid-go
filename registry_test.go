@@ -478,17 +478,17 @@ func TestHTTPRegistryClient_CreateAgentValidatesEnvironment(t *testing.T) {
 	defer srv.Close()
 
 	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client(), allowInsecure: true}
-	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
-		t.Fatalf("CreateAgent sandbox default: %v", err)
+	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{Domain: "agent.example.com", PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
+		t.Fatalf("CreateAgent production default: %v", err)
 	}
 	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{ZoneID: "zone-1", Environment: "production", PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
 		t.Fatalf("CreateAgent zone managed: %v", err)
 	}
-	if len(requests) != 2 || requests[0].Environment != "sandbox" || requests[0].Domain != "" || requests[1].ZoneID != "zone-1" || requests[1].Domain != "" {
-		t.Fatalf("managed requests = %+v", requests)
+	if len(requests) != 2 || requests[0].Environment != "production" || requests[0].Domain != "agent.example.com" || requests[1].ZoneID != "zone-1" || requests[1].Domain != "" {
+		t.Fatalf("requests = %+v", requests)
 	}
 	for _, req := range []*CreateAgentRequest{
-		{Domain: "agent.example.com"},
+		{},
 		{Domain: "agent.example.com", Environment: "sandbox"},
 		{Domain: "agent.example.com", Environment: "development"},
 		{Domain: "agent.example.com", Environment: "staging"},

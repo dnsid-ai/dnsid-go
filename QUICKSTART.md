@@ -58,7 +58,7 @@ Log in and create an identity once with the CLI:
 
 ```sh
 dnsid auth login                 # one-time org login          -> ~/.dnsid/auth.json
-dnsid init --env sandbox         # create an agent identity     -> ~/.dnsid/<your-fqdn>/
+dnsid init --env production --domain <your-fqdn>   # create an agent identity -> ~/.dnsid/<your-fqdn>/
 ```
 
 Then load it. `NewIdentityManagerFromDnsid("", dnsid.Config{})` reads the current identity from
