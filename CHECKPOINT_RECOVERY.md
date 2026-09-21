@@ -110,8 +110,7 @@ and approval process for now. A signed operator recovery statement is deferred:
 its signer authority, distribution, revocation, replay protection, validity window,
 and exact checkpoint binding need a separate server/client protocol decision.
 A server restore notification can aid investigation but never auto-resets trust.
-The server monitor work remains tracked in
-[dnsid-ai/dnsid#2277](https://github.com/dnsid-ai/dnsid/issues/2277).
+The server monitor work is tracked separately in the DNSid platform project.
 
 In-memory stores protect continuity for the lifetime of that **store instance**.
 Constructing a new empty store loses that memory even without restarting the

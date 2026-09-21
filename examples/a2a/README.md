@@ -10,7 +10,7 @@ The Go A2A SDK has not yet published an importable A2A 1.0 module, so this examp
 
 ## Prerequisites
 
-Install the `dnsid` CLI from the main [dnsid-ai/dnsid](https://github.com/dnsid-ai/dnsid) repository and start Docker. The CLI owns the local testnet; the retired `dnsid-testnet` repository is not needed.
+Install the `dnsid` CLI ([installation guide](https://docs.dnsid.ai/cli-installation)) and start Docker. The CLI owns the local testnet.
 
 ## Run
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Regenerates the committed markdown API reference in docs/reference/.
 #
-# Output is consumed by the docs site (docs.dnsid.ai, repo
-# dnsid-ai/dnsid-docs) under src/content/docs/reference/go/ and also
+# Output is consumed by the docs site (docs.dnsid.ai) under
+# src/content/docs/reference/go/ and also
 # renders on GitHub. Never hand-edit docs/reference/ — edit the Go doc
 # comments and re-run this script. See docs/AGENTS.md.
 set -euo pipefail
