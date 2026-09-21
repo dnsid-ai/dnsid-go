@@ -39,7 +39,7 @@ increment the minor version and backward-compatible fixes increment the patch ve
 ### Unreleased: breaking C2SP logical-identity correction
 
 This SDK targets DNSid C2SP method revision
-[`d5a65d06f76eff4db81e50f8767a600d2ca7fc2a`](https://github.com/dnsid-ai/dnsid-ietf-spec/blob/d5a65d06f76eff4db81e50f8767a600d2ca7fc2a/log-method-extensions/c2sp-tlog-log-method.md).
+`d5a65d06f76eff4db81e50f8767a600d2ca7fc2a` of the C2SP TLog log-method specification (`log-method-extensions/c2sp-tlog-log-method.md` in the DNSid specification repository).
 `SDKConformance().LogBindings` now includes that method pin. The method name,
 envelope `v:1`, bundle `@v1`, and base C2SP dependency pins are unchanged.
 

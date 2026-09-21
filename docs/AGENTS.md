@@ -5,7 +5,7 @@ Rules for anyone — human or agent — touching files under `docs/`.
 ## What this directory is
 
 `docs/reference/` is the generated markdown API reference for the Go SDK. It is
-exported verbatim to the docs site repo `dnsid-ai/dnsid-docs` under
+exported verbatim to the docs site repository (behind docs.dnsid.ai) under
 `src/content/docs/reference/go/` (rendered at https://docs.dnsid.ai/reference/go/…),
 and it also renders directly on GitHub. `docs/reference/nav.json` is an ordered
 nav fragment imported by that site's `nav.mjs`.
