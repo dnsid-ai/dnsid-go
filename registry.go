@@ -697,12 +697,11 @@ func (c *HTTPRegistryClient) PublishSignature(ctx context.Context, domain, sig s
 
 // --- New RegistryClient methods ---
 
-// CreateAgent registers a non-Live agent through the HTTP 201 flow. It rejects
-// a request whose PublicKey contains private JWK members before anything is
-// sent to the registry. Environment is always "production"; any other value is
-// rejected. Zone registrations are registry-managed even when Managed is
-// false, and Managed without ZoneID is rejected. Self-managed registrations
-// require a domain. Use CreateLiveAgent for tier="live".
+// CreateAgent registers an agent. Pass Domain for a name you control
+// (self-managed), or ZoneID for a registry-assigned name in a delegated zone
+// (managed); the two are mutually exclusive, and Managed requires ZoneID.
+// Environment may be left empty. Private JWK members in PublicKey are rejected
+// before anything is sent. Use CreateLiveAgent for Live names.
 func (c *HTTPRegistryClient) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*CreateAgentResponse, error) {
 	if req == nil {
 		return nil, NewArgumentError("dnsid: create agent request is required", nil)
