@@ -8,13 +8,11 @@
 .DS_Store
 Thumbs.db
 
-# Supervisor workflow artifacts (never commit)
-TASK.md
-TASK-*.md
-REDIRECT.md
-DESIGN_TODO.md
-/STARLIGHT_ISSUES.md
-.pi-pr-comments-*.json
+# Local scratch (never committed)
+/TASK*.md
+/*_TODO.md
+/*_ISSUES.md
+.pi-*.json
 .claude/
 
 # Local CLI build + coverage outputs
