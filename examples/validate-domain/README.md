@@ -29,6 +29,15 @@ DNSID_BUNDLE_VERIFIER_KEY='dnsid-stream-bundle+<keyhash>+<base64-public-key>' \
   go run ./examples/validate-domain your-agent.example.com
 ```
 
+Against the local registry, evaluate `dnsid local env` first. When it sets
+`DNSID_LOG_POLICY_URL` the example uses `examples/internal/localnet` (local DNS,
+CA, loopback hosts, raw-log scan) instead of the stream-bundle path:
+
+```sh
+eval "$(dnsid local env)"
+go run ./examples/validate-domain bob.dev.dnsid.test
+```
+
 `RequireStreamBundle` disables raw-log fallback, so success confirms the
 canonical `{lr log-prefix}/streams/{fqdn}?format=bundle` deployment path and the
 independently pinned signer both work. The log origin's

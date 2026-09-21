@@ -18,6 +18,7 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/examples/internal/localnet"
 	"github.com/dnsid-ai/dnsid-go/httpsig"
 )
 
@@ -132,11 +133,11 @@ func newApplication(ctx context.Context) (*application, int, error) {
 		DNSServer:    os.Getenv("DNSID_DNS_SERVER"),
 		CABundlePath: os.Getenv("DNSID_CA_BUNDLE"),
 	}
-	httpClient, err := testnetHTTPClient(transport)
+	httpClient, err := localnet.HTTPClient(transport)
 	if err != nil {
 		return nil, 0, err
 	}
-	logRegistry, err := createLogRegistry(
+	logRegistry, err := localnet.LogRegistry(
 		ctx,
 		os.Getenv("DNSID_LOG_REF"),
 		os.Getenv("DNSID_LOG_POLICY_URL"),
@@ -153,7 +154,7 @@ func newApplication(ctx context.Context) (*application, int, error) {
 	identity, err := dnsid.NewIdentityManagerFromDnsid(
 		"",
 		dnsid.Config{Transport: dnsid.TransportConfig{DNSServer: transport.DNSServer}},
-		dnsid.WithHTTPSFetcher(testnetFetcher{httpClient}),
+		dnsid.WithHTTPSFetcher(localnet.Fetcher{Client: httpClient}),
 		dnsid.WithLogRegistry(logRegistry),
 	)
 	if err != nil {

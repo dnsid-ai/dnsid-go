@@ -1,4 +1,6 @@
-package main
+// Package localnet holds the plumbing examples need to talk to the `dnsid local` registry:
+// its DNS server, CA, and loopback-only HTTPS hosts. Production applications use SDK defaults.
+package localnet
 
 import (
 	"context"
@@ -17,9 +19,9 @@ import (
 	"github.com/dnsid-ai/dnsid-go/log/c2sptlog"
 )
 
-// testnetHTTPClient deliberately permits private addresses. This policy lives
+// HTTPClient deliberately permits private addresses. This policy lives
 // in the example—not the SDK—because production SDK transports reject them.
-func testnetHTTPClient(config dnsid.TransportConfig) (*http.Client, error) {
+func HTTPClient(config dnsid.TransportConfig) (*http.Client, error) {
 	client, err := dnsid.CreateDnsidHTTPClient(config)
 	if err != nil {
 		return nil, err
@@ -63,11 +65,11 @@ func testnetHTTPClient(config dnsid.TransportConfig) (*http.Client, error) {
 	return client, nil
 }
 
-// testnetFetcher adapts the local client to the SDK's HTTPSFetcher interface.
+// Fetcher adapts the local client to the SDK's HTTPSFetcher interface.
 // It keeps the SDK's HTTPS, host-boundary, and response-size checks.
-type testnetFetcher struct{ client *http.Client }
+type Fetcher struct{ Client *http.Client }
 
-func (f testnetFetcher) FetchJSON(ctx context.Context, rawURL string, opts dnsid.FetchOptions) (json.RawMessage, *tls.Certificate, error) {
+func (f Fetcher) FetchJSON(ctx context.Context, rawURL string, opts dnsid.FetchOptions) (json.RawMessage, *tls.Certificate, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
 		return nil, nil, fmt.Errorf("invalid testnet HTTPS URL %q", rawURL)
@@ -84,7 +86,7 @@ func (f testnetFetcher) FetchJSON(ctx context.Context, rawURL string, opts dnsid
 	if err != nil {
 		return nil, nil, err
 	}
-	resp, err := f.client.Do(req)
+	resp, err := f.Client.Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -122,7 +124,7 @@ func (f testnetFetcher) FetchJSON(ctx context.Context, rawURL string, opts dnsid
 	return data, cert, nil
 }
 
-func createLogRegistry(ctx context.Context, logRef, policyURL string, client *http.Client) (*dnsidlog.LogRegistry, error) {
+func LogRegistry(ctx context.Context, logRef, policyURL string, client *http.Client) (*dnsidlog.LogRegistry, error) {
 	policyURL = strings.TrimSpace(policyURL)
 	if policyURL == "" {
 		return nil, fmt.Errorf("DNSID_LOG_POLICY_URL is required; run with `dnsid testnet run`")
