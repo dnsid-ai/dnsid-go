@@ -1,4 +1,4 @@
-package main
+package localnet
 
 import (
 	"context"
@@ -15,9 +15,9 @@ const testLogRef = "c2sp-tlog:testnet:http://log-reference.invalid:4321/log#inst
 
 func TestCreateLogRegistryRequiresTrustedPolicyURL(t *testing.T) {
 	for _, policyURL := range []string{"", " \t"} {
-		_, err := createLogRegistry(context.Background(), testLogRef, policyURL, nil)
+		_, err := LogRegistry(context.Background(), testLogRef, policyURL, nil)
 		if err == nil || !strings.Contains(err.Error(), "DNSID_LOG_POLICY_URL is required") {
-			t.Fatalf("createLogRegistry error = %v, want missing DNSID_LOG_POLICY_URL error", err)
+			t.Fatalf("LogRegistry error = %v, want missing DNSID_LOG_POLICY_URL error", err)
 		}
 	}
 }
@@ -37,12 +37,12 @@ func TestCreateLogRegistryFetchesSeparatelyConfiguredPolicyURL(t *testing.T) {
 	t.Cleanup(server.Close)
 	policyURL := server.URL + "/trusted/testnet-policy?version=1"
 
-	registry, err := createLogRegistry(context.Background(), testLogRef, policyURL, server.Client())
+	registry, err := LogRegistry(context.Background(), testLogRef, policyURL, server.Client())
 	if err != nil {
-		t.Fatalf("createLogRegistry: %v", err)
+		t.Fatalf("LogRegistry: %v", err)
 	}
 	if registry == nil {
-		t.Fatal("createLogRegistry returned a nil registry")
+		t.Fatal("LogRegistry returned a nil registry")
 	}
 	if requested != "/trusted/testnet-policy?version=1" {
 		t.Fatalf("policy request = %q, want separately configured URL", requested)
@@ -60,8 +60,8 @@ func TestCreateLogRegistryRejectsPolicyForDifferentLogOrigin(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err = createLogRegistry(context.Background(), testLogRef, server.URL+"/dnsid-policy", server.Client())
+	_, err = LogRegistry(context.Background(), testLogRef, server.URL+"/dnsid-policy", server.Client())
 	if err == nil || !strings.Contains(err.Error(), "does not match log origin") {
-		t.Fatalf("createLogRegistry error = %v, want policy/log origin mismatch", err)
+		t.Fatalf("LogRegistry error = %v, want policy/log origin mismatch", err)
 	}
 }
