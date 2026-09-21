@@ -304,7 +304,7 @@ LogEventFromEntry parses stored entry bytes into the shared lifecycle event repr
 func NewDnsidManagedVerificationRegistry(ctx context.Context, config DnsidManagedVerificationConfig) (*dnsidlog.LogRegistry, error)
 ```
 
-NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed, SDK\-embedded trust roots of Identity Digital\-managed DNSid logs. Calling this separately named factory is an explicit application trust decision; the generic NewVerificationRegistry never selects these roots implicitly.
+NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed, SDK\-embedded trust roots of DNSid\-managed DNSid logs. Calling this separately named factory is an explicit application trust decision; the generic NewVerificationRegistry never selects these roots implicitly.
 
 Development and production verification prefer signed stream bundles with safe raw\-scan fallback. The default checkpoint store is restart\-ephemeral; deployments needing rollback protection across restarts should inject durable storage and retain the returned registry for the process lifetime.
 

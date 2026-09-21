@@ -50,13 +50,25 @@ jobs:
             git tag -a "$AWS_TAG" -m "Release $AWS_TAG"
             git push --atomic origin "refs/tags/$VERSION" "refs/tags/$AWS_TAG"
           fi
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@006b7ce8314066bdf1765b4500370d40fa6917a3 # v0.24.2
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release view "$VERSION" >/dev/null 2>&1 ||
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" sbom.cdx.json --clobber
+          else
             gh release create "$VERSION" \
+              sbom.cdx.json \
               --verify-tag \
               --title "$VERSION" \
               --generate-notes
+          fi

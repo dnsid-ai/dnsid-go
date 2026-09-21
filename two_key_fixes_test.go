@@ -224,12 +224,12 @@ func TestCreateTXTRecord_RejectsBadEKHost(t *testing.T) {
 	opKP := GenerateES256KeyProvider()
 
 	manager, err := NewIdentityManager(Config{Identity: &IdentityConfig{
-		Domain:       "agent.otherdomain.com",
+		Domain:       "agent.otherdomain.example",
 		GovernanceID: "governance.example.com",
 		LogRef:       "test:agent",
-		StatusURL:    "https://agent.otherdomain.com/status.json",
-		KeyURL:       "https://agent.otherdomain.com/ku.json",
-		EntityKeyURL: "https://bad.unrelated.com/.well-known/entity-jwks.json",
+		StatusURL:    "https://agent.otherdomain.example/status.json",
+		KeyURL:       "https://agent.otherdomain.example/ku.json",
+		EntityKeyURL: "https://bad.unrelated.example/.well-known/entity-jwks.json",
 	}}, opKP, WithEntityKeyProvider(entityKP))
 	if err != nil {
 		t.Fatalf("NewIdentityManager: %v", err)

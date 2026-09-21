@@ -106,6 +106,34 @@ Full details, including tested dependency versions and enterprise deployment not
 **[COMPATIBILITY.md](COMPATIBILITY.md)**. Production runtime behavior, key rotation, revocation,
 transport, cache, and error guidance are in **[OPERATIONS.md](OPERATIONS.md)**.
 
+## Security & trust
+
+**Official sources.** Source: `github.com/dnsid-ai/dnsid-go`. Package: `github.com/dnsid-ai/dnsid-go` on the Go module proxy (`pkg.go.dev/github.com/dnsid-ai/dnsid-go`). Releases: GitHub Releases on
+this repository, each with a CycloneDX SBOM attached. Forks, mirrors, and similarly named packages
+are not maintained by us. Report vulnerabilities per [SECURITY.md](SECURITY.md); never in a public issue.
+
+**Software is not identity.** This SDK ships no keys, credentials, or trust. A DNSid identity is proven
+by control of a DNS zone, an agent private key, and the registry's published status. Possessing, forking,
+or modifying this code grants none of those: an unofficial build cannot mint or inherit anyone's identity.
+
+**What it does on the network.** Only when you call it, and only to hosts you or the domain being verified
+chose:
+
+- DNS TXT lookup of `_dnsid.<domain>` through your system resolver (no hardcoded resolver)
+- HTTPS GET to the JWKS and status URLs published in that TXT record
+- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dnsid.dev` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws`
+- No telemetry, usage reporting, update checks, or crash reporting
+
+**Logging.** None. Errors are returned to the caller; the library never writes to stdout, stderr, or a logger.
+
+**Hosted endpoints.** `api.dnsid.ai` and `log.dnsid.ai` are operated separately from this SDK under their
+own terms. Nothing in this repository is an availability, uptime, or support commitment for them.
+
+**For your privacy notice.** Using this SDK causes your system to make DNS and HTTPS requests to the domains
+you verify and to the JWKS/status hosts they publish. It sends them nothing about your users. If you enable
+the registry or transparency-log clients, requests also go to DNSid-operated endpoints; disclose that where
+your notice requires it.
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE.txt).

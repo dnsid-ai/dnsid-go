@@ -109,7 +109,7 @@ func TestValidateManagerFetchURLMessagesUnchanged(t *testing.T) {
 		want string
 	}{
 		{"non-https", "http://example.com/x", "URL must use https"},
-		{"unparseable", "https://exa mple.com/\x7f", "invalid URL"},
+		{"unparseable", "https://exa mple.example/\x7f", "invalid URL"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateManagerFetchURL(tc.raw, "example.com", false)
@@ -131,7 +131,7 @@ func TestValidateManagerFetchURLMessagesUnchanged(t *testing.T) {
 // *url.Error is reachable through the chain while errTLSPolicy still is.
 // FAILS on the pre-refactor source.
 func TestValidateManagerFetchURLExposesParseCause(t *testing.T) {
-	err := validateManagerFetchURL("https://exa mple.com/\x7f", "example.com", false)
+	err := validateManagerFetchURL("https://exa mple.example/\x7f", "example.com", false)
 	if err == nil {
 		t.Fatal("expected an error")
 	}

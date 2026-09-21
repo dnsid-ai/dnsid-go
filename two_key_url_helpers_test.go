@@ -17,10 +17,10 @@ func TestEntityKeyURL_DelegatedGovernance(t *testing.T) {
 	opKP := GenerateES256KeyProvider()
 
 	manager, err := NewIdentityManager(Config{Identity: &IdentityConfig{
-		Domain:       "agent.otherdomain.com",
+		Domain:       "agent.otherdomain.example",
 		GovernanceID: "governance.example.com",
 		LogRef:       "test:agent",
-		StatusURL:    "https://agent.otherdomain.com/status.json",
+		StatusURL:    "https://agent.otherdomain.example/status.json",
 	}}, opKP, WithEntityKeyProvider(entityKP))
 	if err != nil {
 		t.Fatalf("NewIdentityManager: %v", err)
@@ -84,10 +84,10 @@ func TestEntityKeyURL_ExplicitOverride(t *testing.T) {
 	opKP := GenerateES256KeyProvider()
 
 	manager, err := NewIdentityManager(Config{Identity: &IdentityConfig{
-		Domain:       "agent.otherdomain.com",
+		Domain:       "agent.otherdomain.example",
 		GovernanceID: "governance.example.com",
 		LogRef:       "test:agent",
-		StatusURL:    "https://agent.otherdomain.com/status.json",
+		StatusURL:    "https://agent.otherdomain.example/status.json",
 		EntityKeyURL: "https://governance.example.com/custom/entity-jwks.json",
 	}}, opKP, WithEntityKeyProvider(entityKP))
 	if err != nil {
@@ -165,10 +165,10 @@ func TestOperationalKeyURL_AlwaysAgentDomain(t *testing.T) {
 	opKP := GenerateES256KeyProvider()
 
 	manager, err := NewIdentityManager(Config{Identity: &IdentityConfig{
-		Domain:       "agent.otherdomain.com",
+		Domain:       "agent.otherdomain.example",
 		GovernanceID: "governance.example.com",
 		LogRef:       "test:agent",
-		StatusURL:    "https://agent.otherdomain.com/status.json",
+		StatusURL:    "https://agent.otherdomain.example/status.json",
 	}}, opKP, WithEntityKeyProvider(entityKP))
 	if err != nil {
 		t.Fatalf("NewIdentityManager: %v", err)

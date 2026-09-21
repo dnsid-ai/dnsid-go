@@ -275,7 +275,7 @@ func TestFetchHostAllowed(t *testing.T) {
 		{"example.com", "example.com", false, true},
 		{"keys.example.com", "example.com", true, true},
 		{"keys.example.com", "example.com", false, false},
-		{"notexample.com", "example.com", true, false},
+		{"notexample.test", "example.com", true, false},
 	} {
 		if got := fetchHostAllowed(tc.host, tc.allowed, tc.boundary); got != tc.want {
 			t.Errorf("fetchHostAllowed(%q, %q, %v) = %v, want %v", tc.host, tc.allowed, tc.boundary, got, tc.want)
