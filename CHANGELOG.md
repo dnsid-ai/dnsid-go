@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.33.2] - 2026-09-21
+
+### Bug Fixes
+
+- fix: correct codeowners ([#9](https://github.com/dnsid-ai/dnsid-go/pull/9))
+
+### Documentation
+
+- docs: describe registration positively ([#15](https://github.com/dnsid-ai/dnsid-go/pull/15))
+
+### Testing
+
+- ci: use sdk-compliance workflow from main instead of pinned sha ([#10](https://github.com/dnsid-ai/dnsid-go/pull/10))
+- ci: sign release PR commits via GitHub API ([#12](https://github.com/dnsid-ai/dnsid-go/pull/12))
+- ci: sign regenerated-docs commits via GitHub API ([#13](https://github.com/dnsid-ai/dnsid-go/pull/13))
+
+### Chores
+
+- Bump golang.org/x/mod from 0.38.0 to 0.41.0 ([#4](https://github.com/dnsid-ai/dnsid-go/pull/4))
+- Chore/public release cleanup ([#16](https://github.com/dnsid-ai/dnsid-go/pull/16))
+
+### Other
+
+- registry: default CreateAgent environment to production ([#14](https://github.com/dnsid-ai/dnsid-go/pull/14))
+- Release readiness ([#11](https://github.com/dnsid-ai/dnsid-go/pull/11))
+- examples(validate-domain): support the local registry via dnsid local env ([#17](https://github.com/dnsid-ai/dnsid-go/pull/17))
+
 ## [0.33.1] - 2026-09-15
 
 ### Features
