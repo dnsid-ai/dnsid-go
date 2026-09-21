@@ -700,7 +700,7 @@ func (c *HTTPRegistryClient) PublishSignature(ctx context.Context, domain, sig s
 // CreateAgent registers an agent. Pass Domain for a name you control
 // (self-managed), or ZoneID for a registry-assigned name in a delegated zone
 // (managed); the two are mutually exclusive, and Managed requires ZoneID.
-// Environment may be left empty. Private JWK members in PublicKey are rejected
+// Environment defaults to "production"; "sandbox" is also accepted. Private JWK members in PublicKey are rejected
 // before anything is sent. Use CreateLiveAgent for Live names.
 func (c *HTTPRegistryClient) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*CreateAgentResponse, error) {
 	if req == nil {
@@ -710,8 +710,8 @@ func (c *HTTPRegistryClient) CreateAgent(ctx context.Context, req *CreateAgentRe
 	if normalized.Environment == "" {
 		normalized.Environment = "production"
 	}
-	if normalized.Environment != "production" {
-		return nil, NewArgumentError("dnsid: environment must be \"production\"", nil)
+	if normalized.Environment != "production" && normalized.Environment != "sandbox" {
+		return nil, NewArgumentError("dnsid: environment must be \"production\" or \"sandbox\"", nil)
 	}
 	if normalized.Domain != "" && normalized.ZoneID != "" {
 		return nil, NewArgumentError("dnsid: domain and zone_id cannot both be supplied", nil)
