@@ -484,12 +484,14 @@ func TestHTTPRegistryClient_CreateAgentValidatesEnvironment(t *testing.T) {
 	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{ZoneID: "zone-1", PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
 		t.Fatalf("CreateAgent zone managed: %v", err)
 	}
-	if len(requests) != 2 || requests[0].Environment != "production" || requests[0].Domain != "agent.example.com" || requests[1].Environment != "production" || requests[1].ZoneID != "zone-1" || requests[1].Domain != "" {
+	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{Domain: "agent.example.com", Environment: "sandbox", PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
+		t.Fatalf("CreateAgent sandbox: %v", err)
+	}
+	if len(requests) != 3 || requests[0].Environment != "production" || requests[0].Domain != "agent.example.com" || requests[1].Environment != "production" || requests[1].ZoneID != "zone-1" || requests[1].Domain != "" || requests[2].Environment != "sandbox" {
 		t.Fatalf("requests = %+v", requests)
 	}
 	for _, req := range []*CreateAgentRequest{
 		{},
-		{Domain: "agent.example.com", Environment: "sandbox"},
 		{Domain: "agent.example.com", Environment: "development"},
 		{Domain: "agent.example.com", Environment: "staging"},
 		{Domain: "agent.example.com", ZoneID: "zone-1", Environment: "production"},
@@ -501,8 +503,8 @@ func TestHTTPRegistryClient_CreateAgentValidatesEnvironment(t *testing.T) {
 			t.Fatalf("CreateAgent accepted invalid environment request: %+v", req)
 		}
 	}
-	if len(requests) != 2 {
-		t.Fatalf("registry calls = %d, want 2", len(requests))
+	if len(requests) != 3 {
+		t.Fatalf("registry calls = %d, want 3", len(requests))
 	}
 }
 
