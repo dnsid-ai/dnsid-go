@@ -287,7 +287,7 @@ ConfirmReady confirms the agent at fqdn is ready to go live. It is an alias for 
 func (c *HTTPRegistryClient) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*CreateAgentResponse, error)
 ```
 
-CreateAgent registers an agent. Pass Domain for a name you control \(self\-managed\), or ZoneID for a registry\-assigned name in a delegated zone \(managed\); the two are mutually exclusive, and Managed requires ZoneID. Environment may be left empty. Private JWK members in PublicKey are rejected before anything is sent. Use CreateLiveAgent for Live names.
+CreateAgent registers an agent. Pass Domain for a name you control \(self\-managed\), or ZoneID for a registry\-assigned name in a delegated zone \(managed\); the two are mutually exclusive, and Managed requires ZoneID. Environment defaults to "production"; "sandbox" is also accepted. Private JWK members in PublicKey are rejected before anything is sent. Use CreateLiveAgent for Live names.
 
 <a name="HTTPRegistryClient.CreateLiveAgent"></a>
 ### func \(\*HTTPRegistryClient\) [CreateLiveAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L740>)
