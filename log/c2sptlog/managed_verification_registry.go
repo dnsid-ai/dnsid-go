@@ -64,7 +64,7 @@ var dnsidManagedTrustCatalog = []managedTrustEntry{
 }
 
 // NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed,
-// SDK-embedded trust roots of Identity Digital-managed DNSid logs. Calling this
+// SDK-embedded trust roots of DNSid-managed DNSid logs. Calling this
 // separately named factory is an explicit application trust decision; the
 // generic NewVerificationRegistry never selects these roots implicitly.
 //
