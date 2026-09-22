@@ -19,8 +19,8 @@ func newSafeHTTPClientFrom(base *http.Client) *http.Client {
 	return safeHTTPClientWithDefaultTimeout(netguard.NewSafeHTTPClientFrom(base))
 }
 
-func newSafeHTTPClientFromWithResolver(base *http.Client, resolve ipResolverFunc) *http.Client {
-	return safeHTTPClientWithDefaultTimeout(netguard.NewSafeHTTPClientFromWithResolver(base, resolve))
+func newSafeHTTPClientFromWithResolver(base *http.Client, resolve ipResolverFunc, allowPrivate bool) *http.Client {
+	return safeHTTPClientWithDefaultTimeout(netguard.NewSafeHTTPClientFromWithResolver(base, resolve, netguard.Policy{AllowPrivate: allowPrivate}))
 }
 
 func safeHTTPClientWithDefaultTimeout(client *http.Client) *http.Client {
@@ -41,7 +41,7 @@ func safeDialerTransportWith(resolve ipResolverFunc, dial contextDialFunc) *http
 }
 
 func dialValidatedIP(ctx context.Context, network string, addr string, resolve ipResolverFunc, dial contextDialFunc) (net.Conn, string, error) {
-	return netguard.DialValidatedIP(ctx, network, addr, resolve, dial)
+	return netguard.DialValidatedIP(ctx, network, addr, resolve, dial, netguard.Policy{})
 }
 
 func cloneTLSConfig(cfg *tls.Config) *tls.Config {

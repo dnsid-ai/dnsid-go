@@ -22,7 +22,7 @@ import (
 func TestSafeJWKSHTTPClientRejectsLoopbackResolutionAtDial(t *testing.T) {
 	client := newSafeHTTPClientFromWithResolver(nil, func(context.Context, string) ([]net.IPAddr, error) {
 		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
-	})
+	}, false)
 
 	req, err := http.NewRequest(http.MethodGet, "https://origin.example.com/jwks", nil)
 	if err != nil {
@@ -31,6 +31,32 @@ func TestSafeJWKSHTTPClientRejectsLoopbackResolutionAtDial(t *testing.T) {
 	_, err = client.Do(req)
 	if err == nil || !strings.Contains(err.Error(), "non-public") {
 		t.Fatalf("expected dial-time non-public rejection, got %v", err)
+	}
+}
+
+// Names under the reserved .test TLD, or any name with AllowPrivateNetwork,
+// may resolve to loopback: that is how dnsid local answers.
+func TestSafeJWKSHTTPClientAllowsLoopbackForTestTLDOrPrivatePolicy(t *testing.T) {
+	loopback := func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+	}
+	for _, tc := range []struct {
+		name, host   string
+		allowPrivate bool
+	}{
+		{"test tld", "alice.dev.dnsid.test", false},
+		{"allow private", "alice.dev.example.internal", true},
+	} {
+		client := newSafeHTTPClientFromWithResolver(nil, loopback, tc.allowPrivate)
+		req, err := http.NewRequest(http.MethodGet, "https://"+tc.host+":1/jwks", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = client.Do(req)
+		// Nothing listens on port 1; the dial must get past the guard and fail on connect.
+		if err == nil || strings.Contains(err.Error(), "non-public") {
+			t.Fatalf("%s: expected the guard to pass and the dial to fail, got %v", tc.name, err)
+		}
 	}
 }
 

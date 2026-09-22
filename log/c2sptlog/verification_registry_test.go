@@ -6,11 +6,15 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -158,6 +162,8 @@ func TestNewVerificationRegistryRejectsInvalidConfigurationBeforeFetching(t *tes
 		{name: "unsupported round tripper", config: VerificationRegistryConfig{PolicyDocument: document, ScanSourceConfig: ScanSourceConfig{Transport: customTransport}}},
 		{name: "insufficient fetcher", config: VerificationRegistryConfig{PolicyDocument: document, ResourceFetcher: &testBoundedFetcher{guarantees: ResourceFetchGuarantees{HTTPSOnly: true}}}},
 		{name: "conflicting fetcher transport", config: VerificationRegistryConfig{PolicyDocument: document, ResourceFetcher: &testBoundedFetcher{}, ScanSourceConfig: ScanSourceConfig{Transport: http.DefaultTransport}}},
+		{name: "conflicting fetcher dnsid transport", config: VerificationRegistryConfig{PolicyDocument: document, ResourceFetcher: &testBoundedFetcher{}, Transport: dnsid.TransportConfig{DNSServer: "127.0.0.1:7753"}}},
+		{name: "conflicting dnsid transport and http transport", config: VerificationRegistryConfig{PolicyDocument: document, Transport: dnsid.TransportConfig{DNSServer: "127.0.0.1:7753"}, ScanSourceConfig: ScanSourceConfig{Transport: http.DefaultTransport}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -185,6 +191,32 @@ func TestNewVerificationRegistryDefensivelyBoundsCustomFetcherResponse(t *testin
 	var fetchErr *ResourceFetchError
 	if !errors.As(err, &fetchErr) || fetchErr.Kind != ResourceFetchResponseLimit || fetchErr.Transient() {
 		t.Fatalf("error = %T %[1]v, want permanent response limit", err)
+	}
+}
+
+// Transport applies the SDK transport controls to the policy fetch: with the
+// server's CA trusted and private addresses allowed, a loopback policy URL that
+// the default fetcher rejects (see the test below) succeeds.
+func TestNewVerificationRegistryTransportReachesPrivatePolicyURL(t *testing.T) {
+	document := verificationPolicyDocument(t)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(document)
+	}))
+	t.Cleanup(server.Close)
+	caPath := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(caPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	registry, err := NewVerificationRegistry(context.Background(), VerificationRegistryConfig{
+		PolicyURL: server.URL + "/dnsid-policy",
+		Transport: dnsid.TransportConfig{CABundlePath: caPath, AllowPrivateNetwork: true},
+	})
+	if err != nil {
+		t.Fatalf("NewVerificationRegistry: %v", err)
+	}
+	if registry == nil {
+		t.Fatal("NewVerificationRegistry returned nil")
 	}
 }
 

@@ -31,6 +31,13 @@ type VerificationRegistryConfig struct {
 	// PolicyURL is an independently trusted HTTPS location from which to fetch
 	// the C2SP tlog-policy document. Redirects are rejected.
 	PolicyURL string
+	// Transport applies DNSid deployment transport controls (custom DNS server,
+	// extra CA bundle, private-network permission) to the policy fetch and all
+	// log reads, exactly as Config.Transport does for the IdentityManager. Pass
+	// the same value to both when verifying against a private registry such as
+	// dnsid local. Mutually exclusive with ResourceFetcher and with
+	// ScanSourceConfig.HTTPClient / ScanSourceConfig.Transport.
+	Transport dnsid.TransportConfig
 	// ScanSourceConfig configures the bounded standard tiled-log scanner. A
 	// custom Transport is accepted only by lower-level NewScanSource; this safe
 	// factory accepts nil or *http.Transport and wraps it with safe dialing.
@@ -214,10 +221,33 @@ func validateFactoryScanLimits(config ScanSourceConfig) error {
 func factoryResourceFetcher(config VerificationRegistryConfig) (BoundedResourceFetcher, error) {
 	scan := config.ScanSourceConfig
 	if config.ResourceFetcher != nil {
-		if scan.HTTPClient != nil || scan.Transport != nil {
+		if scan.HTTPClient != nil || scan.Transport != nil || config.Transport != (dnsid.TransportConfig{}) {
 			return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog resource fetcher is mutually exclusive with HTTP client and transport", nil)
 		}
 		return config.ResourceFetcher, nil
+	}
+	if config.Transport != (dnsid.TransportConfig{}) {
+		if scan.HTTPClient != nil || scan.Transport != nil {
+			return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog Transport is mutually exclusive with HTTP client and transport", nil)
+		}
+		// Already a safe client: it carries the DNS-server resolver, so it must
+		// not be re-wrapped by NewSafeHTTPClientFrom, which would drop it.
+		client, err := dnsid.CreateDnsidHTTPClient(config.Transport)
+		if err != nil {
+			return nil, err
+		}
+		client.CheckRedirect = rejectResourceRedirect
+		return &httpBoundedResourceFetcher{
+			client:    client,
+			httpsOnly: true,
+			guarantees: ResourceFetchGuarantees{
+				HTTPSOnly:                     true,
+				RejectsRedirects:              true,
+				ValidatesAllResolvedAddresses: true,
+				ConnectsToValidatedAddress:    true,
+				BoundsResponseDuringRead:      true,
+			},
+		}, nil
 	}
 
 	base := scan.HTTPClient

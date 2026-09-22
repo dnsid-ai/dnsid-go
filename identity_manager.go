@@ -218,9 +218,16 @@ func (c VerificationConfig) snapshot() VerificationConfig {
 // implementations; injected resolvers and fetchers are never inspected or
 // modified. Setting a DNS server routes lookups through the stdlib resolver,
 // which performs no DNSSEC validation.
+//
+// SDK-managed HTTPS refuses to dial private and loopback addresses, except
+// for names under the reserved .test TLD (RFC 2606), which never resolve
+// publicly and so are always permitted: a dnsid local registry on its default
+// zone needs no extra setting. AllowPrivateNetwork extends that permission to
+// every name, for a private registry on a custom zone.
 type TransportConfig struct {
-	DNSServer    string
-	CABundlePath string
+	DNSServer           string
+	CABundlePath        string
+	AllowPrivateNetwork bool
 }
 
 // IdentityResolver verifies DNSid identity for peer domains.
@@ -673,6 +680,9 @@ func (m *IdentityManager) applyTransportDefaults() error {
 	}
 	if cfg.CABundlePath != "" && m.httpsInjected {
 		return NewArgumentError("dnsid: Config.Transport.CABundlePath has no SDK-managed consumer: HTTPSFetcher is injected", nil)
+	}
+	if cfg.AllowPrivateNetwork && m.httpsInjected {
+		return NewArgumentError("dnsid: Config.Transport.AllowPrivateNetwork has no SDK-managed consumer: HTTPSFetcher is injected", nil)
 	}
 	if !m.dnsInjected {
 		if cfg.DNSServer != "" {
@@ -1575,7 +1585,7 @@ func httpClientWithTransportConfig(cfg TransportConfig) (*http.Client, error) {
 		}
 		base = client
 	}
-	return newSafeHTTPClientFromWithResolver(base, resolverForDNSServer(cfg.DNSServer)), nil
+	return newSafeHTTPClientFromWithResolver(base, resolverForDNSServer(cfg.DNSServer), cfg.AllowPrivateNetwork), nil
 }
 
 func httpClientWithCABundle(path string) (*http.Client, error) {
