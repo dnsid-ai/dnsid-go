@@ -18,8 +18,8 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
-	"github.com/dnsid-ai/dnsid-go/examples/internal/localnet"
 	"github.com/dnsid-ai/dnsid-go/httpsig"
+	"github.com/dnsid-ai/dnsid-go/log/c2sptlog"
 )
 
 const (
@@ -127,36 +127,33 @@ func newApplication(ctx context.Context) (*application, int, error) {
 		return nil, 0, fmt.Errorf("DNSID_AGENT_PORT is required; run with `dnsid testnet run`")
 	}
 
-	// The local testnet needs its own DNS server, CA, and private-network HTTP
-	// transport. See testnet.go; production applications should use SDK defaults.
+	// The local testnet supplies its own DNS server and CA; the same transport
+	// config drives DNS, HTTPS fetches, log reads, and the outbound A2A client.
+	// Production applications leave it zero for SDK defaults.
 	transport := dnsid.TransportConfig{
 		DNSServer:    os.Getenv("DNSID_DNS_SERVER"),
 		CABundlePath: os.Getenv("DNSID_CA_BUNDLE"),
 	}
-	httpClient, err := localnet.HTTPClient(transport)
+	policyURL := os.Getenv("DNSID_LOG_POLICY_URL")
+	if policyURL == "" {
+		return nil, 0, fmt.Errorf("DNSID_LOG_POLICY_URL is required; run with `dnsid testnet run`")
+	}
+	logRegistry, err := c2sptlog.NewVerificationRegistry(ctx, c2sptlog.VerificationRegistryConfig{
+		PolicyURL: policyURL,
+		Transport: transport,
+	})
 	if err != nil {
 		return nil, 0, err
 	}
-	logRegistry, err := localnet.LogRegistry(
-		ctx,
-		os.Getenv("DNSID_LOG_REF"),
-		os.Getenv("DNSID_LOG_POLICY_URL"),
-		httpClient,
-	)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// IdentityManager performs DNSid verification. This example also gives it
-	// the local C2SP log and testnet HTTPS fetcher. The CA bundle belongs to
-	// that injected fetcher only; the DNS server still configures the SDK's
-	// default TXT resolver.
 	identity, err := dnsid.NewIdentityManagerFromDnsid(
 		"",
-		dnsid.Config{Transport: dnsid.TransportConfig{DNSServer: transport.DNSServer}},
-		dnsid.WithHTTPSFetcher(localnet.Fetcher{Client: httpClient}),
+		dnsid.Config{Transport: transport},
 		dnsid.WithLogRegistry(logRegistry),
 	)
+	if err != nil {
+		return nil, 0, err
+	}
+	httpClient, err := dnsid.CreateDnsidHTTPClient(transport)
 	if err != nil {
 		return nil, 0, err
 	}
