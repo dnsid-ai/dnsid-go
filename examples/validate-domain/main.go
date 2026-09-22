@@ -26,10 +26,12 @@ func main() {
 	defer cancel()
 
 	// Empty outside `eval "$(dnsid local env)"`: SDK defaults are production defaults.
-	transport := dnsid.TransportConfig{
-		DNSServer:    os.Getenv("DNSID_DNS_SERVER"),
-		CABundlePath: os.Getenv("DNSID_CA_BUNDLE"),
+	envConfig, err := dnsid.ConfigFromEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "reading DNSID_* environment: %v\n", err)
+		os.Exit(2)
 	}
+	transport := envConfig.Transport
 	config := c2sptlog.VerificationRegistryConfig{
 		Transport:        transport,
 		CheckpointMaxAge: 10 * time.Minute,

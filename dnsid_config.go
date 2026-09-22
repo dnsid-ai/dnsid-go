@@ -159,6 +159,61 @@ func readDnsidIdentityConfig(dir string) (*dnsidIdentityConfig, string, error) {
 	return &cfg, configPath, nil
 }
 
+// ConfigFromEnv builds a Config from the DNSID_* variables that `dnsid local
+// env` and `dnsid testnet run` export. Transport reads DNSID_DNS_SERVER,
+// DNSID_CA_BUNDLE, and comma-separated DNSID_PRIVATE_HOSTS; Verification reads
+// DNSID_DNSSEC_MODE. Identity is set only when DNSID_DOMAIN is present and
+// reads DNSID_GOVERNANCE_ID, DNSID_LOG_REF (default "noop:0"), DNSID_STATUS_URL
+// (default derived from DNSID_REGISTRY_URL or DefaultRegistryURL),
+// DNSID_KU_URL, DNSID_EK_URL, and DNSID_PUBLISH_PROFILE. Values are trimmed and
+// empty list items are dropped. This loader is explicit: NewIdentityManager
+// never reads the environment.
+func ConfigFromEnv() (Config, error) {
+	env := func(name string) string { return strings.TrimSpace(os.Getenv(name)) }
+	cfg := Config{
+		Verification: VerificationConfig{DNSSECMode: DNSSECMode(env("DNSID_DNSSEC_MODE"))},
+		Transport:    TransportConfig{DNSServer: env("DNSID_DNS_SERVER"), CABundlePath: env("DNSID_CA_BUNDLE")},
+	}
+	for _, host := range strings.Split(env("DNSID_PRIVATE_HOSTS"), ",") {
+		if host = strings.TrimSpace(host); host != "" {
+			cfg.Transport.PrivateAddressHosts = append(cfg.Transport.PrivateAddressHosts, host)
+		}
+	}
+	if err := cfg.Transport.validate(); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.Verification.validate(); err != nil {
+		return Config{}, err
+	}
+	if domain := env("DNSID_DOMAIN"); domain != "" {
+		identity := &IdentityConfig{
+			Domain:         domain,
+			GovernanceID:   env("DNSID_GOVERNANCE_ID"),
+			LogRef:         env("DNSID_LOG_REF"),
+			StatusURL:      env("DNSID_STATUS_URL"),
+			KeyURL:         env("DNSID_KU_URL"),
+			EntityKeyURL:   env("DNSID_EK_URL"),
+			PublishProfile: env("DNSID_PUBLISH_PROFILE"),
+		}
+		if identity.LogRef == "" {
+			identity.LogRef = "noop:0"
+		}
+		if identity.StatusURL == "" {
+			registryURL := env("DNSID_REGISTRY_URL")
+			if registryURL == "" {
+				registryURL = DefaultRegistryURL
+			}
+			statusURL, err := dnsidStatusURL(registryURL, domain)
+			if err != nil {
+				return Config{}, err
+			}
+			identity.StatusURL = statusURL
+		}
+		cfg.Identity = identity
+	}
+	return cfg, nil
+}
+
 func dnsidStatusURL(registryURL, domain string) (string, error) {
 	if registryURL == "" || domain == "" {
 		return "", nil

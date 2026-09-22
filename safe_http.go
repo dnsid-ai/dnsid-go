@@ -19,8 +19,8 @@ func newSafeHTTPClientFrom(base *http.Client) *http.Client {
 	return safeHTTPClientWithDefaultTimeout(netguard.NewSafeHTTPClientFrom(base))
 }
 
-func newSafeHTTPClientFromWithResolver(base *http.Client, resolve ipResolverFunc, allowPrivate bool) *http.Client {
-	return safeHTTPClientWithDefaultTimeout(netguard.NewSafeHTTPClientFromWithResolver(base, resolve, netguard.Policy{AllowPrivate: allowPrivate}))
+func newSafeHTTPClientFromWithResolver(base *http.Client, resolve ipResolverFunc, privateAddressHosts []string) *http.Client {
+	return safeHTTPClientWithDefaultTimeout(netguard.NewSafeHTTPClientFromWithResolver(base, resolve, netguard.Policy{PrivateAddressHosts: privateAddressHosts}))
 }
 
 func safeHTTPClientWithDefaultTimeout(client *http.Client) *http.Client {

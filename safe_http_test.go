@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dnsid-ai/dnsid-go/internal/netguard"
 )
 
 // TestSafeJWKSHTTPClientRejectsLoopbackResolutionAtDial proves the hardened
@@ -22,7 +24,7 @@ import (
 func TestSafeJWKSHTTPClientRejectsLoopbackResolutionAtDial(t *testing.T) {
 	client := newSafeHTTPClientFromWithResolver(nil, func(context.Context, string) ([]net.IPAddr, error) {
 		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
-	}, false)
+	}, nil)
 
 	req, err := http.NewRequest(http.MethodGet, "https://origin.example.com/jwks", nil)
 	if err != nil {
@@ -34,29 +36,79 @@ func TestSafeJWKSHTTPClientRejectsLoopbackResolutionAtDial(t *testing.T) {
 	}
 }
 
-// Names under the reserved .test TLD, or any name with AllowPrivateNetwork,
-// may resolve to loopback: that is how dnsid local answers.
-func TestSafeJWKSHTTPClientAllowsLoopbackForTestTLDOrPrivatePolicy(t *testing.T) {
-	loopback := func(context.Context, string) ([]net.IPAddr, error) {
-		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+// There is no built-in exemption: .test resolves to loopback only when the
+// caller lists it in PrivateAddressHosts.
+func TestSafeHTTPClientPrivateAddressHosts(t *testing.T) {
+	resolveTo := func(addrs ...string) ipResolverFunc {
+		return func(context.Context, string) ([]net.IPAddr, error) {
+			ips := make([]net.IPAddr, 0, len(addrs))
+			for _, a := range addrs {
+				ips = append(ips, net.IPAddr{IP: net.ParseIP(a)})
+			}
+			return ips, nil
+		}
 	}
 	for _, tc := range []struct {
-		name, host   string
-		allowPrivate bool
+		name, host string
+		hosts      []string
+		resolve    ipResolverFunc
+		blocked    bool
 	}{
-		{"test tld", "alice.dev.dnsid.test", false},
-		{"allow private", "alice.dev.example.internal", true},
+		{"test tld rejected with empty list", "alice.dev.dnsid.test", nil, resolveTo("127.0.0.1"), true},
+		{"test tld allowed with .test", "alice.dev.dnsid.test", []string{".test"}, resolveTo("127.0.0.1"), false},
+		{"bare tld matches suffix", "test", []string{".test"}, resolveTo("127.0.0.1"), false},
+		{"case and trailing dot ignored", "Alice.TEST.", []string{".test"}, resolveTo("10.0.0.5"), false},
+		{"exact entry matches", "agent.example.test", []string{"agent.example.test"}, resolveTo("127.0.0.1"), false},
+		{"exact entry does not match subdomain", "sub.agent.example.test", []string{"agent.example.test"}, resolveTo("127.0.0.1"), true},
+		{"suffix is label bounded", "evil-test", []string{".test"}, resolveTo("127.0.0.1"), true},
+		{"suffix does not match interior label", "a.test.example", []string{".test"}, resolveTo("127.0.0.1"), true},
+		{"rfc4193 allowed", "alice.test", []string{".test"}, resolveTo("fd00::1"), false},
+		{"link-local rejected", "alice.test", []string{".test"}, resolveTo("169.254.1.1"), true},
+		{"unspecified rejected", "alice.test", []string{".test"}, resolveTo("0.0.0.0"), true},
+		{"mixed public and private rejected", "alice.test", []string{".test"}, resolveTo("93.184.216.34", "127.0.0.1"), true},
+		{"ip literal rejected regardless of list", "127.0.0.1", []string{".test", "127.0.0.1"}, resolveTo("127.0.0.1"), true},
 	} {
-		client := newSafeHTTPClientFromWithResolver(nil, loopback, tc.allowPrivate)
-		req, err := http.NewRequest(http.MethodGet, "https://"+tc.host+":1/jwks", nil)
-		if err != nil {
-			t.Fatal(err)
+		t.Run(tc.name, func(t *testing.T) {
+			errDialStub := errors.New("dial stub")
+			tr := netguard.SafeDialerTransportFrom(nil, tc.resolve,
+				func(context.Context, string, string) (net.Conn, error) { return nil, errDialStub },
+				netguard.Policy{PrivateAddressHosts: tc.hosts})
+			_, err := tr.DialContext(context.Background(), "tcp", net.JoinHostPort(tc.host, "443"))
+			var unsafeErr *netguard.UnsafeDestinationError
+			blocked := errors.As(err, &unsafeErr)
+			// An allowed destination must get past the guard and reach the dialer.
+			if blocked != tc.blocked || (!tc.blocked && !errors.Is(err, errDialStub)) {
+				t.Fatalf("blocked = %v (err %v), want %v", blocked, err, tc.blocked)
+			}
+		})
+	}
+}
+
+// Each redirect hop re-enters the dialer, so the list is matched per hop: a
+// public host may not redirect into a loopback host that is not listed.
+func TestSafeHTTPClientPrivateAddressHostsEvaluatedPerRedirectHop(t *testing.T) {
+	var dialed []string
+	tr := netguard.SafeDialerTransportFrom(nil,
+		func(_ context.Context, host string) ([]net.IPAddr, error) {
+			if host == "public.example" {
+				return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+			}
+			return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+		},
+		func(_ context.Context, _, addr string) (net.Conn, error) {
+			dialed = append(dialed, addr)
+			return nil, errors.New("dial stub")
+		},
+		netguard.Policy{PrivateAddressHosts: []string{".test"}})
+	for host, wantBlocked := range map[string]bool{"public.example": false, "hop.test": false, "hop.internal": true} {
+		_, err := tr.DialContext(context.Background(), "tcp", host+":443")
+		var unsafeErr *netguard.UnsafeDestinationError
+		if got := errors.As(err, &unsafeErr); got != wantBlocked {
+			t.Fatalf("%s: blocked = %v (err %v), want %v", host, got, err, wantBlocked)
 		}
-		_, err = client.Do(req)
-		// Nothing listens on port 1; the dial must get past the guard and fail on connect.
-		if err == nil || strings.Contains(err.Error(), "non-public") {
-			t.Fatalf("%s: expected the guard to pass and the dial to fail, got %v", tc.name, err)
-		}
+	}
+	if len(dialed) != 2 {
+		t.Fatalf("dialed = %v, want two validated dials", dialed)
 	}
 }
 

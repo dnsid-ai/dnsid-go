@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	formatlog "github.com/transparency-dev/formats/log"
 	"golang.org/x/mod/sumdb/note"
+	"golang.org/x/net/dns/dnsmessage"
 )
 
 func TestNewVerificationRegistryFromDocumentConfiguresSafeDefaults(t *testing.T) {
@@ -194,10 +196,12 @@ func TestNewVerificationRegistryDefensivelyBoundsCustomFetcherResponse(t *testin
 	}
 }
 
-// Transport applies the SDK transport controls to the policy fetch: with the
-// server's CA trusted and private addresses allowed, a loopback policy URL that
-// the default fetcher rejects (see the test below) succeeds.
-func TestNewVerificationRegistryTransportReachesPrivatePolicyURL(t *testing.T) {
+// Transport applies the SDK transport controls to the policy fetch. The
+// policy URL names a host that the configured DNS server answers with
+// loopback; the fetch succeeds only when PrivateAddressHosts lists that host
+// and the server's CA is trusted. Without the list entry the same fetch is an
+// unsafe-destination error: there is no implicit exemption.
+func TestNewVerificationRegistryTransportHonoursPrivateAddressHosts(t *testing.T) {
 	document := verificationPolicyDocument(t)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(document)
@@ -207,17 +211,81 @@ func TestNewVerificationRegistryTransportReachesPrivatePolicyURL(t *testing.T) {
 	if err := os.WriteFile(caPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// httptest's certificate covers example.com; answer that name with loopback.
+	serverURL, _ := url.Parse(server.URL)
+	policyURL := "https://example.com:" + serverURL.Port() + "/dnsid-policy"
+	dnsServer := loopbackDNSServer(t)
 
-	registry, err := NewVerificationRegistry(context.Background(), VerificationRegistryConfig{
-		PolicyURL: server.URL + "/dnsid-policy",
-		Transport: dnsid.TransportConfig{CABundlePath: caPath, AllowPrivateNetwork: true},
-	})
+	for _, tc := range []struct {
+		name  string
+		hosts []string
+		ok    bool
+	}{
+		{"listed host reaches loopback", []string{"example.com"}, true},
+		{"suffix entry reaches loopback", []string{".com"}, true},
+		{"unlisted host is rejected", nil, false},
+		{"other entry does not match", []string{".test"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry, err := NewVerificationRegistry(context.Background(), VerificationRegistryConfig{
+				PolicyURL: policyURL,
+				Transport: dnsid.TransportConfig{DNSServer: dnsServer, CABundlePath: caPath, PrivateAddressHosts: tc.hosts},
+			})
+			if tc.ok {
+				if err != nil || registry == nil {
+					t.Fatalf("NewVerificationRegistry = %v, %v; want registry", registry, err)
+				}
+				return
+			}
+			var fetchErr *ResourceFetchError
+			if !errors.As(err, &fetchErr) || fetchErr.Kind != ResourceFetchUnsafeDestination {
+				t.Fatalf("error = %T %[1]v, want unsafe-destination error", err)
+			}
+		})
+	}
+}
+
+// loopbackDNSServer answers every A query with 127.0.0.1 and every other
+// query with an empty NOERROR response.
+func loopbackDNSServer(t *testing.T) string {
+	t.Helper()
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("NewVerificationRegistry: %v", err)
+		t.Fatal(err)
 	}
-	if registry == nil {
-		t.Fatal("NewVerificationRegistry returned nil")
-	}
+	t.Cleanup(func() { conn.Close() })
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, addr, err := conn.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			var p dnsmessage.Parser
+			h, err := p.Start(buf[:n])
+			if err != nil {
+				continue
+			}
+			q, err := p.Question()
+			if err != nil {
+				continue
+			}
+			msg := dnsmessage.Message{
+				Header:    dnsmessage.Header{ID: h.ID, Response: true, RecursionAvailable: true},
+				Questions: []dnsmessage.Question{q},
+			}
+			if q.Type == dnsmessage.TypeA {
+				msg.Answers = []dnsmessage.Resource{{
+					Header: dnsmessage.ResourceHeader{Name: q.Name, Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 60},
+					Body:   &dnsmessage.AResource{A: [4]byte{127, 0, 0, 1}},
+				}}
+			}
+			if out, err := msg.Pack(); err == nil {
+				_, _ = conn.WriteTo(out, addr)
+			}
+		}
+	}()
+	return conn.LocalAddr().String()
 }
 
 func TestNewVerificationRegistryDefaultFetcherRejectsUnsafePolicyDestination(t *testing.T) {
