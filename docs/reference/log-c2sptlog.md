@@ -309,7 +309,7 @@ NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed, SDK\
 Development and production verification prefer signed stream bundles with safe raw\-scan fallback. The default checkpoint store is restart\-ephemeral; deployments needing rollback protection across restarts should inject durable storage and retain the returned registry for the process lifetime.
 
 <a name="NewVerificationRegistry"></a>
-## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L76>)
+## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L83>)
 
 ```go
 func NewVerificationRegistry(ctx context.Context, config VerificationRegistryConfig) (*dnsidlog.LogRegistry, error)
@@ -1854,7 +1854,7 @@ type TrustedC2spCheckpointStore interface {
 ```
 
 <a name="VerificationRegistryConfig"></a>
-## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L65>)
+## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L72>)
 
 VerificationRegistryConfig configures NewVerificationRegistry. Exactly one of TrustProfile, PolicyDocument, and PolicyURL must be set. A PolicyURL is a caller\-selected trust\-policy location; it is never inferred from an identity's untrusted lr value.
 
@@ -1869,6 +1869,13 @@ type VerificationRegistryConfig struct {
     // PolicyURL is an independently trusted HTTPS location from which to fetch
     // the C2SP tlog-policy document. Redirects are rejected.
     PolicyURL string
+    // Transport applies DNSid deployment transport controls (custom DNS server,
+    // extra CA bundle, private-network permission) to the policy fetch and all
+    // log reads, exactly as Config.Transport does for the IdentityManager. Pass
+    // the same value to both when verifying against a private registry such as
+    // dnsid local. Mutually exclusive with ResourceFetcher and with
+    // ScanSourceConfig.HTTPClient / ScanSourceConfig.Transport.
+    Transport dnsid.TransportConfig
     // ScanSourceConfig configures the bounded standard tiled-log scanner. A
     // custom Transport is accepted only by lower-level NewScanSource; this safe
     // factory accepts nil or *http.Transport and wraps it with safe dialing.
