@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.34.0] - 2026-09-22
+
+### Features
+
+- feat: verify against a private registry such as dnsid local ([#26](https://github.com/dnsid-ai/dnsid-go/pull/26))
+
+### Bug Fixes
+
+- fix: simplify the examples ([#28](https://github.com/dnsid-ai/dnsid-go/pull/28))
+
 ## [0.33.3] - 2026-09-21
 
 ### Other
