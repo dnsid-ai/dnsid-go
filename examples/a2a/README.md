@@ -6,7 +6,6 @@ The Go A2A SDK has not yet published an importable A2A 1.0 module, so this examp
 
 - `main.go` shows DNSid setup, request verification, and signed requests.
 - `agent_card.go` builds and signs the A2A agent card.
-- `testnet.go` contains local-only transport and C2SP log setup.
 
 ## Prerequisites
 
@@ -56,6 +55,8 @@ configuration and never derives it from `DNSID_LOG_REF` or the log prefix, so
 custom testnet proxy ports are preserved. Startup fails with a clear error when
 the value is missing.
 
-The example injects a testnet-only HTTP transport and HTTPS fetcher. Production
-applications should retain the SDK's default SSRF-safe transport and keep their
-official or pinned C2SP policy independently configured.
+The example passes `DNSID_DNS_SERVER` and `DNSID_CA_BUNDLE` as a single
+`dnsid.TransportConfig` to the log registry, the `IdentityManager`, and the
+outbound HTTP client. Production applications leave it zero for the SDK's
+default SSRF-safe transport and keep their official or pinned C2SP policy
+independently configured.

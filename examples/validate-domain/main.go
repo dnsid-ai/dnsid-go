@@ -7,7 +7,6 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
-	"github.com/dnsid-ai/dnsid-go/examples/internal/localnet"
 	"github.com/dnsid-ai/dnsid-go/log/c2sptlog"
 	"golang.org/x/mod/sumdb/note"
 )
@@ -26,21 +25,22 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// `eval "$(dnsid local env)"` sets DNSID_LOG_POLICY_URL: verify against the local registry,
-	// which serves no stream bundles and resolves everything to loopback.
-	if policyURL := os.Getenv("DNSID_LOG_POLICY_URL"); policyURL != "" {
-		verifyLocal(ctx, domain, policyURL)
-		return
+	// Empty outside `eval "$(dnsid local env)"`: SDK defaults are production defaults.
+	transport := dnsid.TransportConfig{
+		DNSServer:    os.Getenv("DNSID_DNS_SERVER"),
+		CABundlePath: os.Getenv("DNSID_CA_BUNDLE"),
 	}
-
 	config := c2sptlog.VerificationRegistryConfig{
-		MaxBundleLifetime:   10 * time.Minute,
-		CheckpointMaxAge:    10 * time.Minute,
-		AllowedClockSkew:    time.Minute,
-		RequireStreamBundle: true,
+		Transport:        transport,
+		CheckpointMaxAge: 10 * time.Minute,
+		AllowedClockSkew: time.Minute,
 	}
-	if profilePath := os.Getenv("DNSID_TRUST_PROFILE"); profilePath != "" {
-		data, err := os.ReadFile(profilePath)
+	switch {
+	case os.Getenv("DNSID_LOG_POLICY_URL") != "":
+		// The local registry serves no stream bundles; verify by raw-log scan.
+		config.PolicyURL = os.Getenv("DNSID_LOG_POLICY_URL")
+	case os.Getenv("DNSID_TRUST_PROFILE") != "":
+		data, err := os.ReadFile(os.Getenv("DNSID_TRUST_PROFILE"))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "reading DNSID_TRUST_PROFILE: %v\n", err)
 			os.Exit(2)
@@ -51,7 +51,9 @@ func main() {
 			os.Exit(2)
 		}
 		config.TrustProfile = &profile
-	} else {
+		config.MaxBundleLifetime = 10 * time.Minute
+		config.RequireStreamBundle = true
+	default:
 		bundleKey := os.Getenv("DNSID_BUNDLE_VERIFIER_KEY")
 		if bundleKey == "" {
 			fmt.Fprintln(os.Stderr, "DNSID_TRUST_PROFILE or DNSID_BUNDLE_VERIFIER_KEY is required")
@@ -63,6 +65,8 @@ func main() {
 			os.Exit(2)
 		}
 		config.BundleVerifiers = []note.Verifier{bundleVerifier}
+		config.MaxBundleLifetime = 10 * time.Minute
+		config.RequireStreamBundle = true
 		config.PolicyURL = os.Getenv("DNSID_POLICY_URL")
 		if config.PolicyURL == "" {
 			config.PolicyURL = policyURL
@@ -74,7 +78,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "log setup failed: %v\n", err)
 		os.Exit(1)
 	}
-	idm, err := dnsid.NewVerifier(dnsid.WithLogRegistry(registry))
+	idm, err := dnsid.NewIdentityManager(dnsid.Config{Transport: transport}, nil, dnsid.WithLogRegistry(registry))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "setup failed: %v\n", err)
 		os.Exit(1)
@@ -89,42 +93,9 @@ func main() {
 	fmt.Printf("verified: %s\n", verified.Domain())
 	fmt.Printf("dnssec: %s\n", verified.DNSSECState())
 	fmt.Printf("status: %s\n", verified.Status().State)
-	fmt.Println("stream bundle: verified (required)")
-}
-
-func verifyLocal(ctx context.Context, domain, policyURL string) {
-	transport := dnsid.TransportConfig{
-		DNSServer:    os.Getenv("DNSID_DNS_SERVER"),
-		CABundlePath: os.Getenv("DNSID_CA_BUNDLE"),
+	if config.RequireStreamBundle {
+		fmt.Println("stream bundle: verified (required)")
+	} else {
+		fmt.Println("log: raw-log scan")
 	}
-	httpClient, err := localnet.HTTPClient(transport)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "local setup failed: %v\n", err)
-		os.Exit(1)
-	}
-	registry, err := localnet.LogRegistry(ctx, os.Getenv("DNSID_LOG_REF"), policyURL, httpClient)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "log setup failed: %v\n", err)
-		os.Exit(1)
-	}
-	idm, err := dnsid.NewIdentityManager(
-		dnsid.Config{Transport: dnsid.TransportConfig{DNSServer: transport.DNSServer}},
-		nil,
-		dnsid.WithHTTPSFetcher(localnet.Fetcher{Client: httpClient}),
-		dnsid.WithLogRegistry(registry),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "setup failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	verified, err := idm.VerifyDomain(ctx, domain)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "verification failed: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("verified: %s\n", verified.Domain())
-	fmt.Printf("dnssec: %s\n", verified.DNSSECState())
-	fmt.Printf("status: %s\n", verified.Status().State)
-	fmt.Println("log: local registry raw-log scan")
 }

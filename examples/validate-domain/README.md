@@ -29,9 +29,11 @@ DNSID_BUNDLE_VERIFIER_KEY='dnsid-stream-bundle+<keyhash>+<base64-public-key>' \
   go run ./examples/validate-domain your-agent.example.com
 ```
 
-Against the local registry, evaluate `dnsid local env` first. When it sets
-`DNSID_LOG_POLICY_URL` the example uses `examples/internal/localnet` (local DNS,
-CA, loopback hosts, raw-log scan) instead of the stream-bundle path:
+Against the local registry, evaluate `dnsid local env` first. It sets
+`DNSID_DNS_SERVER`, `DNSID_CA_BUNDLE`, and `DNSID_LOG_POLICY_URL`; the example
+passes the first two as `dnsid.TransportConfig` to both the log registry and the
+`IdentityManager`, and verifies by raw-log scan since the local registry serves
+no stream bundles:
 
 ```sh
 eval "$(dnsid local env)"
