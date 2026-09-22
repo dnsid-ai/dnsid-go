@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -27,16 +28,35 @@ func (e *UnsafeDestinationError) Error() string {
 	return e.Message
 }
 
-func NewSafeHTTPClientFrom(base *http.Client) *http.Client {
-	return NewSafeHTTPClientFromWithResolver(base, nil)
+// Policy relaxes destination validation. The zero value is the default: only
+// publicly routable addresses are dialed, except for names under the reserved
+// .test TLD (RFC 2606), which can never resolve publicly and so are always
+// permitted to resolve to private or loopback addresses.
+type Policy struct {
+	// AllowPrivate permits private and loopback destinations for every name,
+	// not only .test names. Meant for private registries on a custom zone.
+	AllowPrivate bool
 }
 
-func NewSafeHTTPClientFromWithResolver(base *http.Client, resolve IPResolverFunc) *http.Client {
+// UnderTestTLD reports whether host is the reserved .test TLD or a name under
+// it. Such names never resolve on the public internet, so resolving them to a
+// private or loopback address is a deliberate local configuration, not a
+// rebinding attack.
+func UnderTestTLD(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	return host == "test" || strings.HasSuffix(host, ".test")
+}
+
+func NewSafeHTTPClientFrom(base *http.Client) *http.Client {
+	return NewSafeHTTPClientFromWithResolver(base, nil, Policy{})
+}
+
+func NewSafeHTTPClientFromWithResolver(base *http.Client, resolve IPResolverFunc, policy Policy) *http.Client {
 	if base == nil {
 		base = &http.Client{}
 	}
 	client := *base
-	client.Transport = SafeDialerTransportFromRoundTripperWithResolver(base.Transport, resolve)
+	client.Transport = SafeDialerTransportFromRoundTripperWithResolver(base.Transport, resolve, policy)
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
@@ -56,10 +76,10 @@ func SafeDialerTransport() *http.Transport {
 // safely cloned into a rebinding-safe Transport, so they are replaced with a
 // new empty *http.Transport and a warning is written to stderr.
 func SafeDialerTransportFromRoundTripper(rt http.RoundTripper) *http.Transport {
-	return SafeDialerTransportFromRoundTripperWithResolver(rt, nil)
+	return SafeDialerTransportFromRoundTripperWithResolver(rt, nil, Policy{})
 }
 
-func SafeDialerTransportFromRoundTripperWithResolver(rt http.RoundTripper, resolve IPResolverFunc) *http.Transport {
+func SafeDialerTransportFromRoundTripperWithResolver(rt http.RoundTripper, resolve IPResolverFunc, policy Policy) *http.Transport {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	if resolve == nil {
 		resolver := &net.Resolver{}
@@ -75,14 +95,14 @@ func SafeDialerTransportFromRoundTripperWithResolver(rt http.RoundTripper, resol
 			base = &http.Transport{}
 		}
 	}
-	return SafeDialerTransportFrom(base, resolve, dialer.DialContext)
+	return SafeDialerTransportFrom(base, resolve, dialer.DialContext, policy)
 }
 
 func SafeDialerTransportWith(resolve IPResolverFunc, dial ContextDialFunc) *http.Transport {
-	return SafeDialerTransportFrom(nil, resolve, dial)
+	return SafeDialerTransportFrom(nil, resolve, dial, Policy{})
 }
 
-func SafeDialerTransportFrom(base *http.Transport, resolve IPResolverFunc, dial ContextDialFunc) *http.Transport {
+func SafeDialerTransportFrom(base *http.Transport, resolve IPResolverFunc, dial ContextDialFunc, policy Policy) *http.Transport {
 	if base == nil {
 		if t, ok := http.DefaultTransport.(*http.Transport); ok {
 			base = t
@@ -94,7 +114,7 @@ func SafeDialerTransportFrom(base *http.Transport, resolve IPResolverFunc, dial 
 	tr.Proxy = nil
 
 	safeDial := func(ctx context.Context, network, addr string) (net.Conn, string, error) {
-		return DialValidatedIP(ctx, network, addr, resolve, dial)
+		return DialValidatedIP(ctx, network, addr, resolve, dial, policy)
 	}
 	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		conn, _, err := safeDial(ctx, network, addr)
@@ -188,14 +208,16 @@ func DialValidatedIP(
 	addr string,
 	resolve IPResolverFunc,
 	dial ContextDialFunc,
+	policy Policy,
 ) (net.Conn, string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, "", err
 	}
+	allowPrivate := policy.AllowPrivate || UnderTestTLD(host)
 
 	if ip := net.ParseIP(host); ip != nil {
-		if IsUnsafeIP(ip) {
+		if !allowPrivate && IsUnsafeIP(ip) {
 			return nil, "", &UnsafeDestinationError{Message: fmt.Sprintf("dial blocked: %s is non-public", ip)}
 		}
 		conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
@@ -213,7 +235,7 @@ func DialValidatedIP(
 		if ip.IP == nil {
 			return nil, "", &UnsafeDestinationError{Message: fmt.Sprintf("dial blocked: %s resolved to invalid address", host)}
 		}
-		if IsUnsafeIP(ip.IP) {
+		if !allowPrivate && IsUnsafeIP(ip.IP) {
 			return nil, "", &UnsafeDestinationError{Message: fmt.Sprintf("dial blocked: %s resolves to non-public %s", host, ip.IP)}
 		}
 	}
