@@ -18,6 +18,7 @@ Start with the root package: `IdentityManager` is the facade for verifying domai
 | Page | What it covers |
 | --- | --- |
 | [Core: IdentityManager](https://docs.dnsid.ai/reference/go/dnsid) | IdentityManager, domain verification, configuration, transport, and caching for the DNSid Go SDK. |
+| [Configuration](https://docs.dnsid.ai/reference/go/config) | Load DNSid SDK configuration from DNSID_* environment variables and DNSid CLI directories; loaders parse, constructors default. |
 | [Records & keys](https://docs.dnsid.ai/reference/go/dnsid-records) | TXT identity records, JWKS and JWK types, policy flags, and record parsing helpers. |
 | [Profile: JOSE](https://docs.dnsid.ai/reference/go/jose) | DNSid JOSE profile: create and verify DNSid JWTs and compact JWS. |
 | [Profile: HTTP signatures](https://docs.dnsid.ai/reference/go/httpsig) | RFC 9421 HTTP Message Signatures for DNSid agents. |

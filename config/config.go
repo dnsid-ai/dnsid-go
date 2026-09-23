@@ -178,8 +178,12 @@ type cliConfig struct {
 // carries it as KeySource.CliDirectory). Persisted publication fields map into
 // Dnsid.Identity exactly as written: status_url is never derived from
 // server_url and no log reference is substituted. The directory becomes
-// KeySource.CliDirectory and entity_key_path, resolved against it, becomes
-// KeySource.EntityKeyPath.
+// KeySource.CliDirectory and entity_key_path, resolved against the directory
+// of the config.json that carries it, becomes KeySource.EntityKeyPath.
+//
+// The CLI treats a root config.json as the current-identity pointer: when it
+// names a domain and <dir>/<domain>/config.json exists, that per-identity file
+// is read instead. A leaf identity directory is read as-is.
 func LoadCliDirectory(dir string) (Loaded, error) {
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -188,13 +192,20 @@ func LoadCliDirectory(dir string) (Loaded, error) {
 		}
 		dir = filepath.Join(home, ".dnsid")
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	configDir := dir
+	cfg, err := readCliConfig(configDir)
 	if err != nil {
-		return Loaded{}, dnsid.NewParseError("dnsid: reading DNSid config", err)
+		return Loaded{}, err
 	}
-	var cfg cliConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Loaded{}, dnsid.NewParseError("dnsid: parsing DNSid config", err)
+	if pointer := strings.TrimSpace(cfg.Domain); pointer != "" {
+		if normalized, err := dnsid.NormalizeFQDN(pointer); err == nil {
+			if leaf := filepath.Join(dir, normalized); fileExists(filepath.Join(leaf, "config.json")) {
+				if cfg, err = readCliConfig(leaf); err != nil {
+					return Loaded{}, err
+				}
+				configDir = leaf
+			}
+		}
 	}
 	identity := dnsid.IdentityConfig{
 		Domain:          strings.TrimSpace(cfg.Domain),
@@ -213,11 +224,28 @@ func LoadCliDirectory(dir string) (Loaded, error) {
 	}
 	if p := strings.TrimSpace(cfg.EntityKeyPath); p != "" {
 		if !filepath.IsAbs(p) {
-			p = filepath.Join(dir, p)
+			p = filepath.Join(configDir, p)
 		}
 		l.KeySource.EntityKeyPath = p
 	}
 	return l, nil
+}
+
+func readCliConfig(dir string) (cliConfig, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return cliConfig{}, dnsid.NewParseError("dnsid: reading DNSid config", err)
+	}
+	var cfg cliConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return cliConfig{}, dnsid.NewParseError("dnsid: parsing DNSid config", err)
+	}
+	return cfg, nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // Merge applies overlay onto base field-wise: a present overlay field replaces

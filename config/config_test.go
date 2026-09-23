@@ -531,3 +531,30 @@ func loopbackDNSServer(t *testing.T) string {
 	}()
 	return conn.LocalAddr().String()
 }
+
+func TestLoadCliDirectory_RootPointerResolvesToPerIdentityConfig(t *testing.T) {
+	// The CLI reads <domain>/config.json as authoritative; the root file is a pointer.
+	root := t.TempDir()
+	leaf := filepath.Join(root, "agent.example.com")
+	writeJSON(t, filepath.Join(root, "config.json"), map[string]any{
+		"domain": "Agent.Example.com.", "governance_id": "example.com", "log_ref": "stale:root", "entity_key_path": "root-entity.jwk",
+	})
+	writeJSON(t, filepath.Join(leaf, "config.json"), map[string]any{
+		"domain": "agent.example.com", "governance_id": "example.com", "log_ref": "c2sp-tlog:public:https://log.example#leaf", "entity_key_path": "entity.jwk",
+	})
+	l, err := LoadCliDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Dnsid.Identity.LogRef != "c2sp-tlog:public:https://log.example#leaf" {
+		t.Fatalf("LogRef = %q; root pointer was not followed", l.Dnsid.Identity.LogRef)
+	}
+	if l.KeySource.CliDirectory != root || l.KeySource.EntityKeyPath != filepath.Join(leaf, "entity.jwk") {
+		t.Fatalf("KeySource = %+v", l.KeySource)
+	}
+	// A leaf directory (no <domain>/ subdirectory) is read as-is.
+	ll, err := LoadCliDirectory(leaf)
+	if err != nil || ll.Dnsid.Identity.LogRef != l.Dnsid.Identity.LogRef || ll.KeySource.CliDirectory != leaf {
+		t.Fatalf("leaf Loaded = %+v, %v", ll, err)
+	}
+}

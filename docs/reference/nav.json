@@ -1,6 +1,7 @@
 [
   { "label": "Overview", "slug": "reference/go/overview" },
   { "label": "Core: IdentityManager", "slug": "reference/go/dnsid" },
+  { "label": "Configuration", "slug": "reference/go/config" },
   { "label": "Records & keys", "slug": "reference/go/dnsid-records" },
   { "label": "Profile: JOSE", "slug": "reference/go/jose" },
   { "label": "Profile: HTTP signatures", "slug": "reference/go/httpsig" },
