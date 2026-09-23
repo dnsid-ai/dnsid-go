@@ -35,7 +35,7 @@ if err != nil {
 fmt.Println(verified.Domain(), verified.Record().GovernanceID, verified.Status().State)
 ```
 
-A manager constructed with Config.Identity and a KeyProvider can also act as an agent: build and sign its own \_dnsid record \(CreateTXTRecord\), publish its operational and entity JWKS documents \(GetKeySet, GetEntityKeySet\), write lifecycle log events, and drive registry workflows. NewIdentityManagerFromDnsid loads such a manager from an identity created by the DNSid CLI.
+A manager constructed with Config.Identity and a KeyProvider can also act as an agent: build and sign its own \_dnsid record \(CreateTXTRecord\), publish its operational and entity JWKS documents \(GetKeySet, GetEntityKeySet\), write lifecycle log events, and drive registry workflows. The config package loads such a manager from DNSID\_\* environment variables or an identity created by the DNSid CLI.
 
 ### Main entry types
 
@@ -87,7 +87,7 @@ const (
 const DefaultPublishProfile = identityRecordDraft01
 ```
 
-<a name="DefaultRegistryURL"></a>DefaultRegistryURL is the local registry started by \`dnsid local up\`. It is used when no base URL is passed; hosted use requires an explicit URL \(see NewRegistryClientFromEnv\).
+<a name="DefaultRegistryURL"></a>DefaultRegistryURL is the local registry started by \`dnsid local up\`. It is used when no base URL is passed; hosted use requires an explicit URL \(see config.RegistryClientFromEnvironment\).
 
 ```go
 const DefaultRegistryURL = "http://127.0.0.1:7755"
@@ -172,7 +172,7 @@ var Version = resolveVersion()
 ```
 
 <a name="CreateDnsidHTTPClient"></a>
-## func [CreateDnsidHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L654>)
+## func [CreateDnsidHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L642>)
 
 ```go
 func CreateDnsidHTTPClient(transportConfig TransportConfig) (*http.Client, error)
@@ -296,15 +296,6 @@ type Config struct {
     Transport    TransportConfig
 }
 ```
-
-<a name="ConfigFromEnv"></a>
-### func [ConfigFromEnv](<https://github.com/dnsid-ai/dnsid-go/blob/main/dnsid_config.go#L171>)
-
-```go
-func ConfigFromEnv() (Config, error)
-```
-
-ConfigFromEnv builds a Config from the DNSID\_\* variables that \`dnsid local env\` and \`dnsid testnet run\` export. Transport reads DNSID\_DNS\_SERVER, DNSID\_CA\_BUNDLE, and comma\-separated DNSID\_PRIVATE\_HOSTS; Verification reads DNSID\_DNSSEC\_MODE. Identity is set only when DNSID\_DOMAIN is present and reads DNSID\_GOVERNANCE\_ID, DNSID\_LOG\_REF \(default "noop:0"\), DNSID\_STATUS\_URL \(default derived from DNSID\_REGISTRY\_URL or DefaultRegistryURL\), DNSID\_KU\_URL, DNSID\_EK\_URL, and DNSID\_PUBLISH\_PROFILE. Values are trimmed and empty list items are dropped. This loader is explicit: NewIdentityManager never reads the environment.
 
 <a name="CreateAgentRequest"></a>
 ## type [DNSResolver](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L297-L299>)
@@ -479,42 +470,6 @@ func NewIdentityManager(cfg Config, kp KeyProvider, opts ...IdentityManagerOptio
 
 NewIdentityManager constructs the DNSid SDK facade. A nil cfg.Identity with a nil KeyProvider yields a verification\-only manager. A non\-nil cfg.Identity requires a KeyProvider and enables acting as the configured local identity \(record creation, JWKS publication, lifecycle events\). Configuration is validated and snapshotted before any network work; it returns an \*ArgumentError for invalid configuration, a KeyProvider or entity KeyProvider without identity, identity without a KeyProvider, or Config.Transport settings whose only SDK\-managed consumers were all injected.
 
-<a name="NewIdentityManagerFromDnsid"></a>
-### func [NewIdentityManagerFromDnsid](<https://github.com/dnsid-ai/dnsid-go/blob/main/dnsid_config.go#L33>)
-
-```go
-func NewIdentityManagerFromDnsid(dir string, cfg Config, opts ...IdentityManagerOption) (*IdentityManager, error)
-```
-
-NewIdentityManagerFromDnsid constructs a local\-identity IdentityManager from a DNSid CLI config directory. Empty dir uses DNSID\_CONFIG\_DIR when set, otherwise \~/.dnsid. The persisted publication fields become defaults for cfg.Identity; any non\-empty field in cfg.Identity wins. cfg.Verification and cfg.Transport are used as supplied and are never inferred from the loaded identity. The key files select the operational and entity KeyProviders; a WithEntityKeyProvider option wins over the loaded entity key.
-
-<details><summary>Example</summary>
-<p>
-
-ExampleNewIdentityManagerFromDnsid loads the agent identity created with the DNSid CLI \(\`dnsid auth login\`, then \`dnsid init\`\) and prints the domain the manager acts as. An empty directory argument reads DNSID\_CONFIG\_DIR when set, otherwise \~/.dnsid.
-
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	dnsid "github.com/dnsid-ai/dnsid-go"
-)
-
-func main() {
-	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("acting as:", idm.Domain())
-}
-```
-
-</p>
-</details>
-
 <a name="NewVerifier"></a>
 ### func [NewVerifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L743>)
 
@@ -525,7 +480,7 @@ func NewVerifier(opts ...IdentityManagerOption) (*IdentityManager, error)
 NewVerifier constructs an IdentityManager for verification without local identity configuration or key material. It is shorthand for NewIdentityManager with a zero Config and nil KeyProvider; pass a Config with nil Identity to NewIdentityManager to set verification or transport settings.
 
 <a name="IdentityManager.AwaitRegistryManagedPublication"></a>
-### func \(\*IdentityManager\) [AwaitRegistryManagedPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1628>)
+### func \(\*IdentityManager\) [AwaitRegistryManagedPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1616>)
 
 ```go
 func (m *IdentityManager) AwaitRegistryManagedPublication(ctx context.Context, client RegistryRegistrationReader, opts *WaitForStatusOptions) (*PublishedRecord, error)
@@ -642,7 +597,7 @@ func (m *IdentityManager) OperationalKeyURL() string
 OperationalKeyURL returns the HTTPS URL where the operational \(ku\) JWKS should be served. This is the ku= value that CreateTXTRecord would produce. Draft 01 defines no default path, so an unset KeyURL returns an empty string.
 
 <a name="IdentityManager.PublishClientControlledRecord"></a>
-### func \(\*IdentityManager\) [PublishClientControlledRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1501>)
+### func \(\*IdentityManager\) [PublishClientControlledRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1489>)
 
 ```go
 func (m *IdentityManager) PublishClientControlledRecord(ctx context.Context, client RegistryClientControlledPublisher) (*PublishedRecord, error)
@@ -741,6 +696,11 @@ func (exampleLogReader) VerifyOperationalContinuity(context.Context, string, str
 	return nil
 }
 
+// ExampleIdentityManager_VerifyDomain verifies a DNSid domain end to end
+// against in-memory fixtures: a signed _dnsid TXT record, the entity (ek) and
+// runtime (ku) JWKS documents, and an ACTIVE status document. Against live
+// infrastructure only the fakes change — construct the manager with a
+// DNSSEC-aware resolver and omit WithHTTPSFetcher.
 func main() {
 	// The agent being verified. Its entity key signs the _dnsid record; its
 	// operational key is the runtime key the agent signs with.
@@ -931,7 +891,7 @@ const (
 ```
 
 <a name="RegistryAPIError"></a>
-## type [RegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L28-L30>)
+## type [RegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L27-L29>)
 
 RegistryConfig contains DNSid registry control\-plane settings.
 
@@ -970,7 +930,7 @@ SDKConformance returns an immutable snapshot of this release's protocol conforma
 
 TransportConfig contains deployment controls for SDK\-managed DNS and HTTPS: a custom DNS server for TXT lookups and HTTPS name resolution, and an additional CA bundle for HTTPS trust. Settings apply only to the default implementations; injected resolvers and fetchers are never inspected or modified. Setting a DNS server routes lookups through the stdlib resolver, which performs no DNSSEC validation.
 
-SDK\-managed HTTPS refuses to dial loopback, private, link\-local, multicast, reserved, and other non\-routable addresses. PrivateAddressHosts is the only exemption: entries are hostnames \("agent.example.test", exact match\) or leading\-dot suffixes \(".test", matching "test" and every name beneath it on a DNS\-label boundary\). A matching destination may resolve to loopback or private\-use \(RFC 1918, RFC 4193\) addresses; link\-local, multicast, reserved, and mixed public\+private resolutions are still rejected, IP\-literal URLs are never exempted, and every redirect hop is matched independently. The list is empty by default and there is no built\-in exemption for .test or any other name; a local \`dnsid\` stack needs PrivateAddressHosts: \[\]string\{".test"\} \(or DNSID\_PRIVATE\_HOSTS=.test via ConfigFromEnv\). Entries with an IP literal, port, scheme, path, or credentials are rejected at construction.
+SDK\-managed HTTPS refuses to dial loopback, private, link\-local, multicast, reserved, and other non\-routable addresses. PrivateAddressHosts is the only exemption: entries are hostnames \("agent.example.test", exact match\) or leading\-dot suffixes \(".test", matching "test" and every name beneath it on a DNS\-label boundary\). A matching destination may resolve to loopback or private\-use \(RFC 1918, RFC 4193\) addresses; link\-local, multicast, reserved, and mixed public\+private resolutions are still rejected, IP\-literal URLs are never exempted, and every redirect hop is matched independently. The list is empty by default and there is no built\-in exemption for .test or any other name; a local \`dnsid\` stack needs PrivateAddressHosts: \[\]string\{".test"\} \(or DNSID\_PRIVATE\_HOSTS=.test via config.LoadEnvironment\). Entries with an IP literal, port, scheme, path, or credentials are rejected at construction.
 
 ```go
 type TransportConfig struct {

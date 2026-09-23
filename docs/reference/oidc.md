@@ -21,7 +21,7 @@ The package implements an OIDC federation profile on top of core DNSid identity 
 Profile is the main entry type. Construct one with New, NewFromIdentityManager, or NewFromIdentityManagerKeyProvider, then mint tokens with GetOIDCToken \(or CreateOIDCAssertion plus ExchangeOIDCToken\) and verify presented tokens with VerifyOIDCToken:
 
 ```
-idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
+idm, err := config.IdentityManagerFromDnsid(ctx, "", dnsid.Config{}, config.Dependencies{})
 if err != nil {
 	log.Fatal(err)
 }
@@ -272,7 +272,7 @@ NewFromIdentityManager constructs an OIDC profile from an IdentityManager\-like 
 func NewFromIdentityManagerKeyProvider(manager identityManagerWithKeyProvider, cfg Config) *Profile
 ```
 
-NewFromIdentityManagerKeyProvider constructs an OIDC profile from a manager that exposes its KeyProvider, such as one loaded with dnsid.NewIdentityManagerFromDnsid.
+NewFromIdentityManagerKeyProvider constructs an OIDC profile from a manager that exposes its KeyProvider, such as one loaded with config.IdentityManagerFromDnsid.
 
 <a name="Profile.CreateOIDCAssertion"></a>
 ### func \(\*Profile\) [CreateOIDCAssertion](<https://github.com/dnsid-ai/dnsid-go/blob/main/oidc/oidc.go#L293>)
@@ -327,21 +327,22 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
 	"github.com/dnsid-ai/dnsid-go/oidc"
 )
 
 func main() {
 	// Load the agent identity from ~/.dnsid. The manager can both verify
 	// domains and sign as the agent.
-	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	idm, err := config.IdentityManagerFromDnsid(ctx, "", dnsid.Config{}, config.Dependencies{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	profile := oidc.NewFromIdentityManagerKeyProvider(idm, oidc.Config{})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 
 	tok, err := profile.GetOIDCToken(ctx, oidc.OIDCTokenExchangeOptions{
 		Issuer:   "https://issuer.example",
