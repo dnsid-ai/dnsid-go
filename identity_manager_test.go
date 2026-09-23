@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -542,66 +541,6 @@ func TestIdentityManagerTransportConfig(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestConfigFromEnv(t *testing.T) {
-	for _, name := range []string{"DNSID_DOMAIN", "DNSID_GOVERNANCE_ID", "DNSID_LOG_REF", "DNSID_STATUS_URL", "DNSID_REGISTRY_URL", "DNSID_KU_URL", "DNSID_EK_URL", "DNSID_PUBLISH_PROFILE", "DNSID_DNSSEC_MODE", "DNSID_DNS_SERVER", "DNSID_CA_BUNDLE", "DNSID_PRIVATE_HOSTS"} {
-		t.Setenv(name, "")
-	}
-
-	t.Run("empty environment is zero config", func(t *testing.T) {
-		cfg, err := ConfigFromEnv()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if cfg.Identity != nil || !cfg.Transport.IsZero() || cfg.Transport.PrivateAddressHosts != nil {
-			t.Fatalf("cfg = %+v, want zero", cfg)
-		}
-	})
-
-	t.Run("whitespace-only list is empty", func(t *testing.T) {
-		t.Setenv("DNSID_PRIVATE_HOSTS", " , ,, ")
-		cfg, err := ConfigFromEnv()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(cfg.Transport.PrivateAddressHosts) != 0 {
-			t.Fatalf("PrivateAddressHosts = %q, want empty", cfg.Transport.PrivateAddressHosts)
-		}
-	})
-
-	t.Run("transport and identity are parsed", func(t *testing.T) {
-		t.Setenv("DNSID_PRIVATE_HOSTS", " .test, agent.example.internal ,,")
-		t.Setenv("DNSID_DNS_SERVER", " 127.0.0.1:7753 ")
-		t.Setenv("DNSID_CA_BUNDLE", "/tmp/ca.pem")
-		t.Setenv("DNSID_DNSSEC_MODE", "required")
-		t.Setenv("DNSID_DOMAIN", "alice.dev.dnsid.test")
-		t.Setenv("DNSID_GOVERNANCE_ID", "dev.dnsid.test")
-		t.Setenv("DNSID_REGISTRY_URL", "https://registry.dnsid.test/")
-		cfg, err := ConfigFromEnv()
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := TransportConfig{DNSServer: "127.0.0.1:7753", CABundlePath: "/tmp/ca.pem", PrivateAddressHosts: []string{".test", "agent.example.internal"}}
-		if cfg.Transport.DNSServer != want.DNSServer || cfg.Transport.CABundlePath != want.CABundlePath || !slices.Equal(cfg.Transport.PrivateAddressHosts, want.PrivateAddressHosts) {
-			t.Fatalf("Transport = %+v, want %+v", cfg.Transport, want)
-		}
-		if cfg.Verification.DNSSECMode != DNSSECModeRequired {
-			t.Fatalf("DNSSECMode = %q", cfg.Verification.DNSSECMode)
-		}
-		if cfg.Identity == nil || cfg.Identity.LogRef != "noop:0" || cfg.Identity.StatusURL != "https://registry.dnsid.test/v1/status/alice.dev.dnsid.test" {
-			t.Fatalf("Identity = %+v", cfg.Identity)
-		}
-	})
-
-	t.Run("invalid entries are rejected", func(t *testing.T) {
-		t.Setenv("DNSID_PRIVATE_HOSTS", ".test,127.0.0.1")
-		_, err := ConfigFromEnv()
-		var argErr *ArgumentError
-		if !errors.As(err, &argErr) {
-			t.Fatalf("error = %v, want *ArgumentError", err)
-		}
-	})
 }
 
 func freshStatus() string {

@@ -13,7 +13,7 @@
 // tokens with GetOIDCToken (or CreateOIDCAssertion plus ExchangeOIDCToken)
 // and verify presented tokens with VerifyOIDCToken:
 //
-//	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
+//	idm, err := config.IdentityManagerFromDnsid(ctx, "", dnsid.Config{}, config.Dependencies{})
 //	if err != nil {
 //		log.Fatal(err)
 //	}

@@ -230,7 +230,7 @@ func (c VerificationConfig) snapshot() VerificationConfig {
 // never exempted, and every redirect hop is matched independently. The list
 // is empty by default and there is no built-in exemption for .test or any
 // other name; a local `dnsid` stack needs PrivateAddressHosts: []string{".test"}
-// (or DNSID_PRIVATE_HOSTS=.test via ConfigFromEnv). Entries with an IP
+// (or DNSID_PRIVATE_HOSTS=.test via config.LoadEnvironment). Entries with an IP
 // literal, port, scheme, path, or credentials are rejected at construction.
 type TransportConfig struct {
 	DNSServer           string

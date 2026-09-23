@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -506,19 +505,8 @@ type RegistryClient interface {
 
 // DefaultRegistryURL is the local registry started by `dnsid local up`. It is
 // used when no base URL is passed; hosted use requires an explicit URL (see
-// NewRegistryClientFromEnv).
+// config.RegistryClientFromEnvironment).
 const DefaultRegistryURL = "http://127.0.0.1:7755"
-
-// NewRegistryClientFromEnv builds a registry client from the variables that
-// `dnsid local env` exports: DNSID_REGISTRY_URL (empty means DefaultRegistryURL)
-// and DNSID_API_KEY. Explicit opts win. This is the only constructor that reads
-// the environment.
-func NewRegistryClientFromEnv(opts ...RegistryClientOption) (*HTTPRegistryClient, error) {
-	if key := os.Getenv("DNSID_API_KEY"); key != "" {
-		opts = append([]RegistryClientOption{WithAuthToken(key)}, opts...)
-	}
-	return NewRegistryClientWithOptions(os.Getenv("DNSID_REGISTRY_URL"), opts...)
-}
 
 // isLoopbackHost reports whether host is localhost or a loopback IP.
 func isLoopbackHost(host string) bool {

@@ -7,13 +7,8 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
-	"github.com/dnsid-ai/dnsid-go/log/c2sptlog"
-	"golang.org/x/mod/sumdb/note"
+	"github.com/dnsid-ai/dnsid-go/config"
 )
-
-// This policy is trusted configuration for DNSid's public test log.
-// Production applications should select their own trusted policy.
-const policyURL = "https://log.dnsid.dev/dnsid-policy"
 
 func main() {
 	if len(os.Args) != 2 {
@@ -25,65 +20,14 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Empty outside `eval "$(dnsid local env)"`: SDK defaults are production defaults.
-	envConfig, err := dnsid.ConfigFromEnv()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "reading DNSID_* environment: %v\n", err)
-		os.Exit(2)
-	}
-	transport := envConfig.Transport
-	config := c2sptlog.VerificationRegistryConfig{
-		Transport:        transport,
-		CheckpointMaxAge: 10 * time.Minute,
-		AllowedClockSkew: time.Minute,
-	}
-	switch {
-	case os.Getenv("DNSID_LOG_POLICY_URL") != "":
-		// The local registry serves no stream bundles; verify by raw-log scan.
-		config.PolicyURL = os.Getenv("DNSID_LOG_POLICY_URL")
-	case os.Getenv("DNSID_TRUST_PROFILE") != "":
-		data, err := os.ReadFile(os.Getenv("DNSID_TRUST_PROFILE"))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "reading DNSID_TRUST_PROFILE: %v\n", err)
-			os.Exit(2)
-		}
-		profile, err := c2sptlog.ParseTrustProfile(data)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "invalid DNSID_TRUST_PROFILE: %v\n", err)
-			os.Exit(2)
-		}
-		config.TrustProfile = &profile
-		config.MaxBundleLifetime = 10 * time.Minute
-		config.RequireStreamBundle = true
-	default:
-		bundleKey := os.Getenv("DNSID_BUNDLE_VERIFIER_KEY")
-		if bundleKey == "" {
-			fmt.Fprintln(os.Stderr, "DNSID_TRUST_PROFILE or DNSID_BUNDLE_VERIFIER_KEY is required")
-			os.Exit(2)
-		}
-		bundleVerifier, err := note.NewVerifier(bundleKey)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "invalid DNSID_BUNDLE_VERIFIER_KEY: %v\n", err)
-			os.Exit(2)
-		}
-		config.BundleVerifiers = []note.Verifier{bundleVerifier}
-		config.MaxBundleLifetime = 10 * time.Minute
-		config.RequireStreamBundle = true
-		config.PolicyURL = os.Getenv("DNSID_POLICY_URL")
-		if config.PolicyURL == "" {
-			config.PolicyURL = policyURL
-		}
-	}
-
-	registry, err := c2sptlog.NewVerificationRegistry(ctx, config)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "log setup failed: %v\n", err)
-		os.Exit(1)
-	}
-	idm, err := dnsid.NewIdentityManager(dnsid.Config{Transport: transport}, nil, dnsid.WithLogRegistry(registry))
+	// Log trust comes from DNSID_LOG_TRUST_PROFILE_FILE, DNSID_LOG_POLICY_FILE,
+	// or DNSID_LOG_POLICY_URL; transport from DNSID_DNS_SERVER, DNSID_CA_BUNDLE,
+	// and DNSID_PRIVATE_HOSTS (all exported by `dnsid local env`). Without any
+	// of them the SDK uses production defaults and log checks fail closed.
+	idm, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, config.Dependencies{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "setup failed: %v\n", err)
-		os.Exit(1)
+		os.Exit(2)
 	}
 
 	verified, err := idm.VerifyDomain(ctx, domain)
@@ -95,9 +39,4 @@ func main() {
 	fmt.Printf("verified: %s\n", verified.Domain())
 	fmt.Printf("dnssec: %s\n", verified.DNSSECState())
 	fmt.Printf("status: %s\n", verified.Status().State)
-	if config.RequireStreamBundle {
-		fmt.Println("stream bundle: verified (required)")
-	} else {
-		fmt.Println("log: raw-log scan")
-	}
 }

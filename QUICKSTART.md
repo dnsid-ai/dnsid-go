@@ -64,8 +64,8 @@ dnsid local run my-agent -- go run .    # registers my-agent if needed, runs wit
 `dnsid local run` exports `DNSID_CONFIG_DIR` (the agent's identity) plus `DNSID_REGISTRY_URL` and
 `DNSID_API_KEY` for the local registry. To export the same variables into your shell instead:
 `eval "$(dnsid local env my-agent)"`. Nothing talks to a hosted service; the SDK's registry client
-defaults to `http://127.0.0.1:7755` and `dnsid.NewRegistryClientFromEnv()` picks up the exported
-URL and key.
+defaults to `http://127.0.0.1:7755` and `config.RegistryClientFromEnvironment(nil)` picks up the
+exported URL and key.
 
 **Hosted.** Log in and create an identity once, then set `DNSID_REGISTRY_URL` and `DNSID_API_KEY`
 from the console for any registry calls:
@@ -75,17 +75,21 @@ dnsid auth login                                   # one-time org login -> ~/.dn
 dnsid init --env production --domain <your-fqdn>   # agent identity     -> ~/.dnsid/<your-fqdn>/
 ```
 
-Either way, `NewIdentityManagerFromDnsid("", dnsid.Config{})` reads the identity from
-`$DNSID_CONFIG_DIR` (or `~/.dnsid`) and loads its operational key, giving you a manager that can
-both verify *and* sign as your agent:
+Under `dnsid local run`, `config.IdentityManagerFromEnvironment` reads the identity and key
+location from the exported `DNSID_*` variables; for a hosted identity in `~/.dnsid`, use
+`config.IdentityManagerFromDnsid(ctx, "", ...)`. Either gives you a manager that can both verify
+*and* sign as your agent:
 
 ```go
-idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
+idm, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, config.Dependencies{})
 if err != nil {
 	log.Fatal(err)
 }
 fmt.Println("acting as:", idm.Domain())
 ```
+
+Loaders only parse: nothing is defaulted or derived, so a missing required field (for example
+`DNSID_LOG_REF`) fails construction instead of being substituted.
 
 ## Step 3 — Mint a DNSid JWT
 

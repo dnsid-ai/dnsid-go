@@ -8,13 +8,14 @@ import (
 	"os"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
 	"github.com/dnsid-ai/dnsid-go/webbotauth"
 )
 
 func main() {
 	ctx := context.Background()
 
-	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
+	idm, err := config.IdentityManagerFromDnsid(ctx, "", dnsid.Config{}, config.Dependencies{})
 	if err != nil {
 		die("creating identity manager from ~/.dnsid", err)
 	}

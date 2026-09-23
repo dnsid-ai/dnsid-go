@@ -142,7 +142,7 @@ func NewFromIdentityManager(manager identityManager, kp dnsid.KeyProvider, cfg C
 
 // NewFromIdentityManagerKeyProvider constructs an OIDC profile from a manager
 // that exposes its KeyProvider, such as one loaded with
-// dnsid.NewIdentityManagerFromDnsid.
+// config.IdentityManagerFromDnsid.
 func NewFromIdentityManagerKeyProvider(manager identityManagerWithKeyProvider, cfg Config) *Profile {
 	if manager == nil {
 		return New(nil, "", nil, cfg)

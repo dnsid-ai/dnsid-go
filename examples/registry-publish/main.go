@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
 )
 
 func main() {
@@ -15,18 +16,28 @@ func main() {
 		os.Exit(2)
 	}
 
-	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// Sources in the fixed order: the CLI identity directory ($DNSID_CONFIG_DIR
+	// under `dnsid local run`, otherwise ~/.dnsid), then the environment.
+	env, err := config.LoadEnvironment(nil)
 	if err != nil {
-		die("creating identity manager from $DNSID_CONFIG_DIR or ~/.dnsid", err)
+		die("reading DNSID_* environment", err)
+	}
+	cli, err := config.LoadCliDirectory(env.KeySource.CliDirectory)
+	if err != nil {
+		die("reading DNSid identity directory", err)
+	}
+	idm, err := config.Construct(ctx, config.Merge(cli, env), config.Dependencies{})
+	if err != nil {
+		die("creating identity manager", err)
 	}
 
-	client, err := dnsid.NewRegistryClientFromEnv()
+	client, err := config.RegistryClientFromEnvironment(nil)
 	if err != nil {
 		die("creating registry client", err)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
 
 	registration, err := client.GetRegistration(ctx, idm.Domain())
 	if err != nil {

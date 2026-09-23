@@ -1560,23 +1560,6 @@ func TestNewRegistryClient_DefaultsToLocal(t *testing.T) {
 		t.Fatalf("NewRegistryClient(\"\") = %+v, %v", c, err)
 	}
 
-	c, err = NewRegistryClientFromEnv()
-	if err != nil || c.baseURL != "http://localhost:9999" || c.token != "testnet" {
-		t.Fatalf("env-resolved client = %+v, %v", c, err)
-	}
-
-	// Explicit options win over the environment; unset env means local, no token.
-	c, err = NewRegistryClientFromEnv(WithAuthToken("k"))
-	if err != nil || c.token != "k" {
-		t.Fatalf("explicit option client = %+v, %v", c, err)
-	}
-	t.Setenv("DNSID_REGISTRY_URL", "")
-	t.Setenv("DNSID_API_KEY", "")
-	c, err = NewRegistryClientFromEnv()
-	if err != nil || c.baseURL != DefaultRegistryURL || c.token != "" {
-		t.Fatalf("unset env client = %+v, %v", c, err)
-	}
-
 	// Plaintext HTTP off loopback is rejected, token or not.
 	if _, err := NewRegistryClientWithOptions("http://example.com"); err == nil {
 		t.Fatal("expected rejection of non-loopback HTTP")

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
 	"github.com/dnsid-ai/dnsid-go/oidc"
 )
 
@@ -17,7 +18,10 @@ func main() {
 	}
 	issuer, audience := os.Args[1], os.Args[2]
 
-	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	idm, err := config.IdentityManagerFromDnsid(ctx, "", dnsid.Config{}, config.Dependencies{})
 	if err != nil {
 		die("creating identity manager from ~/.dnsid", err)
 	}
@@ -30,9 +34,6 @@ func main() {
 	}
 	fmt.Println("acting as:", idm.Domain())
 	fmt.Println("signed assertion:", assertion)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	token, err := profile.ExchangeOIDCToken(ctx, oidc.OIDCTokenExchangeOptions{
 		Issuer:    issuer,

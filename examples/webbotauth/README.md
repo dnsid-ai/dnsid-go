@@ -1,6 +1,6 @@
 # Web Bot Auth example
 
-Signs an HTTP request with the Web Bot Auth profile derived from `dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})`, then prints the signed request headers and signed key directory response.
+Signs an HTTP request with the Web Bot Auth profile derived from `config.IdentityManagerFromDnsid`, then prints the signed request headers and signed key directory response.
 
 ```sh
 go run ./examples/webbotauth
