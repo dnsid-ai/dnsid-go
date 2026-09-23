@@ -31,6 +31,11 @@ type VerificationRegistryConfig struct {
 	// PolicyURL is an independently trusted HTTPS location from which to fetch
 	// the C2SP tlog-policy document. Redirects are rejected.
 	PolicyURL string
+	// ExpectedOrigin, when set, is the checkpoint origin (Reference.Origin)
+	// the policy's log key must be named for. It stops a trusted policy for
+	// log A being installed for a record naming log B. TrustProfile enforces
+	// this from its own scope and log prefix, so it is optional there.
+	ExpectedOrigin string
 	// Transport applies DNSid deployment transport controls (custom DNS server,
 	// extra CA bundle, private-network permission) to the policy fetch and all
 	// log reads, exactly as Config.Transport does for the IdentityManager. Pass
@@ -111,6 +116,13 @@ func NewVerificationRegistry(ctx context.Context, config VerificationRegistryCon
 	policy, err := ParsePolicy(document)
 	if err != nil {
 		return nil, err
+	}
+	if config.ExpectedOrigin != "" && (policy.LogVerifier == nil || policy.LogVerifier.Name() != config.ExpectedOrigin) {
+		name := ""
+		if policy.LogVerifier != nil {
+			name = policy.LogVerifier.Name()
+		}
+		return nil, dnsid.NewArgumentError(fmt.Sprintf("dnsid: c2sp-tlog policy log key %q does not match log origin %q", name, config.ExpectedOrigin), nil)
 	}
 	policy.MaxCheckpointAge = config.CheckpointMaxAge
 	policy.ClockSkew = config.AllowedClockSkew

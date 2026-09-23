@@ -14,7 +14,8 @@
 //
 //	registry, err := c2sptlog.NewVerificationRegistry(ctx,
 //		c2sptlog.VerificationRegistryConfig{
-//			PolicyURL: "https://policy.example/dnsid-policy",
+//			PolicyURL:      "https://policy.example/dnsid-policy",
+//			ExpectedOrigin: "tlog.example/log", // Reference.Origin of the record's lr
 //		})
 //
 // A parsed TrustProfile may instead bind one exact scope and log prefix to its

@@ -62,6 +62,18 @@ func TestNewVerificationRegistryFromDocumentConfiguresSafeDefaults(t *testing.T)
 	}
 }
 
+func TestNewVerificationRegistryExpectedOriginRejectsPolicyForAnotherLog(t *testing.T) {
+	document := verificationPolicyDocument(t)
+	if _, err := NewVerificationRegistry(context.Background(), VerificationRegistryConfig{PolicyDocument: document, ExpectedOrigin: "tlog.example/log"}); err != nil {
+		t.Fatalf("matching origin: %v", err)
+	}
+	_, err := NewVerificationRegistry(context.Background(), VerificationRegistryConfig{PolicyDocument: document, ExpectedOrigin: "other.example/log"})
+	var argumentErr *dnsid.ArgumentError
+	if !errors.As(err, &argumentErr) || !bytes.Contains([]byte(err.Error()), []byte(`does not match log origin "other.example/log"`)) {
+		t.Fatalf("error = %T %v, want log-origin mismatch argument error", err, err)
+	}
+}
+
 func TestNewVerificationRegistryConfiguresRequiredStreamBundles(t *testing.T) {
 	_, verifierKey, err := note.GenerateKey(rand.Reader, "bundle.example")
 	if err != nil {
