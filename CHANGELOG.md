@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.35.0] - 2026-09-23
+
+### Features
+
+- feat!: replace AllowPrivateNetwork and implicit .test with PrivateAddressHosts ([#29](https://github.com/dnsid-ai/dnsid-go/pull/29))
+
 ## [unreleased]
 
 ### Features
