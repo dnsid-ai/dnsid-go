@@ -221,12 +221,12 @@ func validateFactoryScanLimits(config ScanSourceConfig) error {
 func factoryResourceFetcher(config VerificationRegistryConfig) (BoundedResourceFetcher, error) {
 	scan := config.ScanSourceConfig
 	if config.ResourceFetcher != nil {
-		if scan.HTTPClient != nil || scan.Transport != nil || config.Transport != (dnsid.TransportConfig{}) {
+		if scan.HTTPClient != nil || scan.Transport != nil || !config.Transport.IsZero() {
 			return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog resource fetcher is mutually exclusive with HTTP client and transport", nil)
 		}
 		return config.ResourceFetcher, nil
 	}
-	if config.Transport != (dnsid.TransportConfig{}) {
+	if !config.Transport.IsZero() {
 		if scan.HTTPClient != nil || scan.Transport != nil {
 			return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog Transport is mutually exclusive with HTTP client and transport", nil)
 		}

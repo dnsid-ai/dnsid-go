@@ -18,7 +18,7 @@ func SignLogEventWithKey(event dnsidlog.LogEvent, role LogSignerRole, kp KeyProv
 SignLogEventWithKey adds one lifecycle signature using an explicitly supplied key provider and bound log canonicalizer. It is suitable for accountable entity services that do not possess the operational private key.
 
 <a name="Tags"></a>
-## type [KeyAge](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L34>)
+## type [KeyAge](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L35>)
 
 KeyAge is a DNSid key\-age policy value.
 

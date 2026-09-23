@@ -29,22 +29,39 @@ func (e *UnsafeDestinationError) Error() string {
 }
 
 // Policy relaxes destination validation. The zero value is the default: only
-// publicly routable addresses are dialed, except for names under the reserved
-// .test TLD (RFC 2606), which can never resolve publicly and so are always
-// permitted to resolve to private or loopback addresses.
+// publicly routable addresses are dialed. There is no built-in exemption for
+// any name or TLD.
 type Policy struct {
-	// AllowPrivate permits private and loopback destinations for every name,
-	// not only .test names. Meant for private registries on a custom zone.
-	AllowPrivate bool
+	// PrivateAddressHosts lists hostnames (exact) or leading-dot suffixes
+	// (".test") whose resolved addresses may be loopback or private-use
+	// (RFC 1918, RFC 4193). Other non-public classes stay rejected.
+	PrivateAddressHosts []string
 }
 
-// UnderTestTLD reports whether host is the reserved .test TLD or a name under
-// it. Such names never resolve on the public internet, so resolving them to a
-// private or loopback address is a deliberate local configuration, not a
-// rebinding attack.
-func UnderTestTLD(host string) bool {
+// AllowsPrivateAddresses reports whether host matches a PrivateAddressHosts
+// entry: an exact hostname, or a leading-dot suffix on a DNS-label boundary
+// (".test" matches "test" and "a.test", not "evil-test" or "a.test.example").
+// Matching is case-insensitive and ignores a trailing dot. IP literals never
+// match.
+func (p Policy) AllowsPrivateAddresses(host string) bool {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	return host == "test" || strings.HasSuffix(host, ".test")
+	if host == "" || net.ParseIP(host) != nil {
+		return false
+	}
+	for _, entry := range p.PrivateAddressHosts {
+		entry = strings.TrimSuffix(strings.ToLower(entry), ".")
+		if entry == "" || entry == "." {
+			continue
+		}
+		if suffix, ok := strings.CutPrefix(entry, "."); ok {
+			if host == suffix || strings.HasSuffix(host, entry) {
+				return true
+			}
+		} else if host == entry {
+			return true
+		}
+	}
+	return false
 }
 
 func NewSafeHTTPClientFrom(base *http.Client) *http.Client {
@@ -177,10 +194,22 @@ var (
 	allocatedIPv6GlobalUnicast = netip.MustParsePrefix("2000::/3")
 )
 
-// IsUnsafeIP reports whether ip is not publicly routable. In addition to the
-// address classes recognized by net.IP, it rejects IANA special-purpose ranges
-// and unallocated IPv6 space.
-func IsUnsafeIP(ip net.IP) bool {
+// IsPrivateOrLoopbackIP reports whether ip is loopback (127.0.0.0/8, ::1) or
+// private-use (RFC 1918, RFC 4193). These are the only non-public classes a
+// PrivateAddressHosts match may resolve to.
+func IsPrivateOrLoopbackIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	addr = addr.Unmap()
+	return addr.IsLoopback() || addr.IsPrivate()
+}
+
+// IsNonPublicIP reports whether ip is not publicly routable. In addition to
+// the address classes recognized by net.IP, it rejects IANA special-purpose
+// ranges and unallocated IPv6 space.
+func IsNonPublicIP(ip net.IP) bool {
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
 		return true
@@ -214,10 +243,9 @@ func DialValidatedIP(
 	if err != nil {
 		return nil, "", err
 	}
-	allowPrivate := policy.AllowPrivate || UnderTestTLD(host)
 
 	if ip := net.ParseIP(host); ip != nil {
-		if !allowPrivate && IsUnsafeIP(ip) {
+		if IsNonPublicIP(ip) {
 			return nil, "", &UnsafeDestinationError{Message: fmt.Sprintf("dial blocked: %s is non-public", ip)}
 		}
 		conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
@@ -231,13 +259,23 @@ func DialValidatedIP(
 	if len(ips) == 0 {
 		return nil, "", &UnsafeDestinationError{Message: fmt.Sprintf("dial blocked: %s resolved to no addresses", host)}
 	}
+	allowPrivate := policy.AllowsPrivateAddresses(host)
+	sawPublic, sawPrivate := false, false
 	for _, ip := range ips {
 		if ip.IP == nil {
 			return nil, "", &UnsafeDestinationError{Message: fmt.Sprintf("dial blocked: %s resolved to invalid address", host)}
 		}
-		if !allowPrivate && IsUnsafeIP(ip.IP) {
+		if !IsNonPublicIP(ip.IP) {
+			sawPublic = true
+			continue
+		}
+		if !allowPrivate || !IsPrivateOrLoopbackIP(ip.IP) {
 			return nil, "", &UnsafeDestinationError{Message: fmt.Sprintf("dial blocked: %s resolves to non-public %s", host, ip.IP)}
 		}
+		sawPrivate = true
+	}
+	if sawPublic && sawPrivate {
+		return nil, "", &UnsafeDestinationError{Message: fmt.Sprintf("dial blocked: %s resolves to both public and private addresses", host)}
 	}
 
 	var lastErr error

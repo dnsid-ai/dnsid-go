@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -219,15 +220,46 @@ func (c VerificationConfig) snapshot() VerificationConfig {
 // modified. Setting a DNS server routes lookups through the stdlib resolver,
 // which performs no DNSSEC validation.
 //
-// SDK-managed HTTPS refuses to dial private and loopback addresses, except
-// for names under the reserved .test TLD (RFC 2606), which never resolve
-// publicly and so are always permitted: a dnsid local registry on its default
-// zone needs no extra setting. AllowPrivateNetwork extends that permission to
-// every name, for a private registry on a custom zone.
+// SDK-managed HTTPS refuses to dial loopback, private, link-local, multicast,
+// reserved, and other non-routable addresses. PrivateAddressHosts is the only
+// exemption: entries are hostnames ("agent.example.test", exact match) or
+// leading-dot suffixes (".test", matching "test" and every name beneath it on
+// a DNS-label boundary). A matching destination may resolve to loopback or
+// private-use (RFC 1918, RFC 4193) addresses; link-local, multicast, reserved,
+// and mixed public+private resolutions are still rejected, IP-literal URLs are
+// never exempted, and every redirect hop is matched independently. The list
+// is empty by default and there is no built-in exemption for .test or any
+// other name; a local `dnsid` stack needs PrivateAddressHosts: []string{".test"}
+// (or DNSID_PRIVATE_HOSTS=.test via ConfigFromEnv). Entries with an IP
+// literal, port, scheme, path, or credentials are rejected at construction.
 type TransportConfig struct {
 	DNSServer           string
 	CABundlePath        string
-	AllowPrivateNetwork bool
+	PrivateAddressHosts []string
+}
+
+// IsZero reports whether no transport setting is configured.
+func (c TransportConfig) IsZero() bool {
+	return c.DNSServer == "" && c.CABundlePath == "" && len(c.PrivateAddressHosts) == 0
+}
+
+// validate checks that every PrivateAddressHosts entry is a bare hostname or a
+// leading-dot suffix.
+func (c TransportConfig) validate() error {
+	for _, entry := range c.PrivateAddressHosts {
+		name := strings.TrimPrefix(entry, ".")
+		if _, err := NormalizeFQDN(name); err != nil || net.ParseIP(strings.TrimSuffix(name, ".")) != nil {
+			return NewArgumentError(fmt.Sprintf("dnsid: Config.Transport.PrivateAddressHosts entry %q must be a hostname or leading-dot suffix", entry), err)
+		}
+	}
+	return nil
+}
+
+// snapshot returns a copy so later caller mutation of the slice cannot affect
+// the manager.
+func (c TransportConfig) snapshot() TransportConfig {
+	c.PrivateAddressHosts = slices.Clone(c.PrivateAddressHosts)
+	return c
 }
 
 // IdentityResolver verifies DNSid identity for peer domains.
@@ -654,7 +686,7 @@ func NewIdentityManager(cfg Config, kp KeyProvider, opts ...IdentityManagerOptio
 		identity.Domain, _ = NormalizeFQDN(identity.Domain) // validated above
 		identity.PolicyFlags = append([]PolicyFlag(nil), identity.PolicyFlags...)
 	}
-	m := &IdentityManager{identity: identity, verification: cfg.Verification.snapshot(), transport: cfg.Transport, keys: kp, cache: NewIdentityCache(5 * time.Minute)}
+	m := &IdentityManager{identity: identity, verification: cfg.Verification.snapshot(), transport: cfg.Transport.snapshot(), keys: kp, cache: NewIdentityCache(5 * time.Minute)}
 	for _, opt := range opts {
 		opt(m)
 	}
@@ -675,14 +707,17 @@ func NewIdentityManager(cfg Config, kp KeyProvider, opts ...IdentityManagerOptio
 // transport setting with no remaining SDK-managed consumer is rejected.
 func (m *IdentityManager) applyTransportDefaults() error {
 	cfg := m.transport
+	if err := cfg.validate(); err != nil {
+		return err
+	}
 	if cfg.DNSServer != "" && m.dnsInjected && m.httpsInjected {
 		return NewArgumentError("dnsid: Config.Transport.DNSServer has no SDK-managed consumer: both DNSResolver and HTTPSFetcher are injected", nil)
 	}
 	if cfg.CABundlePath != "" && m.httpsInjected {
 		return NewArgumentError("dnsid: Config.Transport.CABundlePath has no SDK-managed consumer: HTTPSFetcher is injected", nil)
 	}
-	if cfg.AllowPrivateNetwork && m.httpsInjected {
-		return NewArgumentError("dnsid: Config.Transport.AllowPrivateNetwork has no SDK-managed consumer: HTTPSFetcher is injected", nil)
+	if len(cfg.PrivateAddressHosts) > 0 && m.httpsInjected {
+		return NewArgumentError("dnsid: Config.Transport.PrivateAddressHosts has no SDK-managed consumer: HTTPSFetcher is injected", nil)
 	}
 	if !m.dnsInjected {
 		if cfg.DNSServer != "" {
@@ -1577,6 +1612,9 @@ func resolverForDNSServer(server string) ipResolverFunc {
 }
 
 func httpClientWithTransportConfig(cfg TransportConfig) (*http.Client, error) {
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 	var base *http.Client
 	if cfg.CABundlePath != "" {
 		client, err := httpClientWithCABundle(cfg.CABundlePath)
@@ -1585,7 +1623,7 @@ func httpClientWithTransportConfig(cfg TransportConfig) (*http.Client, error) {
 		}
 		base = client
 	}
-	return newSafeHTTPClientFromWithResolver(base, resolverForDNSServer(cfg.DNSServer), cfg.AllowPrivateNetwork), nil
+	return newSafeHTTPClientFromWithResolver(base, resolverForDNSServer(cfg.DNSServer), slices.Clone(cfg.PrivateAddressHosts)), nil
 }
 
 func httpClientWithCABundle(path string) (*http.Client, error) {

@@ -130,10 +130,11 @@ func newApplication(ctx context.Context) (*application, int, error) {
 	// The local testnet supplies its own DNS server and CA; the same transport
 	// config drives DNS, HTTPS fetches, log reads, and the outbound A2A client.
 	// Production applications leave it zero for SDK defaults.
-	transport := dnsid.TransportConfig{
-		DNSServer:    os.Getenv("DNSID_DNS_SERVER"),
-		CABundlePath: os.Getenv("DNSID_CA_BUNDLE"),
+	envConfig, err := dnsid.ConfigFromEnv()
+	if err != nil {
+		return nil, 0, err
 	}
+	transport := envConfig.Transport
 	policyURL := os.Getenv("DNSID_LOG_POLICY_URL")
 	if policyURL == "" {
 		return nil, 0, fmt.Errorf("DNSID_LOG_POLICY_URL is required; run with `dnsid testnet run`")
