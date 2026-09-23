@@ -10,6 +10,7 @@
 
 ### Features
 
+- feat: add `VerificationRegistryConfig.ExpectedOrigin`, rejecting a trusted policy whose log key is not named for the record's `Reference.Origin`, so callers using `PolicyURL` no longer need to fetch and parse the policy themselves to make that check.
 - [**breaking**] feat: replace `TransportConfig.AllowPrivateNetwork` with `PrivateAddressHosts`, an explicit hostname/leading-dot-suffix allowlist for loopback and private-use destinations. Names under `.test` are no longer implicitly exempt from the SSRF guard; a local `dnsid` stack needs `PrivateAddressHosts: []string{".test"}`. `TransportConfig` is no longer comparable; use `IsZero()`.
 - feat: add `ConfigFromEnv` reading `DNSID_DNS_SERVER`, `DNSID_CA_BUNDLE`, comma-separated `DNSID_PRIVATE_HOSTS`, `DNSID_DNSSEC_MODE`, and the `DNSID_DOMAIN` identity variables into `Config`.
 

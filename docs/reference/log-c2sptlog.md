@@ -21,7 +21,8 @@ The log method is "c2sp\-tlog". An identity record references a stream with an l
 ```
 registry, err := c2sptlog.NewVerificationRegistry(ctx,
 	c2sptlog.VerificationRegistryConfig{
-		PolicyURL: "https://policy.example/dnsid-policy",
+		PolicyURL:      "https://policy.example/dnsid-policy",
+		ExpectedOrigin: "tlog.example/log", // Reference.Origin of the record's lr
 	})
 ```
 
@@ -309,7 +310,7 @@ NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed, SDK\
 Development and production verification prefer signed stream bundles with safe raw\-scan fallback. The default checkpoint store is restart\-ephemeral; deployments needing rollback protection across restarts should inject durable storage and retain the returned registry for the process lifetime.
 
 <a name="NewVerificationRegistry"></a>
-## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L83>)
+## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L88>)
 
 ```go
 func NewVerificationRegistry(ctx context.Context, config VerificationRegistryConfig) (*dnsidlog.LogRegistry, error)
@@ -1854,7 +1855,7 @@ type TrustedC2spCheckpointStore interface {
 ```
 
 <a name="VerificationRegistryConfig"></a>
-## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L72>)
+## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L77>)
 
 VerificationRegistryConfig configures NewVerificationRegistry. Exactly one of TrustProfile, PolicyDocument, and PolicyURL must be set. A PolicyURL is a caller\-selected trust\-policy location; it is never inferred from an identity's untrusted lr value.
 
@@ -1869,6 +1870,11 @@ type VerificationRegistryConfig struct {
     // PolicyURL is an independently trusted HTTPS location from which to fetch
     // the C2SP tlog-policy document. Redirects are rejected.
     PolicyURL string
+    // ExpectedOrigin, when set, is the checkpoint origin (Reference.Origin)
+    // the policy's log key must be named for. It stops a trusted policy for
+    // log A being installed for a record naming log B. TrustProfile enforces
+    // this from its own scope and log prefix, so it is optional there.
+    ExpectedOrigin string
     // Transport applies DNSid deployment transport controls (custom DNS server,
     // extra CA bundle, private-network permission) to the policy fetch and all
     // log reads, exactly as Config.Transport does for the IdentityManager. Pass
