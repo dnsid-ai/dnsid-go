@@ -293,6 +293,21 @@ func TestConstruct_TwoLogTrustVariantsIsArgumentError(t *testing.T) {
 	wantArgumentError(t, err)
 }
 
+func TestConstruct_InvalidConfigDoesNotFetchPolicy(t *testing.T) {
+	fetched := false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fetched = true }))
+	t.Cleanup(server.Close)
+	l := Loaded{
+		Dnsid:    dnsid.Config{Verification: dnsid.VerificationConfig{StatusCheckInterval: -1}},
+		LogTrust: LogTrust{PolicyURL: server.URL + "/policy"},
+	}
+	_, err := Construct(context.Background(), l, Dependencies{})
+	wantArgumentError(t, err)
+	if fetched {
+		t.Fatal("policy was fetched for an invalid configuration")
+	}
+}
+
 func TestConstruct_CallerLogRegistryWins(t *testing.T) {
 	// A policy URL this bogus would fail the factory; the caller's registry
 	// means it is never consulted.

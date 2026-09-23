@@ -224,6 +224,11 @@ func LoadCliDirectory(dir string) (Loaded, error) {
 // the base field, an absent one leaves base unchanged. Slices replace as a
 // whole (nil is absent, empty is present). LogTrust is replaced as a whole
 // section when overlay sets any variant.
+//
+// Scalars use the Go zero value as absent, so an overlay cannot force a base
+// value back to zero. This only matters for Verification.StatusCheckInterval:
+// an explicit 0 in overlay leaves a non-zero base interval in place (zero is
+// also the constructor default). No loader sets that field.
 func Merge(base, overlay Loaded) Loaded {
 	if overlay.Dnsid.Identity != nil {
 		merged := overlayIdentity(derefIdentity(base.Dnsid.Identity), *overlay.Dnsid.Identity)
@@ -317,9 +322,14 @@ const logTrustFreshness = 10 * time.Minute
 // dependencies. Caller dependencies win: LogRegistry is built from LogTrust
 // only when deps.LogRegistry is nil, and key providers are built from
 // KeySource only when Dnsid.Identity is present and the corresponding provider
-// is nil. Every configuration default and validation is then applied by
-// dnsid.NewIdentityManager.
+// is nil. loaded.Dnsid is validated first so invalid configuration never
+// triggers a key-file read or policy fetch; dnsid.NewIdentityManager then
+// applies every default and validation.
 func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.IdentityManager, error) {
+	// Fail on configuration before reading key files or fetching a policy.
+	if err := loaded.Dnsid.Validate(); err != nil {
+		return nil, err
+	}
 	if deps.LogRegistry == nil && !loaded.LogTrust.isZero() {
 		registry, err := logRegistryFromTrust(ctx, loaded.LogTrust, loaded.Dnsid.Transport)
 		if err != nil {
