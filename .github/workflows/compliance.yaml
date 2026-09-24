@@ -3,13 +3,11 @@ on: pull_request
 permissions:
   contents: read
   issues: write
-  pull-requests: write
 jobs:
   compliance:
-    # Forks cannot access the private compliance harness or its checkout token.
+    # The private compliance harness is not available to fork pull requests.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    uses: dnsid-ai/dnsid-sdk-compliance/.github/workflows/sdk-compliance.yaml@main
-    secrets: inherit # pragma: allowlist secret
+    uses: dnsid-ai/dnsid-sdk-compliance/.github/workflows/sdk-compliance.yaml@74b48988742602e9ef95eec04f5638b366491ff2
     with:
       sdk: go
       ref: ${{ github.event.pull_request.head.sha }}
