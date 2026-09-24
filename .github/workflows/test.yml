@@ -19,7 +19,7 @@ jobs:
         # Minimum supported (must match the `go` directive in go.mod) and the
         # latest stable release. Keep the first entry in sync with go.mod — see
         # COMPATIBILITY.md.
-        go-version: ["1.26.5", "stable"]
+        go-version: ["1.26.6", "stable"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

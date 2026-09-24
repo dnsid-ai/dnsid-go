@@ -2,12 +2,27 @@ package httpsig
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestHTTPVerification_RejectsCandidateFanoutBeforeResolution(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+	var inputs, signatures []string
+	for i := range 3 {
+		inputs = append(inputs, fmt.Sprintf(`s%d=("@method" "@authority" "@target-uri");created=1;keyid="attacker%d.example#kid";alg="ed25519"`, i, i))
+		signatures = append(signatures, fmt.Sprintf("s%d=:c2ln:", i))
+	}
+	req.Header.Set("Signature-Input", strings.Join(inputs, ", "))
+	req.Header.Set("Signature", strings.Join(signatures, ", "))
+	if _, err := (&Profile{}).VerifyHTTPRequest(context.Background(), req); err == nil || !strings.Contains(err.Error(), "too many acceptable HTTP signatures") {
+		t.Fatalf("VerifyHTTPRequest with three eligible signatures = %v", err)
+	}
+}
 
 func TestHTTPVerification_ResourceLimits(t *testing.T) {
 	if _, err := readBoundedBody(bytes.NewReader(make([]byte, (8<<20)+1))); err == nil {

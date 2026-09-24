@@ -292,6 +292,7 @@ func (p *Profile) CreateSignedHTTPClient(base *http.Client, opts SigningOptions)
 }
 
 // VerifyHTTPRequest verifies a DNSid HTTP Message Signature and returns the verified signer domain.
+// At most two eligible signatures may be supplied; applications should also rate-limit inbound requests.
 func (p *Profile) VerifyHTTPRequest(ctx context.Context, req *http.Request) (*dnsid.VerifiedDomain, error) {
 	ctx, cancel := dnsid.VerificationContext(ctx)
 	defer cancel()
@@ -811,6 +812,9 @@ func parseHTTPSignatureHeaders(req *http.Request) ([]*parsedHTTPSignature, error
 			if !parsed.alg.Valid() {
 				continue
 			}
+		}
+		if len(candidates) == 2 {
+			return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: too many acceptable HTTP signatures", nil)
 		}
 		candidates = append(candidates, parsed)
 	}

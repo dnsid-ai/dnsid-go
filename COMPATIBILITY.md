@@ -10,7 +10,7 @@ rotation, revocation, transport, cache, and error guidance are documented in
 
 | | Version | Notes |
 |---|---|---|
-| **Minimum** | Go 1.26.5 | The `go` directive in [`go.mod`](go.mod). Building or `go get`ing with an older toolchain fails. |
+| **Minimum** | Go 1.26.6 | The `go` directive in [`go.mod`](go.mod). Building or `go get`ing with an older toolchain fails. |
 | **Maximum** | Latest stable | Go's [compatibility promise](https://go.dev/doc/go1compat) covers newer releases; we test against the current stable line. |
 
 CI tests the exact minimum toolchain and the latest stable Go release. The minimum changes only
@@ -21,10 +21,10 @@ when the module adopts a newer language or standard-library requirement.
 [`.github/workflows/test.yml`](.github/workflows/test.yml) runs the full test suite (root module,
 including `log/c2sptlog`, plus the `key/aws` module) on a matrix of:
 
-- **`1.26.5`** — the minimum, pinned to the `go.mod` directive.
+- **`1.26.6`** — the minimum, pinned to the `go.mod` directive.
 - **`stable`** — the latest stable release resolved by `actions/setup-go` at run time.
 
-`oldstable` is deliberately excluded because it predates the 1.26.5 minimum and cannot build the
+`oldstable` is deliberately excluded because it predates the 1.26.6 minimum and cannot build the
 module.
 
 ## Module dependency versions

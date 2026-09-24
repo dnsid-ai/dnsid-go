@@ -11,7 +11,7 @@ This repository is the Go module `github.com/dnsid-ai/dnsid-go`. Core SDK code l
 - `go test -run TestName ./path`: run a focused test, for example `go test -run TestParseTXTRecord_UnsupportedVersionIsParseError .`.
 - `go build ./...`: compile all packages.
 
-Use Go 1.26.5 or newer. `mise.toml` selects the current Go 1.26 patch release.
+Use Go 1.26.6 or newer. `mise.toml` selects the current Go 1.26 patch release.
 
 ## Coding Style & Naming Conventions
 
