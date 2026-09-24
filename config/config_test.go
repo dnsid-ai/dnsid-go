@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
@@ -178,13 +179,19 @@ func TestLoadEnvironment_FullSchema(t *testing.T) {
 			Domain: "a.example.com", GovernanceID: "example.com", StatusURL: "https://s", LogRef: "m:1",
 			EntityKeyURL: "https://ek", KeyURL: "https://ku", PublishProfile: "dnsid-draft-01", CapabilitiesURL: "https://cu",
 		}},
-		LogTrust:           LogTrust{PolicyDocument: document},
-		Registry:           Registry{RegistryURL: "https://r"},
-		RegistryCredential: "secret",
-		KeySource:          KeySource{CliDirectory: "/cfg", KeyStorePath: "/ks"},
+		LogTrust:  LogTrust{PolicyDocument: document},
+		Registry:  Registry{RegistryURL: "https://r"},
+		KeySource: KeySource{CliDirectory: "/cfg", KeyStorePath: "/ks"},
 	}
 	if !reflect.DeepEqual(l, want) {
 		t.Fatalf("Loaded = %+v\nwant     %+v", l, want)
+	}
+	encoded, err := json.Marshal(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(fmt.Sprintf("%+v %s", l, encoded), "secret") {
+		t.Fatal("registry credential leaked through loaded configuration")
 	}
 }
 
@@ -487,9 +494,24 @@ func TestRegistryClientFromEnvironment(t *testing.T) {
 	if err != nil || c == nil {
 		t.Fatalf("unset env: %v, %v", c, err)
 	}
-	c, err = RegistryClientFromEnvironment(mapEnv(map[string]string{"DNSID_REGISTRY_URL": "http://localhost:9999/", "DNSID_API_KEY": "k"}))
-	if err != nil || c == nil {
-		t.Fatalf("loopback env: %v, %v", c, err)
+	wantAuth := "Bearer k"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != wantAuth {
+			t.Errorf("Authorization = %q, want %q", got, wantAuth)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	env := mapEnv(map[string]string{"DNSID_REGISTRY_URL": server.URL, "DNSID_API_KEY": " k "})
+	for _, opts := range [][]dnsid.RegistryClientOption{nil, {dnsid.WithAuthToken("override")}} {
+		c, err = RegistryClientFromEnvironment(env, opts...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.GetAgentStatus(context.Background(), "agent.example.com"); err != nil {
+			t.Fatal(err)
+		}
+		wantAuth = "Bearer override"
 	}
 	if _, err = RegistryClientFromEnvironment(mapEnv(map[string]string{"DNSID_REGISTRY_URL": "http://example.com"})); err == nil {
 		t.Fatal("non-loopback HTTP accepted")

@@ -44,7 +44,7 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 Construct builds an IdentityManager from a merged Loaded and the caller's dependencies. Caller dependencies win: LogRegistry is built from LogTrust only when deps.LogRegistry is nil, and key providers are built from KeySource only when Dnsid.Identity is present and the corresponding provider is nil. loaded.Dnsid is validated first so invalid configuration never triggers a key\-file read or policy fetch; dnsid.NewIdentityManager then applies every default and validation.
 
 <a name="IdentityManagerFromDnsid"></a>
-## func [IdentityManagerFromDnsid](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L452>)
+## func [IdentityManagerFromDnsid](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L467>)
 
 ```go
 func IdentityManagerFromDnsid(ctx context.Context, dir string, overlay dnsid.Config, deps Dependencies) (*dnsid.IdentityManager, error)
@@ -53,7 +53,7 @@ func IdentityManagerFromDnsid(ctx context.Context, dir string, overlay dnsid.Con
 IdentityManagerFromDnsid is Construct\(Merge\(LoadCliDirectory\(dir\), \{Dnsid: overlay\}\), deps\). An empty dir reads \~/.dnsid.
 
 <a name="IdentityManagerFromEnvironment"></a>
-## func [IdentityManagerFromEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L442>)
+## func [IdentityManagerFromEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L457>)
 
 ```go
 func IdentityManagerFromEnvironment(ctx context.Context, getenv func(string) string, overlay dnsid.Config, deps Dependencies) (*dnsid.IdentityManager, error)
@@ -62,30 +62,33 @@ func IdentityManagerFromEnvironment(ctx context.Context, getenv func(string) str
 IdentityManagerFromEnvironment is Construct\(Merge\(LoadEnvironment\(getenv\), \{Dnsid: overlay\}\), deps\). A nil getenv reads the process environment. With no DNSID\_DOMAIN the result is a verification\-only manager; under \`dnsid local run\`, DNSID\_CONFIG\_DIR supplies the key files.
 
 <a name="RegistryClientFromEnvironment"></a>
-## func [RegistryClientFromEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L464>)
+## func [RegistryClientFromEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L479>)
 
 ```go
 func RegistryClientFromEnvironment(getenv func(string) string, opts ...dnsid.RegistryClientOption) (*dnsid.HTTPRegistryClient, error)
 ```
 
-RegistryClientFromEnvironment builds a registry client from DNSID\_REGISTRY\_URL and DNSID\_API\_KEY. A nil getenv reads the process environment. The constructor applies the loopback default when the URL is absent. Explicit opts are applied after the loaded credential and win.
+RegistryClientFromEnvironment builds a registry client from DNSID\_REGISTRY\_URL and DNSID\_API\_KEY. A nil getenv reads the process environment. The constructor applies the loopback default when the URL is absent. Explicit opts are applied after the environment credential and win.
 
 <a name="Dependencies"></a>
-## type [Dependencies](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L85-L90>)
+## type [Dependencies](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L82-L90>)
 
-Dependencies are the caller\-supplied runtime dependencies for Construct. KeyProvider, EntityKeyProvider, and LogRegistry are explicit so Construct can observe presence; everything else passes through Options unchanged.
+Dependencies are the caller\-supplied runtime dependencies for Construct. Explicit fields let Construct skip loaded values displaced by the caller.
 
 ```go
 type Dependencies struct {
     KeyProvider       dnsid.KeyProvider
     EntityKeyProvider dnsid.KeyProvider
     LogRegistry       *dnsidlog.LogRegistry
-    Options           []dnsid.IdentityManagerOption
+    DNSResolver       dnsid.DNSResolver
+    HTTPSFetcher      dnsid.HTTPSFetcher
+    IdentityCache     *dnsid.IdentityCache
+    HTTPClient        *http.Client
 }
 ```
 
 <a name="KeySource"></a>
-## type [KeySource](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L67-L76>)
+## type [KeySource](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L65-L74>)
 
 KeySource names where local key material lives. Variants are not exclusive: CliDirectory supplies the operational key when present, otherwise KeyStorePath; EntityKeyPath supplies the entity key whenever set.
 
@@ -103,24 +106,21 @@ type KeySource struct {
 ```
 
 <a name="Loaded"></a>
-## type [Loaded](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L31-L39>)
+## type [Loaded](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L32-L37>)
 
 Loaded is the partial configuration produced by every source. Absent fields are their Go zero value; nil slices are absent while empty non\-nil slices are present and meaningful \(an explicit empty allowlist denies all\).
 
 ```go
 type Loaded struct {
-    Dnsid    dnsid.Config
-    LogTrust LogTrust
-    Registry Registry
-    // RegistryCredential is the registry bearer token. Never place it in a
-    // loggable config object.
-    RegistryCredential string
-    KeySource          KeySource
+    Dnsid     dnsid.Config
+    LogTrust  LogTrust
+    Registry  Registry
+    KeySource KeySource
 }
 ```
 
 <a name="LoadCliDirectory"></a>
-### func [LoadCliDirectory](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L187>)
+### func [LoadCliDirectory](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L188>)
 
 ```go
 func LoadCliDirectory(dir string) (Loaded, error)
@@ -131,16 +131,16 @@ LoadCliDirectory reads \<dir\>/config.json written by the DNSid CLI. An empty di
 The CLI treats a root config.json as the current\-identity pointer: when it names a domain and \<dir\>/\<domain\>/config.json exists, that per\-identity file is read instead. A leaf identity directory is read as\-is.
 
 <a name="LoadEnvironment"></a>
-### func [LoadEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L98>)
+### func [LoadEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L100>)
 
 ```go
 func LoadEnvironment(getenv func(string) string) (Loaded, error)
 ```
 
-LoadEnvironment reads the DNSID\_\* variables defined by the SDK environment schema. A nil getenv reads the process environment. Values are trimmed; unset, empty, or whitespace\-only variables are absent. Unknown DNSID\_\* variables are ignored. DNSID\_DNSSEC\_MODE outside auto/validated/required is an \*dnsid.ArgumentError; DNSID\_LOG\_POLICY\_FILE and DNSID\_LOG\_TRUST\_PROFILE\_FILE are read and parsed here.
+LoadEnvironment reads the DNSID\_\* variables defined by the SDK environment schema. A nil getenv reads the process environment. Values are trimmed; unset, empty, or whitespace\-only variables are absent. Unknown DNSID\_\* variables are ignored. DNSID\_DNSSEC\_MODE outside auto/validated/required is an \*dnsid.ArgumentError; DNSID\_LOG\_POLICY\_FILE and DNSID\_LOG\_TRUST\_PROFILE\_FILE are read and parsed here. DNSID\_API\_KEY is a secret, not loaded configuration; RegistryClientFromEnvironment reads it directly without placing it in Loaded.
 
 <a name="Merge"></a>
-### func [Merge](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L260>)
+### func [Merge](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L263>)
 
 ```go
 func Merge(base, overlay Loaded) Loaded
@@ -148,10 +148,10 @@ func Merge(base, overlay Loaded) Loaded
 
 Merge applies overlay onto base field\-wise: a present overlay field replaces the base field, an absent one leaves base unchanged. Slices replace as a whole \(nil is absent, empty is present\). LogTrust is replaced as a whole section when overlay sets any variant.
 
-Scalars use the Go zero value as absent, so an overlay cannot force a base value back to zero. This only matters for Verification.StatusCheckInterval: an explicit 0 in overlay leaves a non\-zero base interval in place \(zero is also the constructor default\). No loader sets that field.
+Scalar zero values are absent: overlays cannot clear loaded Identity strings, Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or CABundlePath, Registry.RegistryURL, or KeySource paths. Non\-nil empty slices remain present. To clear a field, edit the merged config before passing it to the ordinary constructor. No loader sets StatusCheckInterval, so its zero\-value limitation affects code overlays only.
 
 <a name="LogTrust"></a>
-## type [LogTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L44-L53>)
+## type [LogTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L42-L51>)
 
 LogTrust selects the lifecycle\-log trust used to build a LogRegistry when the caller does not inject one. Exactly one variant must be set when the section is present; Construct rejects two or more.
 
@@ -169,7 +169,7 @@ type LogTrust struct {
 ```
 
 <a name="Registry"></a>
-## type [Registry](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L60-L62>)
+## type [Registry](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L58-L60>)
 
 Registry holds registry control\-plane settings.
 

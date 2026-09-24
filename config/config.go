@@ -30,13 +30,10 @@ import (
 // are their Go zero value; nil slices are absent while empty non-nil slices are
 // present and meaningful (an explicit empty allowlist denies all).
 type Loaded struct {
-	Dnsid    dnsid.Config
-	LogTrust LogTrust
-	Registry Registry
-	// RegistryCredential is the registry bearer token. Never place it in a
-	// loggable config object.
-	RegistryCredential string
-	KeySource          KeySource
+	Dnsid     dnsid.Config
+	LogTrust  LogTrust
+	Registry  Registry
+	KeySource KeySource
 }
 
 // LogTrust selects the lifecycle-log trust used to build a LogRegistry when
@@ -97,7 +94,9 @@ type Dependencies struct {
 // unset, empty, or whitespace-only variables are absent. Unknown DNSID_*
 // variables are ignored. DNSID_DNSSEC_MODE outside auto/validated/required is
 // an *dnsid.ArgumentError; DNSID_LOG_POLICY_FILE and
-// DNSID_LOG_TRUST_PROFILE_FILE are read and parsed here.
+// DNSID_LOG_TRUST_PROFILE_FILE are read and parsed here. DNSID_API_KEY is a
+// secret, not loaded configuration; RegistryClientFromEnvironment reads it
+// directly without placing it in Loaded.
 func LoadEnvironment(getenv func(string) string) (Loaded, error) {
 	if getenv == nil {
 		getenv = os.Getenv
@@ -155,7 +154,6 @@ func LoadEnvironment(getenv func(string) string) (Loaded, error) {
 	}
 
 	l.Registry.RegistryURL = env("DNSID_REGISTRY_URL")
-	l.RegistryCredential = env("DNSID_API_KEY")
 	l.KeySource.CliDirectory = env("DNSID_CONFIG_DIR")
 	l.KeySource.KeyStorePath = env("DNSID_KEY_STORE")
 	return l, nil
@@ -258,7 +256,7 @@ func fileExists(path string) bool {
 //
 // Scalar zero values are absent: overlays cannot clear loaded Identity strings,
 // Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or
-// CABundlePath, Registry.RegistryURL or RegistryCredential, or KeySource paths.
+// CABundlePath, Registry.RegistryURL, or KeySource paths.
 // Non-nil empty slices remain present. To clear a field, edit the merged
 // config before passing it to the ordinary constructor. No loader sets
 // StatusCheckInterval, so its zero-value limitation affects code overlays only.
@@ -290,9 +288,6 @@ func Merge(base, overlay Loaded) Loaded {
 	}
 	if overlay.Registry.RegistryURL != "" {
 		base.Registry.RegistryURL = overlay.Registry.RegistryURL
-	}
-	if overlay.RegistryCredential != "" {
-		base.RegistryCredential = overlay.RegistryCredential
 	}
 	if overlay.KeySource.CliDirectory != "" {
 		base.KeySource.CliDirectory = overlay.KeySource.CliDirectory
@@ -480,14 +475,17 @@ func IdentityManagerFromDnsid(ctx context.Context, dir string, overlay dnsid.Con
 // RegistryClientFromEnvironment builds a registry client from
 // DNSID_REGISTRY_URL and DNSID_API_KEY. A nil getenv reads the process
 // environment. The constructor applies the loopback default when the URL is
-// absent. Explicit opts are applied after the loaded credential and win.
+// absent. Explicit opts are applied after the environment credential and win.
 func RegistryClientFromEnvironment(getenv func(string) string, opts ...dnsid.RegistryClientOption) (*dnsid.HTTPRegistryClient, error) {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
 	loaded, err := LoadEnvironment(getenv)
 	if err != nil {
 		return nil, err
 	}
-	if loaded.RegistryCredential != "" {
-		opts = append([]dnsid.RegistryClientOption{dnsid.WithAuthToken(loaded.RegistryCredential)}, opts...)
+	if token := strings.TrimSpace(getenv("DNSID_API_KEY")); token != "" {
+		opts = append([]dnsid.RegistryClientOption{dnsid.WithAuthToken(token)}, opts...)
 	}
 	return dnsid.NewRegistryClientWithOptions(loaded.Registry.RegistryURL, opts...)
 }
