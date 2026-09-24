@@ -14,6 +14,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -80,13 +81,15 @@ func (k KeySource) isZero() bool {
 }
 
 // Dependencies are the caller-supplied runtime dependencies for Construct.
-// KeyProvider, EntityKeyProvider, and LogRegistry are explicit so Construct
-// can observe presence; everything else passes through Options unchanged.
+// Explicit fields let Construct skip loaded values displaced by the caller.
 type Dependencies struct {
 	KeyProvider       dnsid.KeyProvider
 	EntityKeyProvider dnsid.KeyProvider
 	LogRegistry       *dnsidlog.LogRegistry
-	Options           []dnsid.IdentityManagerOption
+	DNSResolver       dnsid.DNSResolver
+	HTTPSFetcher      dnsid.HTTPSFetcher
+	IdentityCache     *dnsid.IdentityCache
+	HTTPClient        *http.Client
 }
 
 // LoadEnvironment reads the DNSID_* variables defined by the SDK environment
@@ -358,6 +361,9 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	if err := loaded.Dnsid.Validate(); err != nil {
 		return nil, err
 	}
+	if deps.HTTPClient != nil && deps.HTTPSFetcher != nil {
+		return nil, dnsid.NewArgumentError("dnsid: HTTPClient and HTTPSFetcher cannot both be supplied", nil)
+	}
 	if deps.LogRegistry == nil && !loaded.LogTrust.isZero() {
 		registry, err := logRegistryFromTrust(ctx, loaded.LogTrust, loaded.Dnsid.Transport)
 		if err != nil {
@@ -381,7 +387,19 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 			deps.EntityKeyProvider = kp
 		}
 	}
-	opts := append([]dnsid.IdentityManagerOption(nil), deps.Options...)
+	var opts []dnsid.IdentityManagerOption
+	if deps.DNSResolver != nil {
+		opts = append(opts, dnsid.WithDNSResolver(deps.DNSResolver))
+	}
+	if deps.HTTPClient != nil {
+		opts = append(opts, dnsid.WithHTTPClient(deps.HTTPClient))
+	}
+	if deps.HTTPSFetcher != nil {
+		opts = append(opts, dnsid.WithHTTPSFetcher(deps.HTTPSFetcher))
+	}
+	if deps.IdentityCache != nil {
+		opts = append(opts, dnsid.WithIdentityCache(deps.IdentityCache))
+	}
 	if deps.LogRegistry != nil {
 		opts = append(opts, dnsid.WithLogRegistry(deps.LogRegistry))
 	}

@@ -318,6 +318,13 @@ func TestConstruct_CallerLogRegistryWins(t *testing.T) {
 	}
 }
 
+func TestConstruct_ExplicitHTTPClientHasNoCABundleConsumer(t *testing.T) {
+	_, err := Construct(context.Background(), Loaded{
+		Dnsid: dnsid.Config{Transport: dnsid.TransportConfig{CABundlePath: "/missing-ca.pem"}},
+	}, Dependencies{HTTPClient: &http.Client{}})
+	wantArgumentError(t, err)
+}
+
 func TestConstruct_PolicyDocumentBuildsRegistry(t *testing.T) {
 	m, err := Construct(context.Background(), Loaded{LogTrust: LogTrust{PolicyDocument: policyDocument(t)}}, Dependencies{})
 	if err != nil || m == nil {
@@ -420,15 +427,13 @@ func TestConstruct_CliEntityKeyPathAndPerDomainLayout(t *testing.T) {
 
 func TestConstruct_CallerKeyProvidersWin(t *testing.T) {
 	dir := t.TempDir()
-	newKey(t, filepath.Join(dir, "private.jwk"))
-	newKey(t, filepath.Join(dir, "entity.jwk"))
 	caller := newKey(t, filepath.Join(dir, "caller.jwk"))
 	writeJSON(t, filepath.Join(dir, "config.json"), map[string]any{
 		"domain": "agent.example.com", "governance_id": "example.com", "status_url": "https://api.example.com/s",
-		"log_ref": "m:1", "entity_key_path": "entity.jwk",
+		"log_ref": "m:1", "ek_url": "https://example.com/ek", "entity_key_path": "missing.jwk",
 	})
-	m, err := IdentityManagerFromDnsid(context.Background(), dir, dnsid.Config{}, Dependencies{KeyProvider: caller})
-	if err != nil || activeKid(m.KeyProvider()) != activeKid(caller) {
+	m, err := IdentityManagerFromDnsid(context.Background(), dir, dnsid.Config{}, Dependencies{KeyProvider: caller, EntityKeyProvider: caller})
+	if err != nil || activeKid(m.KeyProvider()) != activeKid(caller) || m.EntityKeyURL() != "https://example.com/ek" {
 		t.Fatalf("manager = %v, %v", m, err)
 	}
 }
