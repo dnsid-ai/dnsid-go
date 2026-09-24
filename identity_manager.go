@@ -71,6 +71,21 @@ type Config struct {
 	Transport    TransportConfig
 }
 
+// Validate checks every section of the configuration without constructing a
+// manager: Identity (when set), Verification, and Transport. It performs no
+// network or file I/O.
+func (c Config) Validate() error {
+	if c.Identity != nil {
+		if err := c.Identity.Validate(); err != nil {
+			return err
+		}
+	}
+	if err := c.Verification.validate(); err != nil {
+		return err
+	}
+	return c.Transport.validate()
+}
+
 // IdentityConfig contains the local identity's DNSid publication settings.
 type IdentityConfig struct {
 	Domain          string
@@ -230,7 +245,7 @@ func (c VerificationConfig) snapshot() VerificationConfig {
 // never exempted, and every redirect hop is matched independently. The list
 // is empty by default and there is no built-in exemption for .test or any
 // other name; a local `dnsid` stack needs PrivateAddressHosts: []string{".test"}
-// (or DNSID_PRIVATE_HOSTS=.test via ConfigFromEnv). Entries with an IP
+// (or DNSID_PRIVATE_HOSTS=.test via config.LoadEnvironment). Entries with an IP
 // literal, port, scheme, path, or credentials are rejected at construction.
 type TransportConfig struct {
 	DNSServer           string
@@ -669,7 +684,7 @@ func (m *IdentityManager) EntityKeyURL() string {
 // KeyProvider without identity, identity without a KeyProvider, or Config.Transport settings whose only
 // SDK-managed consumers were all injected.
 func NewIdentityManager(cfg Config, kp KeyProvider, opts ...IdentityManagerOption) (*IdentityManager, error) {
-	if err := cfg.Verification.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	var identity IdentityConfig
@@ -680,9 +695,6 @@ func NewIdentityManager(cfg Config, kp KeyProvider, opts ...IdentityManagerOptio
 		return nil, NewArgumentError("dnsid: Config.Identity is required when a KeyProvider is supplied", nil)
 	case cfg.Identity != nil:
 		identity = *cfg.Identity
-		if err := identity.Validate(); err != nil {
-			return nil, err
-		}
 		identity.Domain, _ = NormalizeFQDN(identity.Domain) // validated above
 		identity.PolicyFlags = append([]PolicyFlag(nil), identity.PolicyFlags...)
 	}

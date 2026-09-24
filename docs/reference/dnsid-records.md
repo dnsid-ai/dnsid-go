@@ -27,7 +27,7 @@ func ParseLogRef(lr string) (method, entryRef string, err error)
 ParseLogRef splits an lr= log reference of the form "method:entryRef" into its method and entry\-reference parts. It returns a \*ParseError for malformed references or invalid method names.
 
 <a name="RegistrantDomain"></a>
-## type [DNSRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L281-L286>)
+## type [DNSRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L280-L285>)
 
 DNSRecord matches the OpenAPI DNSRecord schema.
 
@@ -372,7 +372,7 @@ func (r *TXTRecord) WithSignature(sig string) *TXTRecord
 WithSignature returns a copy of the record with Signature set to sig.
 
 <a name="TXTRecordRData"></a>
-## type [TXTRecordRData](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L287-L290>)
+## type [TXTRecordRData](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L302-L305>)
 
 TXTRecordRData is one concatenated TXT RDATA value plus resolver metadata.
 

@@ -1,11 +1,12 @@
 # DNSid registry-publish example
 
 Publishes an agent's `_dnsid` identity record through the DNSid registry. It loads the current
-identity with `dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})`, reads the agent's registration, then either
+identity with `config.LoadCliDirectory` (`$DNSID_CONFIG_DIR` under `dnsid local run`, otherwise
+`~/.dnsid`) merged with `config.LoadEnvironment`, reads the agent's registration, then either
 signs the registry-prepared canonical identity record with the local entity key (client publication
 authority) or waits for registry-managed DNS publication and verifies the published record.
 
-The registry client comes from `dnsid.NewRegistryClientFromEnv()`: `DNSID_REGISTRY_URL` and
+The registry client comes from `config.RegistryClientFromEnvironment(nil)`: `DNSID_REGISTRY_URL` and
 `DNSID_API_KEY`, defaulting to the local registry at `http://127.0.0.1:7755`.
 
 ## Local

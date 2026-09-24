@@ -110,15 +110,3 @@ func ExampleIdentityManager_VerifyDomain() {
 	// governance: example.com
 	// status: ACTIVE
 }
-
-// ExampleNewIdentityManagerFromDnsid loads the agent identity created with
-// the DNSid CLI (`dnsid auth login`, then `dnsid init`) and prints the domain
-// the manager acts as. An empty directory argument reads DNSID_CONFIG_DIR
-// when set, otherwise ~/.dnsid.
-func ExampleNewIdentityManagerFromDnsid() {
-	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("acting as:", idm.Domain())
-}

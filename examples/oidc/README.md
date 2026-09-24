@@ -1,7 +1,7 @@
 # DNSid OIDC example
 
 Mints a DNSid OIDC token: signs a short-lived JWT-bearer assertion with the agent's operational key
-from `dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})`, then exchanges it at the issuer's token endpoint for
+from `config.IdentityManagerFromDnsid`, then exchanges it at the issuer's token endpoint for
 an access token.
 
 ```sh

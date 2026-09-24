@@ -18,8 +18,8 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
 	"github.com/dnsid-ai/dnsid-go/httpsig"
-	"github.com/dnsid-ai/dnsid-go/log/c2sptlog"
 )
 
 const (
@@ -127,34 +127,19 @@ func newApplication(ctx context.Context) (*application, int, error) {
 		return nil, 0, fmt.Errorf("DNSID_AGENT_PORT is required; run with `dnsid testnet run`")
 	}
 
-	// The local testnet supplies its own DNS server and CA; the same transport
-	// config drives DNS, HTTPS fetches, log reads, and the outbound A2A client.
-	// Production applications leave it zero for SDK defaults.
-	envConfig, err := dnsid.ConfigFromEnv()
+	// `dnsid testnet run` exports the identity, key location, log trust
+	// (DNSID_LOG_POLICY_URL), and the testnet's DNS server and CA. The same
+	// transport config also drives the outbound A2A client. Production
+	// applications leave transport unset for SDK defaults.
+	loaded, err := config.LoadEnvironment(nil)
 	if err != nil {
 		return nil, 0, err
 	}
-	transport := envConfig.Transport
-	policyURL := os.Getenv("DNSID_LOG_POLICY_URL")
-	if policyURL == "" {
-		return nil, 0, fmt.Errorf("DNSID_LOG_POLICY_URL is required; run with `dnsid testnet run`")
-	}
-	logRegistry, err := c2sptlog.NewVerificationRegistry(ctx, c2sptlog.VerificationRegistryConfig{
-		PolicyURL: policyURL,
-		Transport: transport,
-	})
+	identity, err := config.Construct(ctx, loaded, config.Dependencies{})
 	if err != nil {
 		return nil, 0, err
 	}
-	identity, err := dnsid.NewIdentityManagerFromDnsid(
-		"",
-		dnsid.Config{Transport: transport},
-		dnsid.WithLogRegistry(logRegistry),
-	)
-	if err != nil {
-		return nil, 0, err
-	}
-	httpClient, err := dnsid.CreateDnsidHTTPClient(transport)
+	httpClient, err := dnsid.CreateDnsidHTTPClient(loaded.Dnsid.Transport)
 	if err != nil {
 		return nil, 0, err
 	}

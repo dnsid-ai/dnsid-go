@@ -147,6 +147,7 @@ EOF
 
 # page slug | module dir | package dir within module | nav label | description
 PACKAGES=(
+	"config|.|./config|Configuration|Load DNSid SDK configuration from DNSID_* environment variables and DNSid CLI directories; loaders parse, constructors default."
 	"jose|.|./jose|Profile: JOSE|DNSid JOSE profile: create and verify DNSid JWTs and compact JWS."
 	"oidc|.|./oidc|Profile: OIDC|Mint and verify DNSid OIDC tokens."
 	"httpsig|.|./httpsig|Profile: HTTP signatures|RFC 9421 HTTP Message Signatures for DNSid agents."
@@ -161,6 +162,7 @@ PACKAGES=(
 NAV_ORDER=(
 	overview
 	dnsid
+	config
 	dnsid-records
 	jose
 	httpsig

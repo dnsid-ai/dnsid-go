@@ -32,8 +32,8 @@
 // also act as an agent: build and sign its own _dnsid record
 // (CreateTXTRecord), publish its operational and entity JWKS documents
 // (GetKeySet, GetEntityKeySet), write lifecycle log events, and drive registry
-// workflows. NewIdentityManagerFromDnsid loads such a manager from an identity
-// created by the DNSid CLI.
+// workflows. The config package loads such a manager from DNSID_* environment
+// variables or an identity created by the DNSid CLI.
 //
 // # Main entry types
 //

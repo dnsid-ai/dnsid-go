@@ -50,13 +50,13 @@ reply: "[from: bob.dev.dnsid.test; verified sender: alice.dev.dnsid.test] hello 
 ```
 
 `dnsid testnet run` supplies the C2SP policy location separately as
-`DNSID_LOG_POLICY_URL`. The example treats that value as trusted testnet
-configuration and never derives it from `DNSID_LOG_REF` or the log prefix, so
-custom testnet proxy ports are preserved. Startup fails with a clear error when
-the value is missing.
+`DNSID_LOG_POLICY_URL`. `config.LoadEnvironment` treats that value as trusted
+testnet configuration and never derives it from `DNSID_LOG_REF` or the log
+prefix, so custom testnet proxy ports are preserved. Verification fails closed
+when the value is missing.
 
-The example passes `DNSID_DNS_SERVER` and `DNSID_CA_BUNDLE` as a single
-`dnsid.TransportConfig` to the log registry, the `IdentityManager`, and the
-outbound HTTP client. Production applications leave it zero for the SDK's
+`config.Construct` passes `DNSID_DNS_SERVER` and `DNSID_CA_BUNDLE` as a single
+`dnsid.TransportConfig` to the log registry and the `IdentityManager`; the
+example reuses it for the outbound HTTP client. Production applications leave it zero for the SDK's
 default SSRF-safe transport and keep their official or pinned C2SP policy
 independently configured.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
 	"github.com/dnsid-ai/dnsid-go/oidc"
 )
 
@@ -20,15 +21,15 @@ import (
 func ExampleProfile_GetOIDCToken() {
 	// Load the agent identity from ~/.dnsid. The manager can both verify
 	// domains and sign as the agent.
-	idm, err := dnsid.NewIdentityManagerFromDnsid("", dnsid.Config{})
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	idm, err := config.IdentityManagerFromDnsid(ctx, "", dnsid.Config{}, config.Dependencies{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	profile := oidc.NewFromIdentityManagerKeyProvider(idm, oidc.Config{})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 
 	tok, err := profile.GetOIDCToken(ctx, oidc.OIDCTokenExchangeOptions{
 		Issuer:   "https://issuer.example",
