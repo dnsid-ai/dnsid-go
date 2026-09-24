@@ -16,7 +16,7 @@ Message Signatures (RFC 9421).
 go get github.com/dnsid-ai/dnsid-go
 ```
 
-Requires Go 1.26.5 or newer (matches the `go` directive in `go.mod`). See
+Requires Go 1.26.6 or newer (matches the `go` directive in `go.mod`). See
 [Compatibility](#compatibility).
 
 ## Verify a domain
@@ -97,7 +97,7 @@ the Go module release; the two versions are intentionally separate.
 
 | | Supported |
 |---|---|
-| **Go** | 1.26.5 (minimum, per `go.mod`) through the latest stable release. CI tests `1.26.5` and `stable`. |
+| **Go** | 1.26.6 (minimum, per `go.mod`) through the latest stable release. CI tests `1.26.6` and `stable`. |
 | **Platforms** | linux/amd64 tested in CI; linux/arm64, darwin, and windows/amd64 supported (pure Go, no platform-specific code). |
 | **Crypto/cgo** | Pure Go, builds with `CGO_ENABLED=0`. Standard-library crypto; FIPS via Go's native FIPS mode. |
 | **DNSSEC** | `auto` works with the built-in resolver and rejects known validation failures. `validated` and `required` need a DNSSEC-aware resolver supplied via `WithDNSResolver`. |

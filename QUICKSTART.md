@@ -10,7 +10,7 @@ identity, created with the DNSid CLI — locally with `dnsid local`, or hosted w
 
 | Tool | For |
 |---|---|
-| **Go 1.26.5+** — [go.dev/dl](https://go.dev/dl/) | building and running the SDK |
+| **Go 1.26.6+** — [go.dev/dl](https://go.dev/dl/) | building and running the SDK |
 | **DNSid CLI** (`dnsid`) — [docs.dnsid.ai](https://docs.dnsid.ai) | Steps 2–4: `dnsid local up` (Docker) or `dnsid init` to create an agent identity |
 
 ```sh

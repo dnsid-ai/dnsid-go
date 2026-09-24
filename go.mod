@@ -1,6 +1,6 @@
 module github.com/dnsid-ai/dnsid-go
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/WebDecoy/web-bot-auth v0.4.1
@@ -24,7 +24,7 @@ require (
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
