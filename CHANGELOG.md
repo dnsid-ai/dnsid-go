@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.36.0] - 2026-09-24
+
+### Features
+
+- feat: add VerificationRegistryConfig.ExpectedOrigin ([#31](https://github.com/dnsid-ai/dnsid-go/pull/31))
+- feat!: add config package for design 12 configuration loading ([#33](https://github.com/dnsid-ai/dnsid-go/pull/33))
+
+### Bug Fixes
+
+- fix(ci): pin compliance workflow and stop inheriting secrets ([#34](https://github.com/dnsid-ai/dnsid-go/pull/34))
+
+### Other
+
+- security: bound HTTP signature verification and raise Go minimum ([#35](https://github.com/dnsid-ai/dnsid-go/pull/35))
+
 ## [0.35.0] - 2026-09-23
 
 ### Features
