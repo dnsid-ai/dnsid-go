@@ -256,10 +256,12 @@ func fileExists(path string) bool {
 // whole (nil is absent, empty is present). LogTrust is replaced as a whole
 // section when overlay sets any variant.
 //
-// Scalars use the Go zero value as absent, so an overlay cannot force a base
-// value back to zero. This only matters for Verification.StatusCheckInterval:
-// an explicit 0 in overlay leaves a non-zero base interval in place (zero is
-// also the constructor default). No loader sets that field.
+// Scalar zero values are absent: overlays cannot clear loaded Identity strings,
+// Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or
+// CABundlePath, Registry.RegistryURL or RegistryCredential, or KeySource paths.
+// Non-nil empty slices remain present. To clear a field, edit the merged
+// config before passing it to the ordinary constructor. No loader sets
+// StatusCheckInterval, so its zero-value limitation affects code overlays only.
 func Merge(base, overlay Loaded) Loaded {
 	if overlay.Dnsid.Identity != nil {
 		merged := overlayIdentity(derefIdentity(base.Dnsid.Identity), *overlay.Dnsid.Identity)

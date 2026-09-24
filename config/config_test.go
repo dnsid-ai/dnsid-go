@@ -248,9 +248,18 @@ func TestIdentityManagerFromDnsid_EmptyDirReadsHomeNotEnv(t *testing.T) {
 
 func TestMerge_PresenceNotTruthiness(t *testing.T) {
 	a := []dnsid.TrustedEntity{{GovernanceID: "a.example"}}
-	base := Loaded{Dnsid: dnsid.Config{Verification: dnsid.VerificationConfig{TrustedEntities: a}}}
+	base := Loaded{Dnsid: dnsid.Config{
+		Verification: dnsid.VerificationConfig{TrustedEntities: a, StatusCheckInterval: 5},
+		Transport:    dnsid.TransportConfig{DNSServer: "1.2.3.4:53"},
+	}}
 
-	got := Merge(base, Loaded{Dnsid: dnsid.Config{Verification: dnsid.VerificationConfig{TrustedEntities: []dnsid.TrustedEntity{}}}})
+	got := Merge(base, Loaded{Dnsid: dnsid.Config{
+		Verification: dnsid.VerificationConfig{TrustedEntities: []dnsid.TrustedEntity{}, StatusCheckInterval: 0},
+		Transport:    dnsid.TransportConfig{DNSServer: ""},
+	}})
+	if got.Dnsid.Verification.StatusCheckInterval != 5 || got.Dnsid.Transport.DNSServer != "1.2.3.4:53" {
+		t.Fatalf("zero-valued scalar overlay cleared a loaded value: %+v", got.Dnsid)
+	}
 	if got.Dnsid.Verification.TrustedEntities == nil || len(got.Dnsid.Verification.TrustedEntities) != 0 {
 		t.Fatalf("explicit empty overlay: TrustedEntities = %v, want []", got.Dnsid.Verification.TrustedEntities)
 	}
