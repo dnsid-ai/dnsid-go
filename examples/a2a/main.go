@@ -123,8 +123,8 @@ func run() error {
 
 func newApplication(ctx context.Context) (*application, int, error) {
 	port, err := strconv.Atoi(os.Getenv("DNSID_AGENT_PORT"))
-	if err != nil || port < 1 {
-		return nil, 0, fmt.Errorf("DNSID_AGENT_PORT is required; run with `dnsid testnet run`")
+	if err != nil || port < 1 || port > 65535 {
+		return nil, 0, fmt.Errorf("DNSID_AGENT_PORT is required; run with `dnsid local run`")
 	}
 
 	// `dnsid testnet run` exports the identity, key location, log trust

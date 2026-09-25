@@ -3,8 +3,9 @@
 **Verify a DNSid domain, then act as an agent: mint a DNSid JWT and sign an HTTP request — all from
 Go, in a few minutes.**
 
-Step 1 needs nothing but the SDK. Steps 2–4 sign on an agent's behalf, so they need a DNSid
-identity, created with the DNSid CLI — locally with `dnsid local`, or hosted with `dnsid init`.
+Step 1 needs independently trusted log policy, but no local signing key. Steps 2–4 sign on an
+agent's behalf, so they need a DNSid identity, created with the DNSid CLI — locally with
+`dnsid local`, or hosted with `dnsid init`.
 
 ## Prerequisites
 
@@ -19,8 +20,8 @@ go get github.com/dnsid-ai/dnsid-go
 
 ## Step 1 — Verify a domain (no identity required)
 
-A verify-only `IdentityManager` needs no key. Give it a DNSid-enabled domain and it resolves the
-`_dnsid` record, verifies the profile-selected record-signing and runtime JWKS, and queries the
+A verify-only `IdentityManager` needs no key, but does need log trust. Give it a DNSid-enabled
+domain and it resolves the `_dnsid` record, verifies the profile-selected record-signing and runtime JWKS, and queries the
 status endpoint. The current SDK accepts exact `v=dnsid-draft-01` and `v=DNSid1` records. It
 preserves the selector as signed; `DNSid1` is verification-only until version 1 becomes an RFC.
 The default `auto` DNSSEC policy works with the built-in resolver: it preserves an `UNKNOWN`
@@ -28,14 +29,14 @@ validation state but rejects any resolver-reported validation failure. Use a DNS
 with `validated` or `required` mode when the application needs stronger DNSSEC assurance.
 
 ```go
-idm, err := dnsid.NewVerifier()
-if err != nil {
-	log.Fatal(err)
-}
-
 ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 defer cancel()
 
+// Set DNSID_LOG_TRUST_PROFILE_FILE to an independently trusted profile first.
+idm, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, config.Dependencies{})
+if err != nil {
+	log.Fatal(err)
+}
 verified, err := idm.VerifyDomain(ctx, "your-agent.example.com")
 if err != nil {
 	log.Fatalf("invalid: %v", err)
@@ -47,10 +48,12 @@ fmt.Printf("%s  governance=%s  status=%s\n",
 Runnable version: [`examples/validate-domain`](examples/validate-domain).
 
 ```sh
-go run ./examples/validate-domain your-agent.example.com
+DNSID_LOG_TRUST_PROFILE_FILE=/path/to/trusted-profile.json \
+  go run ./examples/validate-domain your-agent.example.com
 ```
 
-Replace `your-agent.example.com` with a DNSid-enabled domain.
+Replace `your-agent.example.com` with a DNSid-enabled domain. For a local agent, use
+`eval "$(dnsid local env)"` instead; see the [example README](examples/validate-domain/README.md).
 
 ## Step 2 — Load your agent identity
 
