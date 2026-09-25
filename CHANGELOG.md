@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.1] - 2026-09-25
+
+### Bug Fixes
+
+- fix: pin current development C2SP log trust ([#37](https://github.com/dnsid-ai/dnsid-go/pull/37))
+- fix: a2a example fix ([#36](https://github.com/dnsid-ai/dnsid-go/pull/36))
+- fix: update tlog docs to use opaque stream id ([#39](https://github.com/dnsid-ai/dnsid-go/pull/39))
+
 ## [0.36.0] - 2026-09-24
 
 ### Features
