@@ -20,10 +20,10 @@ A DNSid identity is published as a signed \_dnsid TXT record on the agent's doma
 
 ### IdentityManager
 
-IdentityManager is the facade for the SDK. A verify\-only manager needs no key material; the minimal flow mirrors the README:
+IdentityManager is the facade for the SDK. A verify\-only manager needs no key material, but does need independently configured log trust. Set DNSID\_LOG\_TRUST\_PROFILE\_FILE to a trusted profile before using this flow:
 
 ```
-idm, err := dnsid.NewVerifier()
+idm, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, config.Dependencies{})
 if err != nil {
 	log.Fatal(err)
 }

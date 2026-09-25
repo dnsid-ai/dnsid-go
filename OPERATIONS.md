@@ -5,14 +5,14 @@ This guide documents the production behavior of `github.com/dnsid-ai/dnsid-go` a
 ## Compatibility and API versioning
 
 - The SDK publishes new `_dnsid` records with `v=dnsid-draft-01` and verifies both `v=dnsid-draft-01` and the pre-RFC `v=DNSid1` selector. Unknown, dated, or future TXT record selectors fail verification.
-- Registry control-plane calls use `/api/v1/...` paths. `NewRegistryClient` requires an HTTPS registry URL; `NewRegistryClientWithOptions` permits HTTP only for local/testing use and refuses to send bearer tokens over plaintext unless `WithInsecureHTTP` is set.
+- Registry control-plane calls use `/api/v1/...` paths. Both registry constructors accept HTTPS or HTTP on loopback (the local default); non-loopback HTTP requires `WithInsecureHTTP` through `NewRegistryClientWithOptions` and is intended only for testing.
 - Go, platform, dependency, DNSSEC, and FIPS support are defined in [COMPATIBILITY.md](COMPATIBILITY.md). Until the module reaches v1.0.0, breaking public API changes increment the minor version.
 
 ## HTTP transport, timeouts, redirects, and retries
 
 Core verification (`IdentityManager.VerifyDomain`) performs HTTPS JSON fetches for entity JWKS (`ek=`), operational JWKS (`ku=`), and status (`su=`):
 
-- SDK-managed HTTP clients use a rebinding-resistant transport: the hostname is resolved once, all returned addresses must be public, and the dial uses a validated concrete IP. Loopback, private, link-local, multicast, interface-local, and unspecified addresses are rejected.
+- SDK-managed HTTP clients use a rebinding-resistant transport: the hostname is resolved once, every returned address is checked, and the dial uses a validated concrete IP. By default, loopback and private addresses are rejected; `Config.Transport.PrivateAddressHosts` explicitly permits loopback or private-use addresses for named hosts or suffixes (for example, `.test`). Link-local, multicast, reserved, and mixed public/private resolutions remain rejected; IP-literal URLs are never exempted.
 - The safe transport preserves settings from a supplied `*http.Transport`, including TLS settings and dial/handshake/idle knobs. Wrapped custom `RoundTripper` values cannot be cloned into the safe transport and are replaced with a new safe transport with a warning to stderr.
 - The safe dialer has a 10 second TCP dial timeout. Core, application-profile, and C2SP identity verification share the caller's context deadline; when absent, `dnsid.DefaultVerificationTimeout` supplies a **30 second overall budget**. Child DNS/HTTPS requests, redirects, JWT retries, signature candidates, and recursive migration checks do not restart that budget. Coalesced work has a finite 30 second ceiling, preserves each waiter's cancellation/deadline, and is canceled when all waiters leave. Per-resource HTTP timeouts can shorten, not extend, the invocation budget.
 - Every SDK network operation creates requests with the caller's context. Context cancellation and deadlines abort DNS lookup, connect, TLS handshake, response read, registry polling, C2SP log scans, and OIDC HTTP calls where those paths use SDK request helpers.
@@ -21,16 +21,16 @@ Core verification (`IdentityManager.VerifyDomain`) performs HTTPS JSON fetches f
 - Verification does not automatically retry failed DNS, JWKS, status, or log reads. Callers choose retry policy from the returned error type and `Transient()` flag. Registry prepared-event APIs expose `RegistryAPIError.RetrySameEntry()` and require retrying the exact same bytes and idempotency key for indeterminate submission states.
 - JSON response sizes are bounded: JWKS and registry responses are limited to 1 MiB, status responses to 64 KiB, and C2SP scan resources to their configured scan limits.
 
-Example verification client with a hard request budget:
+Example verification client with a hard request budget (set `DNSID_LOG_TRUST_PROFILE_FILE` to an independently trusted profile first):
 
 ```go
+ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+defer cancel()
 client := &http.Client{Timeout: 10 * time.Second}
-manager, err := dnsid.NewVerifier(dnsid.WithHTTPClient(client))
+manager, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, config.Dependencies{HTTPClient: client})
 if err != nil {
 	return err
 }
-ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-defer cancel()
 _, err = manager.VerifyDomain(ctx, "agent.example.com")
 ```
 

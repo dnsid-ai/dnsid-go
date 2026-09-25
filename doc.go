@@ -15,9 +15,10 @@
 // # IdentityManager
 //
 // IdentityManager is the facade for the SDK. A verify-only manager needs no
-// key material; the minimal flow mirrors the README:
+// key material, but does need independently configured log trust. Set
+// DNSID_LOG_TRUST_PROFILE_FILE to a trusted profile before using this flow:
 //
-//	idm, err := dnsid.NewVerifier()
+//	idm, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, config.Dependencies{})
 //	if err != nil {
 //		log.Fatal(err)
 //	}

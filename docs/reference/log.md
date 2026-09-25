@@ -23,7 +23,7 @@ The package also models the fixed six\-state agent lifecycle machine \(AgentStat
 ```
 registry := log.NewLogRegistry()
 // A log method binding (e.g. c2sptlog.Register) populates the registry.
-reader, err := registry.NewReader("c2sp-tlog:public:https://tlog.example.com/dnsid#agent.example.com")
+reader, err := registry.NewReader("c2sp-tlog:public:https://tlog.example.com/dnsid#N4m8yB1Qk6RzT3w7Vp2JxA")
 if err != nil {
 	// handle malformed lr value
 }
