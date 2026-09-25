@@ -121,7 +121,7 @@ chose:
 
 - DNS TXT lookup of `_dnsid.<domain>` through your system resolver (no hardcoded resolver)
 - HTTPS GET to the JWKS and status URLs published in that TXT record
-- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dnsid.dev` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws`
+- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws`
 - No telemetry, usage reporting, update checks, or crash reporting
 
 **Logging.** None. Errors are returned to the caller; the library never writes to stdout, stderr, or a logger.
