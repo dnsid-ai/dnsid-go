@@ -3,9 +3,9 @@
 **Verify a DNSid domain, then act as an agent: mint a DNSid JWT and sign an HTTP request — all from
 Go, in a few minutes.**
 
-Step 1 needs independently trusted log policy, but no local signing key. Steps 2–4 sign on an
-agent's behalf, so they need a DNSid identity, created with the DNSid CLI — locally with
-`dnsid local`, or hosted with `dnsid init`.
+Step 1 needs explicit log trust, but no local signing key. Steps 2–4 sign on an agent's behalf,
+so they need a DNSid identity, created with the DNSid CLI — locally with `dnsid local`, or
+hosted with `dnsid init`.
 
 ## Prerequisites
 
@@ -52,8 +52,28 @@ DNSID_LOG_TRUST_PROFILE_FILE=/path/to/trusted-profile.json \
   go run ./examples/validate-domain your-agent.example.com
 ```
 
-Replace `your-agent.example.com` with a DNSid-enabled domain. For a local agent, use
-`eval "$(dnsid local env)"` instead; see the [example README](examples/validate-domain/README.md).
+Replace `your-agent.example.com` with a DNSid-enabled domain. Choose log trust based on the
+log you expect to verify:
+
+- **DNSid-managed development or production logs:** the SDK includes reviewed trust profiles.
+  Opt in from Go code (instead of the environment loader above):
+
+  ```go
+  idm, err := config.Construct(ctx, config.Loaded{
+      LogTrust: config.LogTrust{Managed: true},
+  }, config.Dependencies{})
+  ```
+
+  This is not an environment-variable default and does not trust local or third-party logs.
+- **Local CLI registry:** `eval "$(dnsid local env)"` supplies `DNSID_LOG_POLICY_URL` plus
+  local DNS and CA settings; see the [example README](examples/validate-domain/README.md).
+- **Other logs or independently pinned policy:** set `DNSID_LOG_TRUST_PROFILE_FILE` (preferred
+  for stream-bundle verification), `DNSID_LOG_POLICY_FILE`, or an independently trusted
+  `DNSID_LOG_POLICY_URL`. Do not derive trust from the unverified `DNSID_LOG_REF`.
+
+See [config.LogTrust](docs/reference/config.md#LogTrust) and
+[C2SP verification](docs/reference/log-c2sptlog.md#NewDnsidManagedVerificationRegistry)
+for the API details.
 
 ## Step 2 — Load your agent identity
 
