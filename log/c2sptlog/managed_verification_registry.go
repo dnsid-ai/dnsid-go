@@ -16,10 +16,10 @@ const (
 	managedDevelopmentProfile    = `{
   "version": 1,
   "scope": "public",
-  "log_prefix": "https://log.dnsid.dev",
-  "tlog_policy": "log log.dnsid.dev+052e4f74+AeVyq6M2TaREOeeZ4lsQ5XEm9B0w1FtvS5TO8iWKyTN0\nwitness dnsid-witness-1 witness.dnsid.dev/w1+6a659d6a+BKY6cayDG6j/EW1YMrZwzqUWNudBIphAkWkOvAtwgiy7\nquorum dnsid-witness-1\n",
+  "log_prefix": "https://log.dev.dnsid.ai",
+  "tlog_policy": "log log.dev.dnsid.ai+cad12acd+Afnd3sdzfp8nCXzDQchrnWn9QOox5AglR147bURESRqu\nwitness dnsid-witness-1 witness.dev.dnsid.ai/w1+50822ded+BAH9KuulelD3yZBDTneG46gKZY+OWwdUPBmLmq/YjOkO\nquorum dnsid-witness-1\n",
   "bundle_verifier_keys": [
-    "dnsid-stream-bundle+403a6611+AeE6U4Cbeke0Y9/7TiJve8CJPTFY/KDI0ZIlSU4pfbBD"
+    "dnsid-stream-bundle+0c241174+AeuT9PKyiewb9hkzygvki7UuOs5ly2kfY/C4Tfh7/ix0"
   ]
 }`
 	managedProductionProfile = `{
@@ -59,7 +59,7 @@ type managedTrustSelector struct {
 }
 
 var dnsidManagedTrustCatalog = []managedTrustEntry{
-	{scope: "public", logPrefix: "https://log.dnsid.dev", trustProfileDocument: managedDevelopmentProfile},
+	{scope: "public", logPrefix: "https://log.dev.dnsid.ai", trustProfileDocument: managedDevelopmentProfile},
 	{scope: "public", logPrefix: "https://log.dnsid.ai", trustProfileDocument: managedProductionProfile},
 }
 
