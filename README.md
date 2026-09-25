@@ -30,16 +30,18 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
 )
 
 func main() {
-	idm, err := dnsid.NewVerifier()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Set DNSID_LOG_TRUST_PROFILE_FILE to an independently trusted profile first.
+	idm, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, config.Dependencies{})
 	if err != nil {
 		panic(err)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 
 	verified, err := idm.VerifyDomain(ctx, "your-agent.example.com")
 	if err != nil {
@@ -112,8 +114,9 @@ transport, cache, and error guidance are in **[OPERATIONS.md](OPERATIONS.md)**.
 this repository, each with a CycloneDX SBOM attached. Forks, mirrors, and similarly named packages
 are not maintained by us. Report vulnerabilities per [SECURITY.md](SECURITY.md); never in a public issue.
 
-**Software is not identity.** This SDK ships no keys, credentials, or trust. A DNSid identity is proven
-by control of a DNS zone, an agent private key, and the registry's published status. Possessing, forking,
+**Software is not identity.** This SDK ships no private keys or credentials; its optional embedded
+log trust profiles do not grant an identity. A DNSid identity is proven by control of a DNS zone,
+an agent private key, and the registry's published status. Possessing, forking,
 or modifying this code grants none of those: an unofficial build cannot mint or inherit anyone's identity.
 
 **What it does on the network.** Only when you call it, and only to hosts you or the domain being verified
@@ -124,7 +127,8 @@ chose:
 - Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws`
 - No telemetry, usage reporting, update checks, or crash reporting
 
-**Logging.** None. Errors are returned to the caller; the library never writes to stdout, stderr, or a logger.
+**Logging.** The SDK has no logger; errors are returned to the caller. It warns on stderr if a
+custom HTTP transport cannot be safely preserved.
 
 **Hosted endpoints.** `api.dnsid.ai` and `log.dnsid.ai` are operated separately from this SDK under their
 own terms. Nothing in this repository is an availability, uptime, or support commitment for them.

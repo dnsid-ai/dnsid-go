@@ -131,8 +131,10 @@ if err != nil {
 fmt.Println(token)
 ```
 
-Verify one back with `profile.VerifyJWT(ctx, token)` — it resolves the issuer's DNSid identity and
-checks the signature against the published JWKS. The
+To check this token locally, use
+`profile.VerifyJWT(ctx, token, jose.VerifyJWTOptions{ExpectedAudience: "bob.example.com"})`.
+A real recipient must set the expected audience from its own trusted configuration, not the token;
+verification resolves the issuer's DNSid identity and checks its published JWKS. The
 [`examples/local-key-provider`](examples/local-key-provider) walkthrough also shows key generation,
 rotation, and JWKS publication without needing `~/.dnsid`.
 

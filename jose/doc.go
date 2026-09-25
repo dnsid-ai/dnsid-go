@@ -15,7 +15,8 @@
 //	token, err := profile.CreateJWT(jose.JWTOptions{Audience: "bob.example.com"})
 //	// ... send token to bob.example.com ...
 //
-//	vd, claims, err := profile.VerifyJWT(ctx, token)
+//	vd, claims, err := profile.VerifyJWT(ctx, token, jose.VerifyJWTOptions{ExpectedAudience: "bob.example.com"})
+//	// At the receiving side, Bob must verify against its own expected audience.
 //	// vd identifies the verified issuer domain; claims holds the parsed JWT.
 //
 // CreateJWS and VerifyJWS provide the same flow for compact JWS over

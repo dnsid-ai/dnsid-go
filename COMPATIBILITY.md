@@ -36,7 +36,7 @@ expected to work. Cross a major version (e.g. `jwx/v3` → `v4`) only after it i
 Until the SDK reaches v1.0.0, breaking public API changes increment the minor version. Features
 increment the minor version and backward-compatible fixes increment the patch version.
 
-### Unreleased: breaking C2SP logical-identity correction
+### Since v0.36.0: breaking C2SP logical-identity correction
 
 This SDK targets DNSid C2SP method revision
 `d5a65d06f76eff4db81e50f8767a600d2ca7fc2a` of the C2SP TLog log-method specification (`log-method-extensions/c2sp-tlog-log-method.md` in the DNSid specification repository).
@@ -64,7 +64,7 @@ envelope `v:1`, bundle `@v1`, and base C2SP dependency pins are unchanged.
   require a nonempty `kid`. See [OPERATIONS.md](OPERATIONS.md) for peer inputs,
   explicit duration options, cache namespaces, and resource limits.
 
-CI uses the shared compliance default branch. The checked-in corrected bundle
+CI pins the shared compliance workflow to a commit. The checked-in corrected bundle
 is copied verbatim from `dnsid-sdk-compliance/fixtures/c2sp-stream-bundle-logical-v1.json`;
 regeneration belongs there, not in this SDK. The old bundle remains only a
 rejection regression. Shared selection and portable-bundle tests cover the
@@ -116,11 +116,11 @@ v0.18.0 adds two methods required for safe operational-key rotation:
 
 | Dependency | Tested version | Role |
 |---|---|---|
-| `github.com/lestrrat-go/jwx/v3` | v3.1.1 | JOSE — JWK/JWKS, JWS/JWT signing and verification. Major `v3`. |
+| `github.com/lestrrat-go/jwx/v3` | v3.2.0 | JOSE — JWK/JWKS, JWS/JWT signing and verification. Major `v3`. |
 | `github.com/forcebit/http-message-signatures-rfc9421-go` | v0.0.20 | RFC 9421 HTTP Message Signatures (Web Bot Auth). |
-| `golang.org/x/net` | v0.56.0 | `publicsuffix` and `idna` for FQDN handling. |
+| `golang.org/x/net` | v0.58.0 | `publicsuffix` and `idna` for FQDN handling. |
 | `github.com/transparency-dev/formats` | v0.1.1 | Transparency-log checkpoint formats (`log/c2sptlog` only). |
-| `golang.org/x/mod` | v0.38.0 | Module version parsing (`log/c2sptlog` only). |
+| `golang.org/x/mod` | v0.41.0 | Module version parsing (`log/c2sptlog` only). |
 
 ### `key/aws` submodule ([`key/aws/go.mod`](key/aws/go.mod))
 
