@@ -4,14 +4,14 @@ go 1.26.6
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.0
-	github.com/aws/aws-sdk-go-v2/service/kms v1.59.0
+	github.com/aws/aws-sdk-go-v2/service/kms v1.61.0
 	github.com/dnsid-ai/dnsid-go v0.36.1
 	github.com/lestrrat-go/jwx/v3 v3.2.0
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.2 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.3 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.3 // indirect
 	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
