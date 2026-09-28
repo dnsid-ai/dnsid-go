@@ -245,6 +245,8 @@ func requireEpochVectorCoverage(t *testing.T, vectors epochVectorFile) {
 		"forged-legacy-line-successor-accepts", "forged-legacy-line-precedence",
 		"profile/max-tree-size-decimal-point", "profile/max-tree-size-exponent", "profile/max-tree-size-boolean",
 		"profile/max-tree-size-string", "profile/unsafe-max-tree-size", "profile/max-tree-size-largest",
+		"profile/member-case-max-tree-size", "profile/member-case-min-tree-size", "profile/member-case-scope-v2",
+		"profile/member-case-scope-v1", "profile/member-case-epochs", "profile/member-case-duplicate",
 	} {
 		if !names[name] {
 			t.Errorf("vector file is missing required case %q", name)

@@ -1865,16 +1865,16 @@ type TrustProfile struct {
 ```
 
 <a name="ParseTrustProfile"></a>
-### func [ParseTrustProfile](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L78>)
+### func [ParseTrustProfile](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L80>)
 
 ```go
 func ParseTrustProfile(data []byte) (TrustProfile, error)
 ```
 
-ParseTrustProfile parses and validates a DNSid C2SP trust\-profile document.
+ParseTrustProfile parses and validates a DNSid C2SP trust\-profile document. Member names must match exactly, including case, at the top level and in every epoch; unknown members are rejected.
 
 <a name="TrustProfile.TrustEpochs"></a>
-### func \(TrustProfile\) [TrustEpochs](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L133>)
+### func \(TrustProfile\) [TrustEpochs](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L170>)
 
 ```go
 func (p TrustProfile) TrustEpochs() ([]TrustEpoch, error)

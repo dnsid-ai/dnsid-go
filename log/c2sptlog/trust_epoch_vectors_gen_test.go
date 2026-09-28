@@ -642,6 +642,14 @@ func buildTrustEpochProfileCases(t *testing.T, ref Reference, keys epochVectorKe
 		}
 		return strings.Replace(document, token, fmt.Sprintf("%q: %s", member, literal), 1)
 	}
+	// rawReplace edits one exact token in a generated document, so a case
+	// carries member names Go's encoder would never emit.
+	rawReplace := func(document, token, replacement string) string {
+		if strings.Count(document, token) != 1 {
+			t.Fatalf("token %q not found once", token)
+		}
+		return strings.Replace(document, token, replacement, 1)
+	}
 	valid := func(name, note, document string, ids ...string) epochProfileCase {
 		return epochProfileCase{Name: name, Note: note, Document: document, Expect: epochExpect{Result: "accept"}, EpochIDs: ids}
 	}
@@ -678,6 +686,13 @@ func buildTrustEpochProfileCases(t *testing.T, ref Reference, keys epochVectorKe
 		invalid("max-tree-size-boolean", "true is not a bound (a language that treats booleans as integers must still reject it).", boundLiteral("max_tree_size", "true")),
 		invalid("max-tree-size-string", "\"5\" is a string, not a bound.", boundLiteral("max_tree_size", `"5"`)),
 		invalid("max-tree-size-negative", "-1 is rejected: no sign is allowed.", boundLiteral("max_tree_size", "-1")),
+		invalid("member-case-max-tree-size", "Member names match exactly, including case: Max_Tree_Size is an unknown epoch member, not a bound.", rawReplace(profiles["v2-bounded"], `"max_tree_size":`, `"Max_Tree_Size":`)),
+		invalid("member-case-min-tree-size", "Min_Tree_Size is an unknown epoch member, not a bound.", rawReplace(profiles["v2-bounded"], `"min_tree_size":`, `"Min_Tree_Size":`)),
+		invalid("member-case-scope-v2", "Scope is an unknown member; the required scope is then missing.", rawReplace(profiles["v2-bounded"], `"scope":`, `"Scope":`)),
+		invalid("member-case-scope-v1", "The exact-case rule applies to version 1 too.", rawReplace(profiles["v1-legacy"], `"scope":`, `"Scope":`)),
+		invalid("member-case-epochs", "Epochs is an unknown member; the required epochs is then missing.", rawReplace(profiles["v2-bounded"], `"epochs":`, `"Epochs":`)),
+		invalid("member-case-duplicate", "max_tree_size and MAX_TREE_SIZE together: the case variant is an unknown member, so the document is rejected (a case-insensitive decoder would let the second silently win).", rawReplace(profiles["v2-bounded"], `"max_tree_size": 5`, `"max_tree_size": 5,
+      "MAX_TREE_SIZE": 9`)),
 		invalid("max-tree-size-leading-zero", "05 is rejected: no leading zeros (it is also not valid JSON).", boundLiteral("max_tree_size", "05")),
 		invalid("min-above-max", "min_tree_size must not exceed max_tree_size.", doc(map[string]any{"epochs": []any{edited(edited(legacy(), "min_tree_size", 6), "max_tree_size", 5)}})),
 		invalid("unknown-epoch-member", "Unknown epoch members are rejected.", doc(map[string]any{"epochs": []any{edited(legacy(), "not_before", 1)}})),

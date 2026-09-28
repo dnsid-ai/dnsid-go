@@ -60,6 +60,12 @@ Additive; nothing that parses or verifies today changes behavior.
 - `"version": 1` parses and verifies exactly as before, as one unnamed epoch.
   `ParsePolicy` still accepts exactly one `log` line. The managed production
   catalog entry is unchanged (still version 1).
+- Strictness fix, including for version 1: `ParseTrustProfile` now checks
+  member names exactly, including case, at the top level and in each epoch.
+  Before, Go's case-insensitive struct decoding accepted a variant such as
+  `"Scope"` or `"Max_Tree_Size"` as the real member. A profile that relied on
+  a case variant is now rejected with a parse error; correctly spelled
+  profiles are unaffected.
 - New API: `TrustProfile.Epochs`, `TrustProfileEpoch`, `TrustProfile.TrustEpochs`,
   `TrustEpoch`, `NewEpochPolicy`, `StreamBundleTrust.Epochs`,
   `VerifiedProof.TrustEpoch`, `VerifiedStreamBundle.TrustEpoch`, and the

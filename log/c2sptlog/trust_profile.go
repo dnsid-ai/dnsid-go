@@ -75,6 +75,8 @@ type TrustEpoch struct {
 }
 
 // ParseTrustProfile parses and validates a DNSid C2SP trust-profile document.
+// Member names must match exactly, including case, at the top level and in
+// every epoch; unknown members are rejected.
 func ParseTrustProfile(data []byte) (TrustProfile, error) {
 	if !utf8.Valid(data) {
 		return TrustProfile{}, dnsid.NewParseError("dnsid: parsing c2sp-tlog trust profile", fmt.Errorf("dnsid: trust profile must be UTF-8"))
@@ -83,13 +85,15 @@ func ParseTrustProfile(data []byte) (TrustProfile, error) {
 	if err != nil {
 		return TrustProfile{}, dnsid.NewParseError("dnsid: parsing c2sp-tlog trust profile", err)
 	}
+	// encoding/json matches struct fields case-insensitively, so member names
+	// are checked exactly against the raw object before the struct decode.
+	if err := checkTrustProfileMembers(object); err != nil {
+		return TrustProfile{}, dnsid.NewParseError("dnsid: parsing c2sp-tlog trust profile", err)
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var profile TrustProfile
 	if err := dec.Decode(&profile); err != nil {
-		return TrustProfile{}, dnsid.NewParseError("dnsid: parsing c2sp-tlog trust profile", err)
-	}
-	if err := checkTrustProfileMembers(profile.Version, object); err != nil {
 		return TrustProfile{}, dnsid.NewParseError("dnsid: parsing c2sp-tlog trust profile", err)
 	}
 	if _, err := profile.validate(); err != nil {
@@ -98,30 +102,63 @@ func ParseTrustProfile(data []byte) (TrustProfile, error) {
 	return profile, nil
 }
 
-// checkTrustProfileMembers rejects members that belong to the other version,
-// even when their value is empty, so a document has exactly one reading.
-func checkTrustProfileMembers(version int, object map[string]any) error {
-	var forbidden []string
-	switch version {
-	case TrustProfileVersionSingle:
-		forbidden = []string{"epochs"}
-	case TrustProfileVersionEpochs:
-		forbidden = []string{"tlog_policy", "bundle_verifier_keys"}
+var (
+	trustProfileV1Members = map[string]bool{"version": true, "scope": true, "log_prefix": true, "tlog_policy": true, "bundle_verifier_keys": true}
+	trustProfileV2Members = map[string]bool{"version": true, "scope": true, "log_prefix": true, "epochs": true}
+	trustEpochMembers     = map[string]bool{"id": true, "tlog_policy": true, "bundle_verifier_keys": true, "min_tree_size": true, "max_tree_size": true}
+)
+
+// checkTrustProfileMembers checks member names exactly, including case,
+// against the raw decoded document: every member must be allowed for the
+// document's version (or for an epoch), and every required member must be
+// present. Members of the other version are rejected even when empty, so a
+// document has exactly one reading in every SDK.
+func checkTrustProfileMembers(object map[string]any) error {
+	version, ok := object["version"].(json.Number)
+	if !ok {
+		return fmt.Errorf("dnsid: c2sp-tlog trust profile requires a numeric \"version\" member")
 	}
-	for _, member := range forbidden {
-		if _, ok := object[member]; ok {
-			return fmt.Errorf("dnsid: c2sp-tlog trust profile version %d must not contain %q", version, member)
+	var allowed map[string]bool
+	var required []string
+	switch version.String() {
+	case "1":
+		allowed, required = trustProfileV1Members, []string{"version", "scope", "log_prefix", "tlog_policy", "bundle_verifier_keys"}
+	case "2":
+		allowed, required = trustProfileV2Members, []string{"version", "scope", "log_prefix", "epochs"}
+	default:
+		return fmt.Errorf("dnsid: unsupported c2sp-tlog trust profile version %s", version.String())
+	}
+	if err := checkExactMembers("trust profile", object, allowed, required); err != nil {
+		return err
+	}
+	if version.String() != "2" {
+		return nil
+	}
+	epochs, ok := object["epochs"].([]any)
+	if !ok {
+		return fmt.Errorf("dnsid: c2sp-tlog trust profile epochs must be an array")
+	}
+	for _, value := range epochs {
+		epoch, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("dnsid: c2sp-tlog trust profile epoch must be an object")
+		}
+		if err := checkExactMembers("trust profile epoch", epoch, trustEpochMembers, []string{"id", "tlog_policy", "bundle_verifier_keys"}); err != nil {
+			return err
 		}
 	}
-	if version == TrustProfileVersionEpochs {
-		epochs, _ := object["epochs"].([]any)
-		for _, value := range epochs {
-			epoch, _ := value.(map[string]any)
-			for _, member := range []string{"id", "tlog_policy", "bundle_verifier_keys"} {
-				if _, ok := epoch[member]; !ok {
-					return fmt.Errorf("dnsid: c2sp-tlog trust profile epoch is missing %q", member)
-				}
-			}
+	return nil
+}
+
+func checkExactMembers(what string, object map[string]any, allowed map[string]bool, required []string) error {
+	for member := range object {
+		if !allowed[member] {
+			return fmt.Errorf("dnsid: c2sp-tlog %s contains unknown member %q (member names are case-sensitive)", what, member)
+		}
+	}
+	for _, member := range required {
+		if _, ok := object[member]; !ok {
+			return fmt.Errorf("dnsid: c2sp-tlog %s is missing %q", what, member)
 		}
 	}
 	return nil
