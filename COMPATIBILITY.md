@@ -38,7 +38,7 @@ increment the minor version and backward-compatible fixes increment the patch ve
 
 ### Unreleased: C2SP trust profile v2 (epochs)
 
-Additive; nothing that parses or verifies today changes behavior.
+Additive, except for the member-name strictness fix below.
 
 - `ParseTrustProfile` accepts `"version": 2`, which replaces the top-level
   `tlog_policy` and `bundle_verifier_keys` with `epochs`: a list of 1 to 8
