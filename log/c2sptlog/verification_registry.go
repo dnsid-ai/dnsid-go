@@ -23,7 +23,9 @@ const (
 // identity's untrusted lr value.
 type VerificationRegistryConfig struct {
 	// TrustProfile binds one exact scope and log prefix to an independently
-	// distributed policy document and bundle signer keys.
+	// distributed policy document and bundle signer keys. A version 2 profile
+	// binds a list of trust epochs instead: checkpoints and bundles must then
+	// satisfy one epoch completely.
 	TrustProfile *TrustProfile
 	// PolicyDocument contains an independently trusted C2SP tlog-policy
 	// document. The bytes are parsed locally and are not fetched from the log.
@@ -87,16 +89,25 @@ type VerificationRegistryConfig struct {
 // compose ParsePolicy, NewScanSource, and Register directly.
 func NewVerificationRegistry(ctx context.Context, config VerificationRegistryConfig) (*dnsidlog.LogRegistry, error) {
 	var profileOptions []Option
+	var profileEpochs []TrustEpoch
 	if config.TrustProfile != nil {
 		if config.PolicyDocument != nil || config.PolicyURL != "" || len(config.BundleVerifiers) != 0 {
 			return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog trust profile is mutually exclusive with direct policy and bundle verifier configuration", nil)
 		}
-		verifiers, err := config.TrustProfile.validate()
+		epochs, err := config.TrustProfile.validate()
 		if err != nil {
 			return nil, dnsid.NewArgumentError("dnsid: invalid c2sp-tlog trust profile", err)
 		}
-		config.PolicyDocument = []byte(config.TrustProfile.PolicyDocument)
-		config.BundleVerifiers = verifiers
+		// Version 1 keeps its original single-policy path. For version 2 the
+		// first epoch stands in for the shared configuration checks below (all
+		// epochs name one origin), and the epoch set replaces it afterwards.
+		config.PolicyDocument = append([]byte(nil), epochs[0].PolicyDocument...)
+		for _, epoch := range epochs {
+			config.BundleVerifiers = append(config.BundleVerifiers, epoch.BundleVerifiers...)
+		}
+		if config.TrustProfile.Version == TrustProfileVersionEpochs {
+			profileEpochs = epochs
+		}
 		profileOptions = append(profileOptions, withTrustProfile(config.TrustProfile.Scope, config.TrustProfile.LogPrefix))
 		config.TrustProfile = nil
 	}
@@ -124,6 +135,12 @@ func NewVerificationRegistry(ctx context.Context, config VerificationRegistryCon
 		}
 		return nil, dnsid.NewArgumentError(fmt.Sprintf("dnsid: c2sp-tlog policy log key %q does not match log origin %q", name, config.ExpectedOrigin), nil)
 	}
+	if profileEpochs != nil {
+		policy, err = NewEpochPolicy(profileEpochs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	policy.MaxCheckpointAge = config.CheckpointMaxAge
 	policy.ClockSkew = config.AllowedClockSkew
 
@@ -142,21 +159,27 @@ func NewVerificationRegistry(ctx context.Context, config VerificationRegistryCon
 		return nil, dnsid.NewArgumentError("dnsid: invalid c2sp-tlog scanner options", err)
 	}
 	if len(config.BundleVerifiers) > 0 {
+		trust := StreamBundleTrust{
+			PolicyDocument:         append([]byte(nil), document...),
+			BundleVerifiers:        append([]note.Verifier(nil), config.BundleVerifiers...),
+			MaxBundleLifetime:      config.MaxBundleLifetime,
+			MaxCheckpointAge:       config.CheckpointMaxAge,
+			ClockSkew:              config.AllowedClockSkew,
+			MaxBundleBytes:         config.MaxStreamBundleBytes,
+			MaxEvents:              config.MaxStreamBundleEvents,
+			MaxTreeSize:            scanConfig.MaxTreeSize,
+			TrustedCheckpointStore: store,
+		}
+		if profileEpochs != nil {
+			trust.PolicyDocument = nil
+			trust.BundleVerifiers = nil
+			trust.Epochs = cloneTrustEpochs(profileEpochs)
+		}
 		source = &fetchedStreamBundleSource{
 			fetcher:       fetcher,
 			fallback:      source,
 			requireBundle: config.RequireStreamBundle,
-			trust: StreamBundleTrust{
-				PolicyDocument:         append([]byte(nil), document...),
-				BundleVerifiers:        append([]note.Verifier(nil), config.BundleVerifiers...),
-				MaxBundleLifetime:      config.MaxBundleLifetime,
-				MaxCheckpointAge:       config.CheckpointMaxAge,
-				ClockSkew:              config.AllowedClockSkew,
-				MaxBundleBytes:         config.MaxStreamBundleBytes,
-				MaxEvents:              config.MaxStreamBundleEvents,
-				MaxTreeSize:            scanConfig.MaxTreeSize,
-				TrustedCheckpointStore: store,
-			},
+			trust:         trust,
 		}
 	}
 

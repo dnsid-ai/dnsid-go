@@ -20,7 +20,15 @@
 //
 // A parsed TrustProfile may instead bind one exact scope and log prefix to its
 // policy and accepted bundle signers; profiles are independently distributed
-// rather than discovered from the log. NewDnsidManagedVerificationRegistry is
+// rather than discovered from the log. A version 2 profile carries a list of
+// trust epochs (TrustProfileEpoch) for one log origin, so the log's signing,
+// witness and bundle keys can rotate together at a tree size: a checkpoint or
+// bundle is accepted only when it satisfies one epoch completely, keys are
+// never mixed across epochs, and optional min_tree_size / max_tree_size bound
+// each epoch. Trusted checkpoint state stays keyed by origin, so continuity
+// carries across the rotation. NewEpochPolicy and StreamBundleTrust.Epochs
+// expose the same rules to callers composing their own verifier.
+// NewDnsidManagedVerificationRegistry is
 // the separately named, opt-in factory for SDK-embedded Identity Digital trust
 // roots; the generic factory never selects those roots implicitly. The policy
 // URL is caller-selected trusted configuration and is never derived from an

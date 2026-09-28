@@ -12,7 +12,10 @@ DNSID_LOG_TRUST_PROFILE_FILE=/etc/dnsid/production-trust.json \
 
 The version 1 JSON profile contains `version`, `scope`, `log_prefix`,
 `tlog_policy`, and `bundle_verifier_keys`. The key array permits old and new
-signers to overlap during rotation. A profile enables verified stream bundles
+bundle signers to overlap during rotation. To rotate the log's checkpoint keys
+(log signer, witness and bundle signer together), use a version 2 profile, which
+replaces `tlog_policy` and `bundle_verifier_keys` with a list of `epochs`; see
+[COMPATIBILITY.md](../../COMPATIBILITY.md). A profile enables verified stream bundles
 with raw-log scan fallback; the bundle signer keys come only from the profile,
 never from the log origin.
 

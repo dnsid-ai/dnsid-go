@@ -62,7 +62,7 @@ var (
 // NewScanSource constructs a bounded C2SP network scanner. It is SSRF-resistant
 // unless the caller supplies a custom Transport.
 func NewScanSource(policy Policy, config ScanSourceConfig) (*ScanSource, error) {
-	if policy.LogVerifier == nil {
+	if !policy.hasLogVerifier() {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog scan policy missing log verifier")
 	}
 	if config.ResourceFetcher != nil && (config.HTTPClient != nil || config.Transport != nil) {

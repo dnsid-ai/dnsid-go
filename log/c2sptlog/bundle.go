@@ -38,10 +38,18 @@ const (
 // hashed byte-for-byte and parsed as tlog-policy; it is never taken from the
 // bundle. BundleVerifier is retained for single-key callers; BundleVerifiers
 // allows independently configured keys to overlap during signer rotation.
+//
+// Epochs replaces PolicyDocument, BundleVerifier and BundleVerifiers when
+// the log's checkpoint keys rotate: the bundle's sig.kid selects the epochs
+// whose BundleVerifiers contain it, the bundle's policy_hash must equal the
+// SHA-256 of one of those epochs' PolicyDocument, and the embedded checkpoint
+// must satisfy that same epoch, including its tree-size bounds. Epochs is
+// mutually exclusive with the single-policy fields.
 type StreamBundleTrust struct {
 	PolicyDocument         []byte
 	BundleVerifier         note.Verifier
 	BundleVerifiers        []note.Verifier
+	Epochs                 []TrustEpoch
 	Now                    func() time.Time
 	MaxBundleLifetime      time.Duration
 	MaxCheckpointAge       time.Duration
@@ -68,7 +76,10 @@ type VerifiedStreamBundle struct {
 	Expires             time.Time
 	CompleteThroughSize uint64
 	SignerKeyID         string
-	Source              *StreamBundleSource
+	// TrustEpoch is the ID of the trust epoch that accepted the bundle. It is
+	// empty when StreamBundleTrust used the single-policy fields.
+	TrustEpoch string
+	Source     *StreamBundleSource
 }
 
 // StreamBundleSource adapts verified bundle evidence to Source and
@@ -273,7 +284,8 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 // access. It checks, in order: size and canonical JCS form, the accepted
 // bundle signer's Ed25519 signature, format version and type, expiry against
 // local time and MaxBundleLifetime, that the bundle's policy hash matches the
-// verifier-supplied PolicyDocument, and then replays every bundled entry
+// verifier-supplied PolicyDocument (or, with Epochs, of the epoch selected by
+// signer key ID and policy hash), and then replays every bundled entry
 // through full Client verification (inclusion proofs against the embedded
 // checkpoint, lifecycle signatures, and stream chain). The bundle's own
 // state summary must match the replayed result. Nothing in data is trusted
@@ -288,7 +300,14 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if maxBytes < 1 || len(data) > maxBytes {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle exceeds size limit")
 	}
-	if trust.BundleVerifier == nil && len(trust.BundleVerifiers) == 0 {
+	if len(trust.Epochs) > 0 {
+		if trust.PolicyDocument != nil || trust.BundleVerifier != nil || len(trust.BundleVerifiers) != 0 {
+			return nil, fmt.Errorf("dnsid: c2sp stream bundle trust epochs are mutually exclusive with a single policy and bundle verifiers")
+		}
+		if err := validateTrustEpochSet(trust.Epochs); err != nil {
+			return nil, err
+		}
+	} else if trust.BundleVerifier == nil && len(trust.BundleVerifiers) == 0 {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle verifier is required")
 	}
 	object, err := decodeJSONObject(data)
@@ -318,8 +337,8 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if err != nil {
 		return nil, err
 	}
-	verifier := acceptedBundleVerifier(trust, kid)
-	if verifier == nil {
+	candidates := bundleTrustCandidates(trust, kid)
+	if len(candidates) == 0 {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle signer is not accepted")
 	}
 	signatureText, err := bundleString(sigObject, "value")
@@ -336,7 +355,13 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 		return nil, err
 	}
 	object["sig"] = sigObject
-	if !verifier.Verify(unsigned, signature) {
+	signed := candidates[:0]
+	for _, candidate := range candidates {
+		if candidate.verifier.Verify(unsigned, signature) {
+			signed = append(signed, candidate)
+		}
+	}
+	if len(signed) == 0 {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle signature verification failed")
 	}
 
@@ -389,11 +414,19 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if err != nil {
 		return nil, err
 	}
-	wantPolicyHash := sha256.Sum256(trust.PolicyDocument)
-	if !bytes.Equal(policyHash, wantPolicyHash[:]) {
+	var selected *bundleTrustCandidate
+	for i := range signed {
+		wantPolicyHash := sha256.Sum256(signed[i].epoch.PolicyDocument)
+		if bytes.Equal(policyHash, wantPolicyHash[:]) {
+			selected = &signed[i]
+			break
+		}
+	}
+	if selected == nil {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle policy hash mismatch")
 	}
-	policy, err := ParsePolicy(trust.PolicyDocument)
+	// The embedded checkpoint must satisfy the selected epoch alone.
+	policy, err := selected.epoch.policy()
 	if err != nil {
 		return nil, err
 	}
@@ -491,8 +524,44 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 		Expires:             expires,
 		CompleteThroughSize: completeThrough,
 		SignerKeyID:         kid,
+		TrustEpoch:          selected.epoch.ID,
 		Source:              source,
 	}, nil
+}
+
+// bundleTrustCandidate is one epoch that accepts a bundle's signer key ID.
+type bundleTrustCandidate struct {
+	epoch    TrustEpoch
+	verifier note.Verifier
+}
+
+// bundleTrustCandidates returns, in epoch order, every epoch with exactly one
+// bundle verifier for kid. Single-policy trust is one unnamed epoch.
+func bundleTrustCandidates(trust StreamBundleTrust, kid string) []bundleTrustCandidate {
+	if len(trust.Epochs) == 0 {
+		verifier := acceptedBundleVerifier(trust, kid)
+		if verifier == nil {
+			return nil
+		}
+		return []bundleTrustCandidate{{epoch: TrustEpoch{PolicyDocument: trust.PolicyDocument}, verifier: verifier}}
+	}
+	var candidates []bundleTrustCandidate
+	for _, epoch := range trust.Epochs {
+		if verifier := acceptedBundleVerifier(StreamBundleTrust{BundleVerifiers: epoch.BundleVerifiers}, kid); verifier != nil {
+			candidates = append(candidates, bundleTrustCandidate{epoch: epoch, verifier: verifier})
+		}
+	}
+	return candidates
+}
+
+func cloneTrustEpochs(epochs []TrustEpoch) []TrustEpoch {
+	cloned := make([]TrustEpoch, len(epochs))
+	for i, epoch := range epochs {
+		epoch.PolicyDocument = append([]byte(nil), epoch.PolicyDocument...)
+		epoch.BundleVerifiers = append([]note.Verifier(nil), epoch.BundleVerifiers...)
+		cloned[i] = epoch
+	}
+	return cloned
 }
 
 func acceptedBundleVerifier(trust StreamBundleTrust, kid string) note.Verifier {
@@ -502,7 +571,7 @@ func acceptedBundleVerifier(trust StreamBundleTrust, kid string) note.Verifier {
 	}
 	var accepted note.Verifier
 	for _, verifier := range verifiers {
-		if verifier != nil && kid == fmt.Sprintf("%s+%08x", verifier.Name(), verifier.KeyHash()) {
+		if verifier != nil && kid == bundleVerifierKeyID(verifier) {
 			if accepted != nil {
 				return nil
 			}

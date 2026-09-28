@@ -124,7 +124,7 @@ chose:
 
 - DNS TXT lookup of `_dnsid.<domain>` through your system resolver (no hardcoded resolver)
 - HTTPS GET to the JWKS and status URLs published in that TXT record
-- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws`
+- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots; trust profile v2 epochs let a log rotate its signing, witness and bundle keys without a trust gap, and the bundled roots change only in an SDK release), cloud KMS endpoints via `key/aws`
 - No telemetry, usage reporting, update checks, or crash reporting
 
 **Logging.** The SDK has no logger; errors are returned to the caller. It warns on stderr if a

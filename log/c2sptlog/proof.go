@@ -1,6 +1,7 @@
 package c2sptlog
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -10,6 +11,8 @@ import (
 	formatproof "github.com/transparency-dev/formats/proof"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/mod/sumdb/tlog"
+
+	dnsid "github.com/dnsid-ai/dnsid-go"
 )
 
 // Policy is the local trust configuration for verifying c2sp-tlog
@@ -22,6 +25,12 @@ import (
 // timestamp is older; ClockSkew is the tolerated clock difference for
 // witness timestamps. Prefer building a Policy with ParsePolicy from a
 // tlog-policy document; the zero Policy rejects all proofs.
+//
+// NewEpochPolicy builds a Policy that holds several trust epochs instead of
+// one log key. Such a Policy has a nil LogVerifier and no witness fields of its
+// own; it accepts a checkpoint only when one epoch accepts it completely, and
+// applies its own CheckpointTime, Now, MaxCheckpointAge and ClockSkew to every
+// epoch.
 type Policy struct {
 	LogVerifier       note.Verifier
 	WitnessVerifiers  []note.Verifier
@@ -33,6 +42,53 @@ type Policy struct {
 	quorumRule        *checkpointQuorumRule
 	trustedPublicKeys [][]byte
 	skipProofVerify   bool
+	epochID           string
+	minTreeSize       uint64
+	maxTreeSize       uint64
+	epochs            []Policy
+}
+
+// NewEpochPolicy returns a Policy that accepts a checkpoint only when it
+// satisfies one trust epoch completely: that epoch's log signature, its
+// witness quorum and its tree-size bounds. Signatures are never combined
+// across epochs, so a checkpoint signed by one epoch's log key and cosigned by
+// another epoch's witness is rejected. Epochs are tried in order; on failure
+// the error is the first epoch whose log key signed the checkpoint, or a
+// missing-log-signature error when none did.
+//
+// Every epoch must name the same log origin, so trusted checkpoint state,
+// which is keyed by origin, carries across epochs. Set runtime fields such as
+// MaxCheckpointAge and ClockSkew on the returned Policy.
+func NewEpochPolicy(epochs []TrustEpoch) (Policy, error) {
+	if err := validateTrustEpochSet(epochs); err != nil {
+		return Policy{}, dnsid.NewArgumentError("dnsid: invalid c2sp-tlog trust epochs", err)
+	}
+	policies := make([]Policy, 0, len(epochs))
+	for _, epoch := range epochs {
+		policy, err := epoch.policy()
+		if err != nil {
+			return Policy{}, dnsid.NewArgumentError("dnsid: invalid c2sp-tlog trust epochs", err)
+		}
+		policies = append(policies, policy)
+	}
+	return Policy{epochs: policies}, nil
+}
+
+// policy parses one epoch into a single-log Policy carrying its bounds.
+func (e TrustEpoch) policy() (Policy, error) {
+	policy, err := ParsePolicy(e.PolicyDocument)
+	if err != nil {
+		return Policy{}, err
+	}
+	policy.epochID = e.ID
+	policy.minTreeSize = e.MinTreeSize
+	policy.maxTreeSize = e.MaxTreeSize
+	return policy, nil
+}
+
+// hasLogVerifier reports whether the policy can verify any log signature.
+func (p Policy) hasLogVerifier() bool {
+	return p.LogVerifier != nil || len(p.epochs) > 0
 }
 
 // VerifiedProof is the accepted result of checkpoint and inclusion-proof
@@ -47,6 +103,9 @@ type VerifiedProof struct {
 	CheckpointWitnessTime     time.Time
 	CheckpointIntegrationTime time.Time
 	CheckpointFreshnessTime   time.Time
+	// TrustEpoch is the ID of the trust epoch that accepted the checkpoint.
+	// It is empty for a single-log Policy and for a version 1 trust profile.
+	TrustEpoch string
 	// LogTime is retained for compatibility and equals CheckpointIntegrationTime.
 	LogTime time.Time
 }
@@ -94,6 +153,46 @@ func (p Policy) VerifyProof(ref Reference, entry, rawProof []byte) (*VerifiedPro
 }
 
 func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (*VerifiedProof, error) {
+	if len(p.epochs) == 0 {
+		return p.verifyEpochCheckpoint(ref, rawCheckpoint)
+	}
+	var reported error
+	for _, epoch := range p.epochs {
+		epoch.CheckpointTime = p.CheckpointTime
+		epoch.Now = p.Now
+		epoch.MaxCheckpointAge = p.MaxCheckpointAge
+		epoch.ClockSkew = p.ClockSkew
+		if !epoch.logKeySigned(rawCheckpoint) {
+			continue
+		}
+		verified, err := epoch.verifyEpochCheckpoint(ref, rawCheckpoint)
+		if err == nil {
+			return verified, nil
+		}
+		if reported == nil {
+			reported = err
+		}
+	}
+	if reported == nil {
+		return nil, fmt.Errorf("dnsid: verifying c2sp-tlog checkpoint: no trust epoch log key signed the checkpoint")
+	}
+	return nil, reported
+}
+
+// logKeySigned reports whether the note carries a signature line under this
+// policy's log key name and key hash. The signature itself is verified later.
+func (p Policy) logKeySigned(rawCheckpoint []byte) bool {
+	if p.LogVerifier == nil {
+		return false
+	}
+	_, err := note.Open(rawCheckpoint, note.VerifierList(p.LogVerifier))
+	var unverified *note.UnverifiedNoteError
+	return !errors.As(err, &unverified)
+}
+
+// verifyEpochCheckpoint verifies a checkpoint under exactly one log key and
+// its own witness quorum and tree-size bounds.
+func (p Policy) verifyEpochCheckpoint(ref Reference, rawCheckpoint []byte) (*VerifiedProof, error) {
 	if p.LogVerifier == nil {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog policy missing log verifier")
 	}
@@ -110,6 +209,12 @@ func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (*Verified
 	}
 	if len(cp.Hash) != tlog.HashSize {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint root length %d, want %d", len(cp.Hash), tlog.HashSize)
+	}
+	if p.maxTreeSize != 0 && cp.Size > p.maxTreeSize {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint size %d is above trust epoch %q max tree size %d", cp.Size, p.epochID, p.maxTreeSize)
+	}
+	if cp.Size < p.minTreeSize {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint size %d is below trust epoch %q min tree size %d", cp.Size, p.epochID, p.minTreeSize)
 	}
 	witnessTime, err := p.acceptedCheckpointTime(cp, checkpointNote)
 	if err != nil {
@@ -133,6 +238,7 @@ func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (*Verified
 		CheckpointWitnessTime:     witnessTime,
 		CheckpointIntegrationTime: integrationTime,
 		CheckpointFreshnessTime:   witnessTime,
+		TrustEpoch:                p.epochID,
 		LogTime:                   integrationTime,
 	}, nil
 }

@@ -26,7 +26,7 @@ registry, err := c2sptlog.NewVerificationRegistry(ctx,
 	})
 ```
 
-A parsed TrustProfile may instead bind one exact scope and log prefix to its policy and accepted bundle signers; profiles are independently distributed rather than discovered from the log. NewDnsidManagedVerificationRegistry is the separately named, opt\-in factory for SDK\-embedded Identity Digital trust roots; the generic factory never selects those roots implicitly. The policy URL is caller\-selected trusted configuration and is never derived from an unverified log reference. The factory uses one bounded, redirect\-free, rebinding\-resistant ResourceFetcher for policy and standard log resources; custom fetchers must declare all public\-read SecurityGuarantees. Supplying independently trusted BundleVerifiers and MaxBundleLifetime makes verified per\-domain stream bundles the preferred source; RequireStreamBundle disables raw\-scan fallback for deployment checks. Configure CheckpointMaxAge to enable fresh logged\-state and non\-revocation checks, which otherwise fail closed. Advanced deployments can compose ParsePolicy, NewScanSource, Register, and a durable checkpoint store directly.
+A parsed TrustProfile may instead bind one exact scope and log prefix to its policy and accepted bundle signers; profiles are independently distributed rather than discovered from the log. A version 2 profile carries a list of trust epochs \(TrustProfileEpoch\) for one log origin, so the log's signing, witness and bundle keys can rotate together at a tree size: a checkpoint or bundle is accepted only when it satisfies one epoch completely, keys are never mixed across epochs, and optional min\_tree\_size / max\_tree\_size bound each epoch. Trusted checkpoint state stays keyed by origin, so continuity carries across the rotation. NewEpochPolicy and StreamBundleTrust.Epochs expose the same rules to callers composing their own verifier. NewDnsidManagedVerificationRegistry is the separately named, opt\-in factory for SDK\-embedded Identity Digital trust roots; the generic factory never selects those roots implicitly. The policy URL is caller\-selected trusted configuration and is never derived from an unverified log reference. The factory uses one bounded, redirect\-free, rebinding\-resistant ResourceFetcher for policy and standard log resources; custom fetchers must declare all public\-read SecurityGuarantees. Supplying independently trusted BundleVerifiers and MaxBundleLifetime makes verified per\-domain stream bundles the preferred source; RequireStreamBundle disables raw\-scan fallback for deployment checks. Configure CheckpointMaxAge to enable fresh logged\-state and non\-revocation checks, which otherwise fail closed. Advanced deployments can compose ParsePolicy, NewScanSource, Register, and a durable checkpoint store directly.
 
 Every event is an entity\- or operational\-key\-signed JCS\-canonical JSON envelope. Verification replays a domain's entries in log order, checks the lifecycle signature chain \(ISSUANCE bilateral signatures, rotation old\-key/new\-key signatures, entity signatures on later events\), and logical predecessor metadata \(Chain\) in every scope. EventID excludes signatures; signature\-only copies never advance state. Indexes and exact complete entry bytes remain inclusion evidence. DNSidMethodRevision pins this breaking pre\-1.0 correction; old index/leaf chains are not accepted. A TrustedC2spCheckpointStore protects verified checkpoints against rollback.
 
@@ -136,6 +136,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func WithSource\(source Source\) Option](<#WithSource>)
   - [func WithTrustedCheckpointStore\(store TrustedC2spCheckpointStore\) Option](<#WithTrustedCheckpointStore>)
 - [type Policy](<#Policy>)
+  - [func NewEpochPolicy\(epochs \[\]TrustEpoch\) \(Policy, error\)](<#NewEpochPolicy>)
   - [func ParsePolicy\(document \[\]byte\) \(policyResult Policy, errResult error\)](<#ParsePolicy>)
   - [func \(p Policy\) VerifyProof\(ref Reference, entry, rawProof \[\]byte\) \(\*VerifiedProof, error\)](<#Policy.VerifyProof>)
 - [type PreparedEvent](<#PreparedEvent>)
@@ -179,8 +180,11 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(s \*StreamBundleSource\) RebuildCompleteHistory\(\_ context.Context, reference Reference, domain string\) \(CompleteHistoryResult, error\)](<#StreamBundleSource.RebuildCompleteHistory>)
   - [func \(s \*StreamBundleSource\) RebuildHistory\(\_ context.Context, reference Reference, domain string\) \(\[\]ProvenEntry, error\)](<#StreamBundleSource.RebuildHistory>)
 - [type StreamBundleTrust](<#StreamBundleTrust>)
+- [type TrustEpoch](<#TrustEpoch>)
 - [type TrustProfile](<#TrustProfile>)
   - [func ParseTrustProfile\(data \[\]byte\) \(TrustProfile, error\)](<#ParseTrustProfile>)
+  - [func \(p TrustProfile\) TrustEpochs\(\) \(\[\]TrustEpoch, error\)](<#TrustProfile.TrustEpochs>)
+- [type TrustProfileEpoch](<#TrustProfileEpoch>)
 - [type TrustedC2spCheckpoint](<#TrustedC2spCheckpoint>)
 - [type TrustedC2spCheckpointStore](<#TrustedC2spCheckpointStore>)
 - [type VerificationRegistryConfig](<#VerificationRegistryConfig>)
@@ -235,6 +239,19 @@ const (
 )
 ```
 
+<a name="TrustProfileVersionSingle"></a>
+
+```go
+const (
+    // TrustProfileVersionSingle is the original trust-profile format: one
+    // tlog_policy and its bundle_verifier_keys at the top level.
+    TrustProfileVersionSingle = 1
+    // TrustProfileVersionEpochs is the epoch format: a list of complete trust
+    // epochs for one log, used to rotate log, witness and bundle keys together.
+    TrustProfileVersionEpochs = 2
+)
+```
+
 <a name="Canonical"></a>
 ## func [Canonical](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/event.go#L91>)
 
@@ -281,7 +298,7 @@ func GenerateStreamID() (string, error)
 GenerateStreamID returns an opaque identity\-instance stream identifier with 128 bits of cryptographically secure randomness, encoded as unpadded base64url. Callers must generate a new value for each replacement identity.
 
 <a name="LeafHash"></a>
-## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L248>)
+## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L354>)
 
 ```go
 func LeafHash(entry []byte) tlog.Hash
@@ -299,7 +316,7 @@ func LogEventFromEntry(entry []byte) (eventResult dnsidlog.LogEvent, errResult e
 LogEventFromEntry parses stored entry bytes into the shared lifecycle event representation. The entry must be canonical JCS with a complete, well\-formed signature set and valid lifecycle fields; the signatures themselves are not cryptographically verified.
 
 <a name="NewDnsidManagedVerificationRegistry"></a>
-## func [NewDnsidManagedVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L75>)
+## func [NewDnsidManagedVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L81>)
 
 ```go
 func NewDnsidManagedVerificationRegistry(ctx context.Context, config DnsidManagedVerificationConfig) (*dnsidlog.LogRegistry, error)
@@ -310,7 +327,7 @@ NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed, SDK\
 Development and production verification prefer signed stream bundles with safe raw\-scan fallback. The default checkpoint store is restart\-ephemeral; deployments needing rollback protection across restarts should inject durable storage and retain the returned registry for the process lifetime.
 
 <a name="NewVerificationRegistry"></a>
-## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L88>)
+## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L90>)
 
 ```go
 func NewVerificationRegistry(ctx context.Context, config VerificationRegistryConfig) (*dnsidlog.LogRegistry, error)
@@ -752,7 +769,7 @@ type CompleteSource interface {
 ```
 
 <a name="DnsidManagedVerificationConfig"></a>
-## type [DnsidManagedVerificationConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L40-L47>)
+## type [DnsidManagedVerificationConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L46-L53>)
 
 DnsidManagedVerificationConfig configures shared infrastructure for NewDnsidManagedVerificationRegistry. Trust roots, freshness, resource limits, and bundle requirements are fixed by the managed catalog; callers needing different policy use NewVerificationRegistry.
 
@@ -1276,9 +1293,11 @@ func WithTrustedCheckpointStore(store TrustedC2spCheckpointStore) Option
 WithTrustedCheckpointStore sets the store that records the largest verified checkpoint per origin, protecting subsequent reads against log rollback. Without a store, no rollback protection is applied.
 
 <a name="Policy"></a>
-## type [Policy](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L25-L36>)
+## type [Policy](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L34-L49>)
 
 Policy is the local trust configuration for verifying c2sp\-tlog checkpoints and inclusion proofs. LogVerifier is required and must match the log's signing key; WitnessVerifiers and WitnessQuorum define which witness cosignatures are accepted and how many are required \(public streams require a quorum of at least 1\). CheckpointTime, when set, overrides the default witness\-timestamp rule. Now defaults to time.Now. MaxCheckpointAge, when positive, rejects checkpoints whose accepted timestamp is older; ClockSkew is the tolerated clock difference for witness timestamps. Prefer building a Policy with ParsePolicy from a tlog\-policy document; the zero Policy rejects all proofs.
+
+NewEpochPolicy builds a Policy that holds several trust epochs instead of one log key. Such a Policy has a nil LogVerifier and no witness fields of its own; it accepts a checkpoint only when one epoch accepts it completely, and applies its own CheckpointTime, Now, MaxCheckpointAge and ClockSkew to every epoch.
 
 ```go
 type Policy struct {
@@ -1293,6 +1312,17 @@ type Policy struct {
 }
 ```
 
+<a name="NewEpochPolicy"></a>
+### func [NewEpochPolicy](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L62>)
+
+```go
+func NewEpochPolicy(epochs []TrustEpoch) (Policy, error)
+```
+
+NewEpochPolicy returns a Policy that accepts a checkpoint only when it satisfies one trust epoch completely: that epoch's log signature, its witness quorum and its tree\-size bounds. Signatures are never combined across epochs, so a checkpoint signed by one epoch's log key and cosigned by another epoch's witness is rejected. Epochs are tried in order; on failure the error is the first epoch whose log key signed the checkpoint, or a missing\-log\-signature error when none did.
+
+Every epoch must name the same log origin, so trusted checkpoint state, which is keyed by origin, carries across epochs. Set runtime fields such as MaxCheckpointAge and ClockSkew on the returned Policy.
+
 <a name="ParsePolicy"></a>
 ### func [ParsePolicy](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/policy_parser.go#L27>)
 
@@ -1303,7 +1333,7 @@ func ParsePolicy(document []byte) (policyResult Policy, errResult error)
 ParsePolicy parses the official line\-oriented C2SP tlog\-policy format for a verification\-only client. Witness URLs are optional transport hints and are ignored. Definitions are ordered: groups and quorum may reference only preceding witnesses or groups.
 
 <a name="Policy.VerifyProof"></a>
-### func \(Policy\) [VerifyProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L66>)
+### func \(Policy\) [VerifyProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L125>)
 
 ```go
 func (p Policy) VerifyProof(ref Reference, entry, rawProof []byte) (*VerifiedProof, error)
@@ -1738,7 +1768,7 @@ func PinnedSpecificationVersions() SpecificationVersions
 PinnedSpecificationVersions returns the exact C2SP and DNSid envelope versions implemented by this package.
 
 <a name="StreamBundleSource"></a>
-## type [StreamBundleSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L76-L84>)
+## type [StreamBundleSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L87-L95>)
 
 StreamBundleSource adapts verified bundle evidence to Source and CompleteSource without trusting the producer's event parsing.
 
@@ -1749,7 +1779,7 @@ type StreamBundleSource struct {
 ```
 
 <a name="StreamBundleSource.ReadEvent"></a>
-### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L223>)
+### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L234>)
 
 ```go
 func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (ProvenEntry, error)
@@ -1758,7 +1788,7 @@ func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (
 ReadEvent implements Source over the bundle's entries. It returns an error if ref does not address this bundle's reference or names an index the bundle does not contain.
 
 <a name="StreamBundleSource.RebuildCompleteHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L255>)
+### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L266>)
 
 ```go
 func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference Reference, domain string) (CompleteHistoryResult, error)
@@ -1767,7 +1797,7 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 RebuildCompleteHistory implements CompleteSource: a verified bundle's trusted\-index completeness assertion and entries share one checkpoint.
 
 <a name="StreamBundleSource.RebuildHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L242>)
+### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L253>)
 
 ```go
 func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Reference, domain string) ([]ProvenEntry, error)
@@ -1776,15 +1806,18 @@ func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Referen
 RebuildHistory implements Source over the bundle's entries. It returns copies of every bundled entry, or an error if reference or domain does not match the bundle.
 
 <a name="StreamBundleTrust"></a>
-## type [StreamBundleTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L41-L55>)
+## type [StreamBundleTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L48-L63>)
 
 StreamBundleTrust contains verifier\-controlled inputs. PolicyDocument is hashed byte\-for\-byte and parsed as tlog\-policy; it is never taken from the bundle. BundleVerifier is retained for single\-key callers; BundleVerifiers allows independently configured keys to overlap during signer rotation.
+
+Epochs replaces PolicyDocument, BundleVerifier and BundleVerifiers when the log's checkpoint keys rotate: the bundle's sig.kid selects the epochs whose BundleVerifiers contain it, the bundle's policy\_hash must equal the SHA\-256 of one of those epochs' PolicyDocument, and the embedded checkpoint must satisfy that same epoch, including its tree\-size bounds. Epochs is mutually exclusive with the single\-policy fields.
 
 ```go
 type StreamBundleTrust struct {
     PolicyDocument         []byte
     BundleVerifier         note.Verifier
     BundleVerifiers        []note.Verifier
+    Epochs                 []TrustEpoch
     Now                    func() time.Time
     MaxBundleLifetime      time.Duration
     MaxCheckpointAge       time.Duration
@@ -1798,29 +1831,73 @@ type StreamBundleTrust struct {
 }
 ```
 
+<a name="TrustEpoch"></a>
+## type [TrustEpoch](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L66-L72>)
+
+TrustEpoch is a validated, verifier\-side trust epoch: one complete tlog\-policy document, the stream\-bundle signers bound to it, and optional inclusive checkpoint tree\-size bounds. Zero MinTreeSize and MaxTreeSize mean unbounded. Use NewEpochPolicy for checkpoints and StreamBundleTrust.Epochs for bundles.
+
+```go
+type TrustEpoch struct {
+    ID              string
+    PolicyDocument  []byte
+    BundleVerifiers []note.Verifier
+    MinTreeSize     uint64
+    MaxTreeSize     uint64
+}
+```
+
 <a name="TrustProfile"></a>
-## type [TrustProfile](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L16-L22>)
+## type [TrustProfile](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L38-L45>)
 
 TrustProfile binds one exact C2SP log to its independently distributed trust policy and accepted stream\-bundle signers. Runtime freshness and resource limits remain caller configuration.
 
+Version 1 carries one PolicyDocument and its BundleVerifierKeys. Version 2 leaves both empty and carries Epochs instead: each epoch is a complete version 1 trust \(policy plus bundle keys\) for the same log, and a checkpoint or bundle is accepted only when it satisfies one epoch completely.
+
 ```go
 type TrustProfile struct {
-    Version            int      `json:"version"`
-    Scope              string   `json:"scope"`
-    LogPrefix          string   `json:"log_prefix"`
-    PolicyDocument     string   `json:"tlog_policy"`
-    BundleVerifierKeys []string `json:"bundle_verifier_keys"`
+    Version            int                 `json:"version"`
+    Scope              string              `json:"scope"`
+    LogPrefix          string              `json:"log_prefix"`
+    PolicyDocument     string              `json:"tlog_policy,omitempty"`
+    BundleVerifierKeys []string            `json:"bundle_verifier_keys,omitempty"`
+    Epochs             []TrustProfileEpoch `json:"epochs,omitempty"`
 }
 ```
 
 <a name="ParseTrustProfile"></a>
-### func [ParseTrustProfile](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L25>)
+### func [ParseTrustProfile](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L75>)
 
 ```go
 func ParseTrustProfile(data []byte) (TrustProfile, error)
 ```
 
 ParseTrustProfile parses and validates a DNSid C2SP trust\-profile document.
+
+<a name="TrustProfile.TrustEpochs"></a>
+### func \(TrustProfile\) [TrustEpochs](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L130>)
+
+```go
+func (p TrustProfile) TrustEpochs() ([]TrustEpoch, error)
+```
+
+TrustEpochs returns the profile's validated trust epochs in profile order. A version 1 profile yields one epoch with an empty ID and no tree\-size bounds, which verifies exactly as the version 1 profile does.
+
+<a name="TrustProfileEpoch"></a>
+## type [TrustProfileEpoch](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L53-L59>)
+
+TrustProfileEpoch is one epoch of a version 2 trust profile.
+
+PolicyDocument must be byte\-identical to the tlog\-policy document that the epoch's log server renders, because stream bundles bind its SHA\-256 as policy\_hash. MinTreeSize and MaxTreeSize, when set, bound the checkpoint tree sizes this epoch accepts \(both inclusive\). A nil bound is unbounded.
+
+```go
+type TrustProfileEpoch struct {
+    ID                 string   `json:"id"`
+    PolicyDocument     string   `json:"tlog_policy"`
+    BundleVerifierKeys []string `json:"bundle_verifier_keys"`
+    MinTreeSize        *uint64  `json:"min_tree_size,omitempty"`
+    MaxTreeSize        *uint64  `json:"max_tree_size,omitempty"`
+}
+```
 
 <a name="TrustedC2spCheckpoint"></a>
 ## type [TrustedC2spCheckpoint](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L81-L86>)
@@ -1855,14 +1932,16 @@ type TrustedC2spCheckpointStore interface {
 ```
 
 <a name="VerificationRegistryConfig"></a>
-## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L77>)
+## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L79>)
 
 VerificationRegistryConfig configures NewVerificationRegistry. Exactly one of TrustProfile, PolicyDocument, and PolicyURL must be set. A PolicyURL is a caller\-selected trust\-policy location; it is never inferred from an identity's untrusted lr value.
 
 ```go
 type VerificationRegistryConfig struct {
     // TrustProfile binds one exact scope and log prefix to an independently
-    // distributed policy document and bundle signer keys.
+    // distributed policy document and bundle signer keys. A version 2 profile
+    // binds a list of trust epochs instead: checkpoints and bundles must then
+    // satisfy one epoch completely.
     TrustProfile *TrustProfile
     // PolicyDocument contains an independently trusted C2SP tlog-policy
     // document. The bytes are parsed locally and are not fetched from the log.
@@ -1917,7 +1996,7 @@ type VerificationRegistryConfig struct {
 ```
 
 <a name="VerifiedProof"></a>
-## type [VerifiedProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L43-L52>)
+## type [VerifiedProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L99-L111>)
 
 VerifiedProof is the accepted result of checkpoint and inclusion\-proof verification: the proven entry index, the parsed checkpoint and its signed note, and the timestamps derived from accepted witness cosignatures \(CheckpointIntegrationTime adds the policy's clock skew to CheckpointWitnessTime\).
 
@@ -1929,13 +2008,16 @@ type VerifiedProof struct {
     CheckpointWitnessTime     time.Time
     CheckpointIntegrationTime time.Time
     CheckpointFreshnessTime   time.Time
+    // TrustEpoch is the ID of the trust epoch that accepted the checkpoint.
+    // It is empty for a single-log Policy and for a version 1 trust profile.
+    TrustEpoch string
     // LogTime is retained for compatibility and equals CheckpointIntegrationTime.
     LogTime time.Time
 }
 ```
 
 <a name="VerifiedStreamBundle"></a>
-## type [VerifiedStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L62-L72>)
+## type [VerifiedStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L70-L83>)
 
 VerifiedStreamBundle is the result of VerifyStreamBundle: the verified lifecycle events and materialized snapshot for one stream, its logged state, the bundle's expiry and completeness bound, the accepted signer, and a Source over the bundle's proven entries for further Client operations. LoggedState is historical log state, not current protocol status.
 
@@ -1949,17 +2031,20 @@ type VerifiedStreamBundle struct {
     Expires             time.Time
     CompleteThroughSize uint64
     SignerKeyID         string
-    Source              *StreamBundleSource
+    // TrustEpoch is the ID of the trust epoch that accepted the bundle. It is
+    // empty when StreamBundleTrust used the single-policy fields.
+    TrustEpoch string
+    Source     *StreamBundleSource
 }
 ```
 
 <a name="VerifyStreamBundle"></a>
-### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L281>)
+### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L293>)
 
 ```go
 func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrust) (*VerifiedStreamBundle, error)
 ```
 
-VerifyStreamBundle verifies an offline stream bundle without network access. It checks, in order: size and canonical JCS form, the accepted bundle signer's Ed25519 signature, format version and type, expiry against local time and MaxBundleLifetime, that the bundle's policy hash matches the verifier\-supplied PolicyDocument, and then replays every bundled entry through full Client verification \(inclusion proofs against the embedded checkpoint, lifecycle signatures, and stream chain\). The bundle's own state summary must match the replayed result. Nothing in data is trusted until all checks pass.
+VerifyStreamBundle verifies an offline stream bundle without network access. It checks, in order: size and canonical JCS form, the accepted bundle signer's Ed25519 signature, format version and type, expiry against local time and MaxBundleLifetime, that the bundle's policy hash matches the verifier\-supplied PolicyDocument \(or, with Epochs, of the epoch selected by signer key ID and policy hash\), and then replays every bundled entry through full Client verification \(inclusion proofs against the embedded checkpoint, lifecycle signatures, and stream chain\). The bundle's own state summary must match the replayed result. Nothing in data is trusted until all checks pass.
 
 Generated by [gomarkdoc](<https://github.com/princjef/gomarkdoc>)

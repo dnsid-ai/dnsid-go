@@ -11,6 +11,12 @@ import (
 
 // These reviewed snapshots mirror the DNSid product CLI trust catalog. They
 // change only in an SDK release, never through runtime discovery from a log.
+//
+// TODO(Identity-Digital/dnsid-infra#418): the production entry stays a
+// version 1 profile until the successor log, witness and bundle keys for
+// log.dnsid.ai are final. It then becomes a version 2 profile whose first
+// epoch is exactly the policy and bundle key below, followed by the successor
+// epoch. No successor key is pinned here yet, deliberately.
 const (
 	managedVerificationFreshness = 10 * time.Minute
 	managedDevelopmentProfile    = `{
