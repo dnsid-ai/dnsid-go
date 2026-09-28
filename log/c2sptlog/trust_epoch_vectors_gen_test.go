@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/mod/sumdb/note"
@@ -359,6 +360,13 @@ func buildTrustEpochVectors(t *testing.T) epochVectorFile {
 		"v2-open":          v2(legacyEpoch(nil), successorEpoch(nil)),
 		"v2-bounded":       v2(legacyEpoch(epochUint(n)), successorEpoch(epochUint(n))),
 		"v2-legacy-capped": v2(legacyEpoch(epochUint(n)), successorEpoch(nil)),
+		// Both epochs accept the legacy bundle key, so sig.kid alone matches
+		// both and only policy_hash selects the epoch.
+		"v2-shared-bundle-key": v2(legacyEpoch(nil), func() TrustProfileEpoch {
+			e := successorEpoch(nil)
+			e.BundleVerifierKeys = []string{keys.legacyBundle.vkey}
+			return e
+		}()),
 	}
 
 	legacy := []epochTestKey{keys.legacyLog}
@@ -370,6 +378,14 @@ func buildTrustEpochVectors(t *testing.T) epochVectorFile {
 		return signEpochCheckpoint(origin, uint64(size), root(size), logs, witnesses, trustEpochVectorWitnessTime)
 	}
 	t76 := []string{"T7-6"}
+	// forged is a well-formed signature line under the legacy log key's name
+	// and key hash whose signature bytes are all zero: it makes the legacy
+	// epoch relevant without being a valid legacy signature.
+	forged := func(checkpoint string) string {
+		line := binary.BigEndian.AppendUint32(nil, keys.legacyLog.hash)
+		line = append(line, make([]byte, ed25519.SignatureSize)...)
+		return checkpoint + fmt.Sprintf("— %s %s\n", keys.legacyLog.name, base64.StdEncoding.EncodeToString(line))
+	}
 
 	checkpointCases := []epochCheckpointCase{
 		{Name: "t7-6-legacy-below-n", Tags: t76, Profile: "v2-bounded", TreeSize: n - 1, Checkpoint: cp(n-1, legacy, lw), Expect: epochAccept(trustEpochLegacyID),
@@ -396,6 +412,10 @@ func buildTrustEpochVectors(t *testing.T) epochVectorFile {
 			Note: "Signed by both log keys and cosigned by the successor witness: the legacy epoch fails its bound and quorum, the successor epoch is satisfied completely."},
 		{Name: "dual-log-legacy-witness-past-n", Tags: []string{"cross-epoch", "bounds"}, Profile: "v2-bounded", TreeSize: n + k, Checkpoint: cp(n+k, both, lw), Expect: epochReject("max_tree_size"),
 			Note: "Signed by both log keys, cosigned only by the legacy witness: legacy fails max_tree_size, successor fails witness_quorum. The reported reason is the first epoch whose log key signed."},
+		{Name: "forged-legacy-line-successor-accepts", Tags: []string{"cross-epoch", "precedence"}, Profile: "v2-bounded", TreeSize: n + k, Checkpoint: forged(cp(n+k, successor, sw)), Expect: epochAccept(trustEpochSuccessorID),
+			Note: "A valid successor checkpoint plus an invalid signature line under the legacy log key hash: the legacy epoch fails on its log signature, the successor epoch still accepts completely. Do not reject the whole note because a line under another epoch's key is invalid."},
+		{Name: "forged-legacy-line-precedence", Tags: []string{"cross-epoch", "precedence", "bounds"}, Profile: "v2-bounded", TreeSize: n - 1, Checkpoint: forged(cp(n-1, successor, sw)), Expect: epochReject("log_signature"),
+			Note: "The same forged legacy line on a successor checkpoint below the successor's min_tree_size: neither epoch accepts. The legacy epoch is relevant (its name and key hash appear) and comes first, so the reason is its failure, log_signature, not the successor's min_tree_size."},
 		{Name: "no-epoch-log-key", Tags: []string{"cross-epoch"}, Profile: "v2-legacy-only", TreeSize: n, Checkpoint: cp(n, successor, sw), Expect: epochReject("log_signature"),
 			Note: "A profile that only knows the legacy epoch rejects a successor checkpoint: no epoch's log key signed it."},
 		{Name: "stale-successor", Tags: []string{"freshness"}, Profile: "v2-bounded", TreeSize: n + k,
@@ -485,6 +505,12 @@ func buildTrustEpochVectors(t *testing.T) epochVectorFile {
 			Note: "Legacy bundle key and policy_hash, but the embedded checkpoint is the successor's: it must satisfy the selected legacy epoch and does not."},
 		{Name: "bundle-cross-epoch-witness", Tags: []string{"bundle", "cross-epoch"}, Profile: "v2-open", Bundle: bundle(with(legacyBundle, func(s *bundleSpec) { s.witnesses = sw })), Expect: epochReject("witness_quorum"),
 			Note: "Legacy bundle, legacy log signature, successor witness cosignature: the selected epoch's quorum is not met."},
+		{Name: "bundle-shared-kid-selects-legacy", Tags: []string{"bundle", "shared-kid"}, Profile: "v2-shared-bundle-key", Bundle: bundle(legacyBundle), Expect: epochAccept(trustEpochLegacyID),
+			Note: "The legacy bundle key is in both epochs; policy_hash equals the legacy policy, so the legacy epoch is selected."},
+		{Name: "bundle-shared-kid-selects-successor", Tags: []string{"bundle", "shared-kid"}, Profile: "v2-shared-bundle-key", Bundle: bundle(with(successorBundle, func(s *bundleSpec) { s.signer = keys.legacyBundle })), Expect: epochAccept(trustEpochSuccessorID),
+			Note: "Signed by the shared legacy bundle key with the successor policy_hash and a successor checkpoint: the successor epoch is selected. Picking the first epoch whose keys contain the kid would wrongly reject this."},
+		{Name: "bundle-shared-kid-policy-hash-mismatch", Tags: []string{"bundle", "shared-kid", "policy-hash"}, Profile: "v2-shared-bundle-key", Bundle: bundle(with(legacyBundle, func(s *bundleSpec) { s.policy = legacyPolicy + successorPolicy })), Expect: epochReject("policy_hash"),
+			Note: "Signed by the shared key, but policy_hash matches neither epoch holding that kid."},
 		{Name: "bundle-unknown-signer", Tags: []string{"bundle"}, Profile: "v2-open", Bundle: bundle(with(successorBundle, func(s *bundleSpec) { s.signer = keys.strangerBundle })), Expect: epochReject("bundle_signer"),
 			Note: "A bundle key in no epoch is rejected before any other check."},
 		{Name: "v1-bundle-legacy", Tags: []string{"bundle", "v1"}, Profile: "v1-legacy", Bundle: bundle(legacyBundle), Expect: epochAccept(""),
@@ -605,6 +631,17 @@ func buildTrustEpochProfileCases(t *testing.T, ref Reference, keys epochVectorKe
 	if err != nil {
 		t.Fatal(err)
 	}
+	// boundLiteral renders a legacy-only profile whose bound member carries
+	// the exact JSON token literal, so ports test the token, not its value.
+	const sentinel = 424242
+	boundLiteral := func(member, literal string) string {
+		document := doc(map[string]any{"epochs": []any{edited(legacy(), member, sentinel)}})
+		token := fmt.Sprintf("%q: %d", member, sentinel)
+		if strings.Count(document, token) != 1 {
+			t.Fatalf("bound sentinel %q not found once", token)
+		}
+		return strings.Replace(document, token, fmt.Sprintf("%q: %s", member, literal), 1)
+	}
 	valid := func(name, note, document string, ids ...string) epochProfileCase {
 		return epochProfileCase{Name: name, Note: note, Document: document, Expect: epochExpect{Result: "accept"}, EpochIDs: ids}
 	}
@@ -634,6 +671,14 @@ func buildTrustEpochProfileCases(t *testing.T, ref Reference, keys epochVectorKe
 		invalid("zero-max-tree-size", "Bounds are at least 1; omit a bound to leave it open.", doc(map[string]any{"epochs": []any{edited(legacy(), "max_tree_size", 0)}})),
 		invalid("unsafe-max-tree-size", "Bounds are at most 2^53-1 so every language reads them exactly.", doc(map[string]any{"epochs": []any{edited(legacy(), "max_tree_size", uint64(1)<<53)}})),
 		invalid("fractional-max-tree-size", "Bounds are integers.", doc(map[string]any{"epochs": []any{edited(legacy(), "max_tree_size", json.Number("5.5"))}})),
+		valid("max-tree-size-largest", "2^53-1 is the largest bound, written as a digits-only token.", boundLiteral("max_tree_size", "9007199254740991"), trustEpochLegacyID),
+		invalid("max-tree-size-decimal-point", "The bound token must match ^[1-9][0-9]*$: 5.0 is rejected even though its value is 5.", boundLiteral("max_tree_size", "5.0")),
+		invalid("max-tree-size-exponent", "The bound token must match ^[1-9][0-9]*$: 5e0 is rejected even though its value is 5.", boundLiteral("max_tree_size", "5e0")),
+		invalid("min-tree-size-exponent", "The digits-only rule applies to min_tree_size too.", boundLiteral("min_tree_size", "5E0")),
+		invalid("max-tree-size-boolean", "true is not a bound (a language that treats booleans as integers must still reject it).", boundLiteral("max_tree_size", "true")),
+		invalid("max-tree-size-string", "\"5\" is a string, not a bound.", boundLiteral("max_tree_size", `"5"`)),
+		invalid("max-tree-size-negative", "-1 is rejected: no sign is allowed.", boundLiteral("max_tree_size", "-1")),
+		invalid("max-tree-size-leading-zero", "05 is rejected: no leading zeros (it is also not valid JSON).", boundLiteral("max_tree_size", "05")),
 		invalid("min-above-max", "min_tree_size must not exceed max_tree_size.", doc(map[string]any{"epochs": []any{edited(edited(legacy(), "min_tree_size", 6), "max_tree_size", 5)}})),
 		invalid("unknown-epoch-member", "Unknown epoch members are rejected.", doc(map[string]any{"epochs": []any{edited(legacy(), "not_before", 1)}})),
 	}

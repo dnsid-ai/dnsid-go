@@ -241,6 +241,10 @@ func requireEpochVectorCoverage(t *testing.T, vectors epochVectorFile) {
 		"bundle-legacy-epoch-at-n", "bundle-successor-epoch-above-n", "bundle-policy-hash-mismatch",
 		"v1-legacy-at-n", "v1-bundle-legacy", "profile/v1-legacy",
 		"continuity-equal-root-at-n", "continuity-advance-to-n-plus-k",
+		"bundle-shared-kid-selects-legacy", "bundle-shared-kid-selects-successor", "bundle-shared-kid-policy-hash-mismatch",
+		"forged-legacy-line-successor-accepts", "forged-legacy-line-precedence",
+		"profile/max-tree-size-decimal-point", "profile/max-tree-size-exponent", "profile/max-tree-size-boolean",
+		"profile/max-tree-size-string", "profile/unsafe-max-tree-size", "profile/max-tree-size-largest",
 	} {
 		if !names[name] {
 			t.Errorf("vector file is missing required case %q", name)

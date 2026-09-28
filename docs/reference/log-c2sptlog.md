@@ -1832,7 +1832,7 @@ type StreamBundleTrust struct {
 ```
 
 <a name="TrustEpoch"></a>
-## type [TrustEpoch](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L66-L72>)
+## type [TrustEpoch](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L69-L75>)
 
 TrustEpoch is a validated, verifier\-side trust epoch: one complete tlog\-policy document, the stream\-bundle signers bound to it, and optional inclusive checkpoint tree\-size bounds. Zero MinTreeSize and MaxTreeSize mean unbounded. Use NewEpochPolicy for checkpoints and StreamBundleTrust.Epochs for bundles.
 
@@ -1865,7 +1865,7 @@ type TrustProfile struct {
 ```
 
 <a name="ParseTrustProfile"></a>
-### func [ParseTrustProfile](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L75>)
+### func [ParseTrustProfile](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L78>)
 
 ```go
 func ParseTrustProfile(data []byte) (TrustProfile, error)
@@ -1874,7 +1874,7 @@ func ParseTrustProfile(data []byte) (TrustProfile, error)
 ParseTrustProfile parses and validates a DNSid C2SP trust\-profile document.
 
 <a name="TrustProfile.TrustEpochs"></a>
-### func \(TrustProfile\) [TrustEpochs](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L130>)
+### func \(TrustProfile\) [TrustEpochs](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L133>)
 
 ```go
 func (p TrustProfile) TrustEpochs() ([]TrustEpoch, error)
@@ -1883,11 +1883,11 @@ func (p TrustProfile) TrustEpochs() ([]TrustEpoch, error)
 TrustEpochs returns the profile's validated trust epochs in profile order. A version 1 profile yields one epoch with an empty ID and no tree\-size bounds, which verifies exactly as the version 1 profile does.
 
 <a name="TrustProfileEpoch"></a>
-## type [TrustProfileEpoch](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L53-L59>)
+## type [TrustProfileEpoch](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/trust_profile.go#L56-L62>)
 
 TrustProfileEpoch is one epoch of a version 2 trust profile.
 
-PolicyDocument must be byte\-identical to the tlog\-policy document that the epoch's log server renders, because stream bundles bind its SHA\-256 as policy\_hash. MinTreeSize and MaxTreeSize, when set, bound the checkpoint tree sizes this epoch accepts \(both inclusive\). A nil bound is unbounded.
+PolicyDocument must be byte\-identical to the tlog\-policy document that the epoch's log server renders, because stream bundles bind its SHA\-256 as policy\_hash. MinTreeSize and MaxTreeSize, when set, bound the checkpoint tree sizes this epoch accepts \(both inclusive\). A nil bound is unbounded. A bound must be written as a JSON number token matching ^\[1\-9\]\[0\-9\]\*$ with a value of at most 2^53\-1; decoding into \*uint64 rejects fractions, exponents, signs, booleans and strings, and validation rejects zero and larger values.
 
 ```go
 type TrustProfileEpoch struct {

@@ -45,7 +45,9 @@ Additive; nothing that parses or verifies today changes behavior.
   objects, each with `id`, `tlog_policy` (a complete single-`log` policy,
   byte-identical to what that epoch's log server renders, because bundles bind
   its SHA-256 as `policy_hash`), `bundle_verifier_keys`, and optional inclusive
-  `min_tree_size` / `max_tree_size` (1 to 2^53-1; absent or `null` is open).
+  `min_tree_size` / `max_tree_size` (absent or `null` is open). A bound must be
+  a JSON number token matching `^[1-9][0-9]*$` with a value of at most 2^53-1, so
+  `5.0`, `5e0`, `true` and `"5"` are rejected.
   `scope` and `log_prefix` stay top-level and every epoch names the same origin.
 - A checkpoint is valid when one epoch accepts it completely: that epoch's log
   signature, that epoch's witness quorum and its tree-size bounds. Signatures

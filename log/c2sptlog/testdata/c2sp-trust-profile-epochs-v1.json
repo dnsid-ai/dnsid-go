@@ -78,7 +78,8 @@
     "v2-bounded": "{\n  \"version\": 2,\n  \"scope\": \"public\",\n  \"log_prefix\": \"https://log.example\",\n  \"epochs\": [\n    {\n      \"id\": \"legacy\",\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"max_tree_size\": 5\n    },\n    {\n      \"id\": \"successor\",\n      \"tlog_policy\": \"log log.example+e2e81ee9+AduZX+JRadFByrm7upK6oB+fLh7OffTLKsBRkPN/zB+d\\nwitness dnsid-witness-1 witness.example/w1+f1ed8c47+BCFS+NGbeR0kRTJC4V8uq2y3z/p7al7TAJeWDgaYgdsS\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+6e5278a4+ASL8KXeS8Lb/wL/P237bDAqhTgJaNl7A40Lobjgpy3S2\"\n      ],\n      \"min_tree_size\": 5\n    }\n  ]\n}\n",
     "v2-legacy-capped": "{\n  \"version\": 2,\n  \"scope\": \"public\",\n  \"log_prefix\": \"https://log.example\",\n  \"epochs\": [\n    {\n      \"id\": \"legacy\",\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"max_tree_size\": 5\n    },\n    {\n      \"id\": \"successor\",\n      \"tlog_policy\": \"log log.example+e2e81ee9+AduZX+JRadFByrm7upK6oB+fLh7OffTLKsBRkPN/zB+d\\nwitness dnsid-witness-1 witness.example/w1+f1ed8c47+BCFS+NGbeR0kRTJC4V8uq2y3z/p7al7TAJeWDgaYgdsS\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+6e5278a4+ASL8KXeS8Lb/wL/P237bDAqhTgJaNl7A40Lobjgpy3S2\"\n      ]\n    }\n  ]\n}\n",
     "v2-legacy-only": "{\n  \"version\": 2,\n  \"scope\": \"public\",\n  \"log_prefix\": \"https://log.example\",\n  \"epochs\": [\n    {\n      \"id\": \"legacy\",\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ]\n    }\n  ]\n}\n",
-    "v2-open": "{\n  \"version\": 2,\n  \"scope\": \"public\",\n  \"log_prefix\": \"https://log.example\",\n  \"epochs\": [\n    {\n      \"id\": \"legacy\",\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ]\n    },\n    {\n      \"id\": \"successor\",\n      \"tlog_policy\": \"log log.example+e2e81ee9+AduZX+JRadFByrm7upK6oB+fLh7OffTLKsBRkPN/zB+d\\nwitness dnsid-witness-1 witness.example/w1+f1ed8c47+BCFS+NGbeR0kRTJC4V8uq2y3z/p7al7TAJeWDgaYgdsS\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+6e5278a4+ASL8KXeS8Lb/wL/P237bDAqhTgJaNl7A40Lobjgpy3S2\"\n      ]\n    }\n  ]\n}\n"
+    "v2-open": "{\n  \"version\": 2,\n  \"scope\": \"public\",\n  \"log_prefix\": \"https://log.example\",\n  \"epochs\": [\n    {\n      \"id\": \"legacy\",\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ]\n    },\n    {\n      \"id\": \"successor\",\n      \"tlog_policy\": \"log log.example+e2e81ee9+AduZX+JRadFByrm7upK6oB+fLh7OffTLKsBRkPN/zB+d\\nwitness dnsid-witness-1 witness.example/w1+f1ed8c47+BCFS+NGbeR0kRTJC4V8uq2y3z/p7al7TAJeWDgaYgdsS\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+6e5278a4+ASL8KXeS8Lb/wL/P237bDAqhTgJaNl7A40Lobjgpy3S2\"\n      ]\n    }\n  ]\n}\n",
+    "v2-shared-bundle-key": "{\n  \"version\": 2,\n  \"scope\": \"public\",\n  \"log_prefix\": \"https://log.example\",\n  \"epochs\": [\n    {\n      \"id\": \"legacy\",\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ]\n    },\n    {\n      \"id\": \"successor\",\n      \"tlog_policy\": \"log log.example+e2e81ee9+AduZX+JRadFByrm7upK6oB+fLh7OffTLKsBRkPN/zB+d\\nwitness dnsid-witness-1 witness.example/w1+f1ed8c47+BCFS+NGbeR0kRTJC4V8uq2y3z/p7al7TAJeWDgaYgdsS\\nquorum dnsid-witness-1\\n\",\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ]\n    }\n  ]\n}\n"
   },
   "profile_cases": [
     {
@@ -282,6 +283,80 @@
       }
     },
     {
+      "name": "max-tree-size-largest",
+      "note": "2^53-1 is the largest bound, written as a digits-only token.",
+      "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"max_tree_size\": 9007199254740991,\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
+      "expect": {
+        "result": "accept"
+      },
+      "epoch_ids": [
+        "legacy"
+      ]
+    },
+    {
+      "name": "max-tree-size-decimal-point",
+      "note": "The bound token must match ^[1-9][0-9]*$: 5.0 is rejected even though its value is 5.",
+      "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"max_tree_size\": 5.0,\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
+      "expect": {
+        "result": "reject",
+        "reason": "profile_invalid"
+      }
+    },
+    {
+      "name": "max-tree-size-exponent",
+      "note": "The bound token must match ^[1-9][0-9]*$: 5e0 is rejected even though its value is 5.",
+      "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"max_tree_size\": 5e0,\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
+      "expect": {
+        "result": "reject",
+        "reason": "profile_invalid"
+      }
+    },
+    {
+      "name": "min-tree-size-exponent",
+      "note": "The digits-only rule applies to min_tree_size too.",
+      "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"min_tree_size\": 5E0,\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
+      "expect": {
+        "result": "reject",
+        "reason": "profile_invalid"
+      }
+    },
+    {
+      "name": "max-tree-size-boolean",
+      "note": "true is not a bound (a language that treats booleans as integers must still reject it).",
+      "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"max_tree_size\": true,\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
+      "expect": {
+        "result": "reject",
+        "reason": "profile_invalid"
+      }
+    },
+    {
+      "name": "max-tree-size-string",
+      "note": "\"5\" is a string, not a bound.",
+      "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"max_tree_size\": \"5\",\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
+      "expect": {
+        "result": "reject",
+        "reason": "profile_invalid"
+      }
+    },
+    {
+      "name": "max-tree-size-negative",
+      "note": "-1 is rejected: no sign is allowed.",
+      "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"max_tree_size\": -1,\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
+      "expect": {
+        "result": "reject",
+        "reason": "profile_invalid"
+      }
+    },
+    {
+      "name": "max-tree-size-leading-zero",
+      "note": "05 is rejected: no leading zeros (it is also not valid JSON).",
+      "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"max_tree_size\": 05,\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
+      "expect": {
+        "result": "reject",
+        "reason": "profile_invalid"
+      }
+    },
+    {
       "name": "min-above-max",
       "note": "min_tree_size must not exceed max_tree_size.",
       "document": "{\n  \"epochs\": [\n    {\n      \"bundle_verifier_keys\": [\n        \"dnsid-stream-bundle+5ee26202+ARfLefsrQSDysexl5BmNbgiyjoE/6wHkpACDm4XhgIDO\"\n      ],\n      \"id\": \"legacy\",\n      \"max_tree_size\": 5,\n      \"min_tree_size\": 6,\n      \"tlog_policy\": \"log log.example+9caba9f6+AUgHWll+choVbi4Hmd5cwMUyTcbn6vHN1GJQho7FMhXd\\nwitness dnsid-witness-1 witness.example/w1+0f004da6+BF4hLAmA5LOfwJchE0qgIQk3Tt/SYMDT0Dy1AcjWVFep\\nquorum dnsid-witness-1\\n\"\n    }\n  ],\n  \"log_prefix\": \"https://log.example\",\n  \"scope\": \"public\",\n  \"version\": 2\n}\n",
@@ -469,6 +544,37 @@
       "expect": {
         "result": "reject",
         "reason": "max_tree_size"
+      }
+    },
+    {
+      "name": "forged-legacy-line-successor-accepts",
+      "tags": [
+        "cross-epoch",
+        "precedence"
+      ],
+      "note": "A valid successor checkpoint plus an invalid signature line under the legacy log key hash: the legacy epoch fails on its log signature, the successor epoch still accepts completely. Do not reject the whole note because a line under another epoch's key is invalid.",
+      "profile": "v2-bounded",
+      "tree_size": 7,
+      "checkpoint": "log.example\n7\njo2MOaPpk6Hyw0OHVBsIuf7MAKXaYxTw2O0GxSO6yKo=\n\n— log.example 4uge6f9isOXyphjP73DqATDQtvS1XKuI2WoD/TWoy1BQNsvXZb+QCe8lXsP1M52LX4M+wgIM46pE8euwJg42e6kiYwQ=\n— witness.example/w1 8e2MRwAAAABqPG/k13Vo60DZ+CJU0mCk9nC77mHZe4hWscqS91bmg00uVEZmI8DbJEa0pOtKt+E7rLv52pPXGX4DyMe928CUGek2BA==\n— log.example nKup9gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n",
+      "expect": {
+        "result": "accept",
+        "epoch": "successor"
+      }
+    },
+    {
+      "name": "forged-legacy-line-precedence",
+      "tags": [
+        "cross-epoch",
+        "precedence",
+        "bounds"
+      ],
+      "note": "The same forged legacy line on a successor checkpoint below the successor's min_tree_size: neither epoch accepts. The legacy epoch is relevant (its name and key hash appear) and comes first, so the reason is its failure, log_signature, not the successor's min_tree_size.",
+      "profile": "v2-bounded",
+      "tree_size": 4,
+      "checkpoint": "log.example\n4\nafCY4OAqG5C/b3LEg07T+o150ASFbjjU0LkOTlDZDL4=\n\n— log.example 4uge6Xq+ZSzbwImmLm6nNvoTdDazvjF9Z2myJeeHM9Q0emd2fjSG0GUvrlLwbs3JDdBLWucUrNfx+/Qt3g1hpJ2NWAQ=\n— witness.example/w1 8e2MRwAAAABqPG/kKQ541R+9msJfW9L1nZ04EjMhvQmT3j/DXEaW4/MH0gwovPVH/6fl2IMI3IVeixK4FpOSY73Y+249/Ll8blSkBg==\n— log.example nKup9gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n",
+      "expect": {
+        "result": "reject",
+        "reason": "log_signature"
       }
     },
     {
@@ -683,6 +789,49 @@
       "expect": {
         "result": "reject",
         "reason": "witness_quorum"
+      }
+    },
+    {
+      "name": "bundle-shared-kid-selects-legacy",
+      "tags": [
+        "bundle",
+        "shared-kid"
+      ],
+      "note": "The legacy bundle key is in both epochs; policy_hash equals the legacy policy, so the legacy epoch is selected.",
+      "profile": "v2-shared-bundle-key",
+      "bundle": "{\"checkpoint\":\"bG9nLmV4YW1wbGUKNQpkZzdOc2xWZlpCUXJ0UmRwM0JpN3ZuSDRQTWVWUkV2VktrRWZUbEJFV1BrPQoK4oCUIGxvZy5leGFtcGxlIG5LdXA5bXl0YXlQUkl1eERCblhkek9ZQVB5c2poQzVEYTdCTzBiYzc3Ri9QQXI3MGJ3akIyYmhlS1JMellVRkNnL3pCMEZSZ09ZS1NIY2xCQ1RIT0hjaStGd2M9CuKAlCB3aXRuZXNzLmV4YW1wbGUvdzEgRHdCTnBnQUFBQUJxUEcva2NMUVd1bGpKdnJxd2ViWWRZZ3dOY1lFVVRBY01ZSTFLcktuS1BGbk91cXQ1UHNlTzVhd0VoQVFWZnpmemwvaWppVnY0bWJOU3JnU2tUTis4Umh4T0J3PT0K\",\"complete_through_size\":5,\"completeness_mode\":\"trusted-index\",\"events\":[{\"entry\":\"eyJlayI6eyJhbGciOiJFZERTQSIsImNydiI6IkVkMjU1MTkiLCJraWQiOiJlbnRpdHktMSIsImt0eSI6Ik9LUCIsIngiOiJpb2pqM1hRSjhaWDlVdHN0UExwZGNzcG5DYjhkbEJJYjgzU0lBYlFQYjF3In0sImZxZG4iOiJhZ2VudC5leGFtcGxlLmNvbSIsImdpIjoiZXhhbXBsZS5jb20iLCJraW5kIjoiZG5zaWQubGlmZWN5Y2xlIiwia3UiOnsiYWxnIjoiRWREU0EiLCJjcnYiOiJFZDI1NTE5Iiwia2lkIjoib3BlcmF0aW9uYWwtMSIsImt0eSI6Ik9LUCIsIngiOiJnVGwzRHFoOUYxOVdvMVJtdzB4LXpNdU5pcEcwN2plaVhmWVBXNF9KczVRIn0sImxvZ19vcmlnaW4iOiJsb2cuZXhhbXBsZSIsImxyIjoiYzJzcC10bG9nOnB1YmxpYzpodHRwczovL2xvZy5leGFtcGxlI0VSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJtZXRob2QiOiJjMnNwLXRsb2ciLCJzZXEiOjAsInNpZ3MiOnsiYWUiOnsia2lkIjoiZW50aXR5LTEiLCJzaWciOiJfZkxMX0g0UDkyWFdjNXNwbGNhcjFBS1dIRmpmWmVMN1N1a1Bwc2xxekFTV1YxTTh5aUd0NWtTUUllbHFXZk5FMWpBZS1GeXgtdlZ6TVQxMnh4RUVDdyJ9LCJvcCI6eyJraWQiOiJvcGVyYXRpb25hbC0xIiwic2lnIjoiSTlqQ0NMMFktaE4tc2JOQzZ3MEN3RHVWSVU0RnZIUnVIY1A5YnRfeGJIQXZkZ1U5N2NZdG0wQVcwQTNuOXBsVXY0Mi1NSVhxb3h0M0tBOVNoZGVNQ2cifX0sInN0cmVhbV9pZCI6IkVSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJ0cyI6MTc4MjE3MjgwMCwidHlwZSI6IklTU1VBTkNFIiwidiI6MX0\",\"index\":0,\"proof\":\"rtMvNEpk4xUOMSvJfEhCo7kjBnPM5TVGpfrJcmO35sHMnZClHzl4HHuHxbkU4ovBcei9t1wiA77KTMmzFJdGydsLcri8TUTHmsdz2U46soxZ9_zte7XBrSLSujt8ko4f\"},{\"entry\":\"eyJmcWRuIjoiYWdlbnQuZXhhbXBsZS5jb20iLCJraW5kIjoiZG5zaWQubGlmZWN5Y2xlIiwibG9nX29yaWdpbiI6ImxvZy5leGFtcGxlIiwibHIiOiJjMnNwLXRsb2c6cHVibGljOmh0dHBzOi8vbG9nLmV4YW1wbGUjRVJFUkVSRVJFUkVSRVJFUkVSRVJFUSIsIm1ldGhvZCI6ImMyc3AtdGxvZyIsIm5ld19rdSI6eyJhbGciOiJFZERTQSIsImNydiI6IkVkMjU1MTkiLCJraWQiOiJvcGVyYXRpb25hbC0yIiwia3R5IjoiT0tQIiwieCI6IjdVa294aWpSd3NicTZRTTRrRm1WWVNsWkp6cGNZX2syTnNGR0ZLeUhOOUUifSwibmV3X3RodW1iIjoiblJJRTJWbUtkTWpMMUpEN3RiVjdmWFZnWHhtdjBHS25NRldSVUpNVGY5USIsInByZXZfZXZlbnRfaWQiOiI1U0Z3YVZuWGZ4UXRGNVZReU9rcjRhNU9pS2pWeE5KdFE3eFg4OHJiOHdNIiwicHJldl9zdGF0ZV9oYXNoIjoibERvcm5XUmp3RjhFY191ck9oekp3RGZzTFYwVEhvRUlHa0Exdm9BTjcwayIsInByZXZfdGh1bWIiOiJhVkJ0YXBMZDExU1VWS0lNR0pmUHpPRUR1TjBzWGNtekpRTlZULV9zS0VVIiwic2VxIjoxLCJzaWdzIjp7Im5ld19vcCI6eyJraWQiOiJvcGVyYXRpb25hbC0yIiwic2lnIjoiNFZIa3owdU1fZUNqc1VlaTRpaFJzcHZ6d0F1T3RqSEc3ME1iZzN1R2hNZm12Rjk1emtjbHdIOHRRVWtGczVJdzEyeDZNbTBWV19TdDNLOFhOQlJkQ2cifSwicHJldl9vcCI6eyJraWQiOiJvcGVyYXRpb25hbC0xIiwic2lnIjoiR2RVQUxvMUdMUk00QnBuYnljejZzM3BnWGpVaVdnNUNzTl9uNGo5eC1xYkV2OFJnYUV0c3ZVODViandJQTM5MGdCT1ZMRm93SFdkNS14b2lFNXljQncifX0sInN0cmVhbV9pZCI6IkVSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJ0cyI6MTc4MjI1OTIwMCwidHlwZSI6IktFWV9ST1RBVElPTiIsInYiOjF9\",\"index\":1,\"proof\":\"TzqqbPIFvX4tEEoe-n5umoiSZgBZOdjC5WmelAlTv9jMnZClHzl4HHuHxbkU4ovBcei9t1wiA77KTMmzFJdGydsLcri8TUTHmsdz2U46soxZ9_zte7XBrSLSujt8ko4f\"}],\"expires\":1782346000,\"fqdn\":\"agent.example.com\",\"lr\":\"c2sp-tlog:public:https://log.example#EREREREREREREREREREREQ\",\"policy_hash\":\"QAP4_XqKtQp5221gEo4VFxEPSq8_c9_AOBncFkA2ink\",\"sig\":{\"alg\":\"EdDSA\",\"kid\":\"dnsid-stream-bundle+5ee26202\",\"value\":\"GvM3pyu_ezUbmswOjtBQvDjGKpe5sr48cavkMFMHwVcGN3KVKWQbeOswzehuixWrOFGtQAZ5xPFGUIKXKUxvBw\"},\"state\":{\"event_count\":2,\"last_event_type\":\"KEY_ROTATION\",\"logged_state\":\"ACTIVE\"},\"type\":\"dnsid-c2sp-stream-bundle\",\"v\":1}",
+      "expect": {
+        "result": "accept",
+        "epoch": "legacy"
+      }
+    },
+    {
+      "name": "bundle-shared-kid-selects-successor",
+      "tags": [
+        "bundle",
+        "shared-kid"
+      ],
+      "note": "Signed by the shared legacy bundle key with the successor policy_hash and a successor checkpoint: the successor epoch is selected. Picking the first epoch whose keys contain the kid would wrongly reject this.",
+      "profile": "v2-shared-bundle-key",
+      "bundle": "{\"checkpoint\":\"bG9nLmV4YW1wbGUKNwpqbzJNT2FQcGs2SHl3ME9IVkJzSXVmN01BS1hhWXhUdzJPMEd4U082eUtvPQoK4oCUIGxvZy5leGFtcGxlIDR1Z2U2Zjlpc09YeXBoalA3M0RxQVREUXR2UzFYS3VJMldvRC9UV295MUJRTnN2WFpiK1FDZThsWHNQMU01MkxYNE0rd2dJTTQ2cEU4ZXV3Smc0MmU2a2lZd1E9CuKAlCB3aXRuZXNzLmV4YW1wbGUvdzEgOGUyTVJ3QUFBQUJxUEcvazEzVm82MERaK0NKVTBtQ2s5bkM3N21IWmU0aFdzY3FTOTFibWcwMHVWRVptSThEYkpFYTBwT3RLdCtFN3JMdjUycFBYR1g0RHlNZTkyOENVR2VrMkJBPT0K\",\"complete_through_size\":7,\"completeness_mode\":\"trusted-index\",\"events\":[{\"entry\":\"eyJlayI6eyJhbGciOiJFZERTQSIsImNydiI6IkVkMjU1MTkiLCJraWQiOiJlbnRpdHktMSIsImt0eSI6Ik9LUCIsIngiOiJpb2pqM1hRSjhaWDlVdHN0UExwZGNzcG5DYjhkbEJJYjgzU0lBYlFQYjF3In0sImZxZG4iOiJhZ2VudC5leGFtcGxlLmNvbSIsImdpIjoiZXhhbXBsZS5jb20iLCJraW5kIjoiZG5zaWQubGlmZWN5Y2xlIiwia3UiOnsiYWxnIjoiRWREU0EiLCJjcnYiOiJFZDI1NTE5Iiwia2lkIjoib3BlcmF0aW9uYWwtMSIsImt0eSI6Ik9LUCIsIngiOiJnVGwzRHFoOUYxOVdvMVJtdzB4LXpNdU5pcEcwN2plaVhmWVBXNF9KczVRIn0sImxvZ19vcmlnaW4iOiJsb2cuZXhhbXBsZSIsImxyIjoiYzJzcC10bG9nOnB1YmxpYzpodHRwczovL2xvZy5leGFtcGxlI0VSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJtZXRob2QiOiJjMnNwLXRsb2ciLCJzZXEiOjAsInNpZ3MiOnsiYWUiOnsia2lkIjoiZW50aXR5LTEiLCJzaWciOiJfZkxMX0g0UDkyWFdjNXNwbGNhcjFBS1dIRmpmWmVMN1N1a1Bwc2xxekFTV1YxTTh5aUd0NWtTUUllbHFXZk5FMWpBZS1GeXgtdlZ6TVQxMnh4RUVDdyJ9LCJvcCI6eyJraWQiOiJvcGVyYXRpb25hbC0xIiwic2lnIjoiSTlqQ0NMMFktaE4tc2JOQzZ3MEN3RHVWSVU0RnZIUnVIY1A5YnRfeGJIQXZkZ1U5N2NZdG0wQVcwQTNuOXBsVXY0Mi1NSVhxb3h0M0tBOVNoZGVNQ2cifX0sInN0cmVhbV9pZCI6IkVSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJ0cyI6MTc4MjE3MjgwMCwidHlwZSI6IklTU1VBTkNFIiwidiI6MX0\",\"index\":0,\"proof\":\"rtMvNEpk4xUOMSvJfEhCo7kjBnPM5TVGpfrJcmO35sHMnZClHzl4HHuHxbkU4ovBcei9t1wiA77KTMmzFJdGyY3P3JNc0f-C8xe838GallOUCadRhT36X2wWdcg4wlC6\"},{\"entry\":\"eyJmcWRuIjoiYWdlbnQuZXhhbXBsZS5jb20iLCJraW5kIjoiZG5zaWQubGlmZWN5Y2xlIiwibG9nX29yaWdpbiI6ImxvZy5leGFtcGxlIiwibHIiOiJjMnNwLXRsb2c6cHVibGljOmh0dHBzOi8vbG9nLmV4YW1wbGUjRVJFUkVSRVJFUkVSRVJFUkVSRVJFUSIsIm1ldGhvZCI6ImMyc3AtdGxvZyIsIm5ld19rdSI6eyJhbGciOiJFZERTQSIsImNydiI6IkVkMjU1MTkiLCJraWQiOiJvcGVyYXRpb25hbC0yIiwia3R5IjoiT0tQIiwieCI6IjdVa294aWpSd3NicTZRTTRrRm1WWVNsWkp6cGNZX2syTnNGR0ZLeUhOOUUifSwibmV3X3RodW1iIjoiblJJRTJWbUtkTWpMMUpEN3RiVjdmWFZnWHhtdjBHS25NRldSVUpNVGY5USIsInByZXZfZXZlbnRfaWQiOiI1U0Z3YVZuWGZ4UXRGNVZReU9rcjRhNU9pS2pWeE5KdFE3eFg4OHJiOHdNIiwicHJldl9zdGF0ZV9oYXNoIjoibERvcm5XUmp3RjhFY191ck9oekp3RGZzTFYwVEhvRUlHa0Exdm9BTjcwayIsInByZXZfdGh1bWIiOiJhVkJ0YXBMZDExU1VWS0lNR0pmUHpPRUR1TjBzWGNtekpRTlZULV9zS0VVIiwic2VxIjoxLCJzaWdzIjp7Im5ld19vcCI6eyJraWQiOiJvcGVyYXRpb25hbC0yIiwic2lnIjoiNFZIa3owdU1fZUNqc1VlaTRpaFJzcHZ6d0F1T3RqSEc3ME1iZzN1R2hNZm12Rjk1emtjbHdIOHRRVWtGczVJdzEyeDZNbTBWV19TdDNLOFhOQlJkQ2cifSwicHJldl9vcCI6eyJraWQiOiJvcGVyYXRpb25hbC0xIiwic2lnIjoiR2RVQUxvMUdMUk00QnBuYnljejZzM3BnWGpVaVdnNUNzTl9uNGo5eC1xYkV2OFJnYUV0c3ZVODViandJQTM5MGdCT1ZMRm93SFdkNS14b2lFNXljQncifX0sInN0cmVhbV9pZCI6IkVSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJ0cyI6MTc4MjI1OTIwMCwidHlwZSI6IktFWV9ST1RBVElPTiIsInYiOjF9\",\"index\":1,\"proof\":\"TzqqbPIFvX4tEEoe-n5umoiSZgBZOdjC5WmelAlTv9jMnZClHzl4HHuHxbkU4ovBcei9t1wiA77KTMmzFJdGyY3P3JNc0f-C8xe838GallOUCadRhT36X2wWdcg4wlC6\"}],\"expires\":1782346000,\"fqdn\":\"agent.example.com\",\"lr\":\"c2sp-tlog:public:https://log.example#EREREREREREREREREREREQ\",\"policy_hash\":\"ZG607L-8l3gv1yGQUEMMFaI1dR8Od7LcaCKYkltd8AY\",\"sig\":{\"alg\":\"EdDSA\",\"kid\":\"dnsid-stream-bundle+5ee26202\",\"value\":\"IAyuVYyZg2lh5jOqjhLFLT0SNmGIwsN3HRlrJlzaw9BoTe7GSy7sLa-DOpV1MSnhI2fqEFRHjRML96TRZXxgAQ\"},\"state\":{\"event_count\":2,\"last_event_type\":\"KEY_ROTATION\",\"logged_state\":\"ACTIVE\"},\"type\":\"dnsid-c2sp-stream-bundle\",\"v\":1}",
+      "expect": {
+        "result": "accept",
+        "epoch": "successor"
+      }
+    },
+    {
+      "name": "bundle-shared-kid-policy-hash-mismatch",
+      "tags": [
+        "bundle",
+        "shared-kid",
+        "policy-hash"
+      ],
+      "note": "Signed by the shared key, but policy_hash matches neither epoch holding that kid.",
+      "profile": "v2-shared-bundle-key",
+      "bundle": "{\"checkpoint\":\"bG9nLmV4YW1wbGUKNQpkZzdOc2xWZlpCUXJ0UmRwM0JpN3ZuSDRQTWVWUkV2VktrRWZUbEJFV1BrPQoK4oCUIGxvZy5leGFtcGxlIG5LdXA5bXl0YXlQUkl1eERCblhkek9ZQVB5c2poQzVEYTdCTzBiYzc3Ri9QQXI3MGJ3akIyYmhlS1JMellVRkNnL3pCMEZSZ09ZS1NIY2xCQ1RIT0hjaStGd2M9CuKAlCB3aXRuZXNzLmV4YW1wbGUvdzEgRHdCTnBnQUFBQUJxUEcva2NMUVd1bGpKdnJxd2ViWWRZZ3dOY1lFVVRBY01ZSTFLcktuS1BGbk91cXQ1UHNlTzVhd0VoQVFWZnpmemwvaWppVnY0bWJOU3JnU2tUTis4Umh4T0J3PT0K\",\"complete_through_size\":5,\"completeness_mode\":\"trusted-index\",\"events\":[{\"entry\":\"eyJlayI6eyJhbGciOiJFZERTQSIsImNydiI6IkVkMjU1MTkiLCJraWQiOiJlbnRpdHktMSIsImt0eSI6Ik9LUCIsIngiOiJpb2pqM1hRSjhaWDlVdHN0UExwZGNzcG5DYjhkbEJJYjgzU0lBYlFQYjF3In0sImZxZG4iOiJhZ2VudC5leGFtcGxlLmNvbSIsImdpIjoiZXhhbXBsZS5jb20iLCJraW5kIjoiZG5zaWQubGlmZWN5Y2xlIiwia3UiOnsiYWxnIjoiRWREU0EiLCJjcnYiOiJFZDI1NTE5Iiwia2lkIjoib3BlcmF0aW9uYWwtMSIsImt0eSI6Ik9LUCIsIngiOiJnVGwzRHFoOUYxOVdvMVJtdzB4LXpNdU5pcEcwN2plaVhmWVBXNF9KczVRIn0sImxvZ19vcmlnaW4iOiJsb2cuZXhhbXBsZSIsImxyIjoiYzJzcC10bG9nOnB1YmxpYzpodHRwczovL2xvZy5leGFtcGxlI0VSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJtZXRob2QiOiJjMnNwLXRsb2ciLCJzZXEiOjAsInNpZ3MiOnsiYWUiOnsia2lkIjoiZW50aXR5LTEiLCJzaWciOiJfZkxMX0g0UDkyWFdjNXNwbGNhcjFBS1dIRmpmWmVMN1N1a1Bwc2xxekFTV1YxTTh5aUd0NWtTUUllbHFXZk5FMWpBZS1GeXgtdlZ6TVQxMnh4RUVDdyJ9LCJvcCI6eyJraWQiOiJvcGVyYXRpb25hbC0xIiwic2lnIjoiSTlqQ0NMMFktaE4tc2JOQzZ3MEN3RHVWSVU0RnZIUnVIY1A5YnRfeGJIQXZkZ1U5N2NZdG0wQVcwQTNuOXBsVXY0Mi1NSVhxb3h0M0tBOVNoZGVNQ2cifX0sInN0cmVhbV9pZCI6IkVSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJ0cyI6MTc4MjE3MjgwMCwidHlwZSI6IklTU1VBTkNFIiwidiI6MX0\",\"index\":0,\"proof\":\"rtMvNEpk4xUOMSvJfEhCo7kjBnPM5TVGpfrJcmO35sHMnZClHzl4HHuHxbkU4ovBcei9t1wiA77KTMmzFJdGydsLcri8TUTHmsdz2U46soxZ9_zte7XBrSLSujt8ko4f\"},{\"entry\":\"eyJmcWRuIjoiYWdlbnQuZXhhbXBsZS5jb20iLCJraW5kIjoiZG5zaWQubGlmZWN5Y2xlIiwibG9nX29yaWdpbiI6ImxvZy5leGFtcGxlIiwibHIiOiJjMnNwLXRsb2c6cHVibGljOmh0dHBzOi8vbG9nLmV4YW1wbGUjRVJFUkVSRVJFUkVSRVJFUkVSRVJFUSIsIm1ldGhvZCI6ImMyc3AtdGxvZyIsIm5ld19rdSI6eyJhbGciOiJFZERTQSIsImNydiI6IkVkMjU1MTkiLCJraWQiOiJvcGVyYXRpb25hbC0yIiwia3R5IjoiT0tQIiwieCI6IjdVa294aWpSd3NicTZRTTRrRm1WWVNsWkp6cGNZX2syTnNGR0ZLeUhOOUUifSwibmV3X3RodW1iIjoiblJJRTJWbUtkTWpMMUpEN3RiVjdmWFZnWHhtdjBHS25NRldSVUpNVGY5USIsInByZXZfZXZlbnRfaWQiOiI1U0Z3YVZuWGZ4UXRGNVZReU9rcjRhNU9pS2pWeE5KdFE3eFg4OHJiOHdNIiwicHJldl9zdGF0ZV9oYXNoIjoibERvcm5XUmp3RjhFY191ck9oekp3RGZzTFYwVEhvRUlHa0Exdm9BTjcwayIsInByZXZfdGh1bWIiOiJhVkJ0YXBMZDExU1VWS0lNR0pmUHpPRUR1TjBzWGNtekpRTlZULV9zS0VVIiwic2VxIjoxLCJzaWdzIjp7Im5ld19vcCI6eyJraWQiOiJvcGVyYXRpb25hbC0yIiwic2lnIjoiNFZIa3owdU1fZUNqc1VlaTRpaFJzcHZ6d0F1T3RqSEc3ME1iZzN1R2hNZm12Rjk1emtjbHdIOHRRVWtGczVJdzEyeDZNbTBWV19TdDNLOFhOQlJkQ2cifSwicHJldl9vcCI6eyJraWQiOiJvcGVyYXRpb25hbC0xIiwic2lnIjoiR2RVQUxvMUdMUk00QnBuYnljejZzM3BnWGpVaVdnNUNzTl9uNGo5eC1xYkV2OFJnYUV0c3ZVODViandJQTM5MGdCT1ZMRm93SFdkNS14b2lFNXljQncifX0sInN0cmVhbV9pZCI6IkVSRVJFUkVSRVJFUkVSRVJFUkVSRVEiLCJ0cyI6MTc4MjI1OTIwMCwidHlwZSI6IktFWV9ST1RBVElPTiIsInYiOjF9\",\"index\":1,\"proof\":\"TzqqbPIFvX4tEEoe-n5umoiSZgBZOdjC5WmelAlTv9jMnZClHzl4HHuHxbkU4ovBcei9t1wiA77KTMmzFJdGydsLcri8TUTHmsdz2U46soxZ9_zte7XBrSLSujt8ko4f\"}],\"expires\":1782346000,\"fqdn\":\"agent.example.com\",\"lr\":\"c2sp-tlog:public:https://log.example#EREREREREREREREREREREQ\",\"policy_hash\":\"GY2-deqP5xIZ_4_wHJPh-0Nk8OaqiGcs7sYSO1v7LXo\",\"sig\":{\"alg\":\"EdDSA\",\"kid\":\"dnsid-stream-bundle+5ee26202\",\"value\":\"oce6mOdU-zn0VoS1lqnG9iXso5KTRknt9OECnt_Qpi0CxqIuxmjR8yp_FyA8ATRvsut_czsTi2klC3MlLaCUDg\"},\"state\":{\"event_count\":2,\"last_event_type\":\"KEY_ROTATION\",\"logged_state\":\"ACTIVE\"},\"type\":\"dnsid-c2sp-stream-bundle\",\"v\":1}",
+      "expect": {
+        "result": "reject",
+        "reason": "policy_hash"
       }
     },
     {

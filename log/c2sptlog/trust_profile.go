@@ -49,7 +49,10 @@ type TrustProfile struct {
 // PolicyDocument must be byte-identical to the tlog-policy document that the
 // epoch's log server renders, because stream bundles bind its SHA-256 as
 // policy_hash. MinTreeSize and MaxTreeSize, when set, bound the checkpoint
-// tree sizes this epoch accepts (both inclusive). A nil bound is unbounded.
+// tree sizes this epoch accepts (both inclusive). A nil bound is unbounded. A
+// bound must be written as a JSON number token matching ^[1-9][0-9]*$ with a
+// value of at most 2^53-1; decoding into *uint64 rejects fractions, exponents,
+// signs, booleans and strings, and validation rejects zero and larger values.
 type TrustProfileEpoch struct {
 	ID                 string   `json:"id"`
 	PolicyDocument     string   `json:"tlog_policy"`
