@@ -33,8 +33,8 @@ const (
 }`
 
 	// managedPartnersProfile pins the partner environment's log. Its log and
-	// bundle keys were checked against the partner account's KMS public keys
-	// and its witness key against the reviewed partner witness policy; the
+	// bundle keys were checked against out-of-band copies of the signing public
+	// keys and its witness key against the reviewed partner witness policy; the
 	// log's own discovery endpoints are not what the pins rest on.
 	managedPartnersProfile = `{
   "version": 1,
