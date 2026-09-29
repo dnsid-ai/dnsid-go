@@ -55,7 +55,7 @@ DNSID_LOG_TRUST_PROFILE_FILE=/path/to/trusted-profile.json \
 Replace `your-agent.example.com` with a DNSid-enabled domain. Choose log trust based on the
 log you expect to verify:
 
-- **DNSid-managed development or production logs:** the SDK includes reviewed trust profiles.
+- **DNSid-managed development, production, or partner logs:** the SDK includes reviewed trust profiles.
   Opt in from Go code (instead of the environment loader above):
 
   ```go

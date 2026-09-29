@@ -299,7 +299,7 @@ func LogEventFromEntry(entry []byte) (eventResult dnsidlog.LogEvent, errResult e
 LogEventFromEntry parses stored entry bytes into the shared lifecycle event representation. The entry must be canonical JCS with a complete, well\-formed signature set and valid lifecycle fields; the signatures themselves are not cryptographically verified.
 
 <a name="NewDnsidManagedVerificationRegistry"></a>
-## func [NewDnsidManagedVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L75>)
+## func [NewDnsidManagedVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L91>)
 
 ```go
 func NewDnsidManagedVerificationRegistry(ctx context.Context, config DnsidManagedVerificationConfig) (*dnsidlog.LogRegistry, error)
@@ -307,7 +307,7 @@ func NewDnsidManagedVerificationRegistry(ctx context.Context, config DnsidManage
 
 NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed, SDK\-embedded trust roots of DNSid\-managed DNSid logs. Calling this separately named factory is an explicit application trust decision; the generic NewVerificationRegistry never selects these roots implicitly.
 
-Development and production verification prefer signed stream bundles with safe raw\-scan fallback. The default checkpoint store is restart\-ephemeral; deployments needing rollback protection across restarts should inject durable storage and retain the returned registry for the process lifetime.
+The catalog covers the development, production, and partner \(https://log.partners.dnsid.ai\) logs. Each prefers signed stream bundles with safe raw\-scan fallback. The default checkpoint store is restart\-ephemeral; deployments needing rollback protection across restarts should inject durable storage and retain the returned registry for the process lifetime.
 
 <a name="NewVerificationRegistry"></a>
 ## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L88>)
@@ -752,7 +752,7 @@ type CompleteSource interface {
 ```
 
 <a name="DnsidManagedVerificationConfig"></a>
-## type [DnsidManagedVerificationConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L40-L47>)
+## type [DnsidManagedVerificationConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L54-L61>)
 
 DnsidManagedVerificationConfig configures shared infrastructure for NewDnsidManagedVerificationRegistry. Trust roots, freshness, resource limits, and bundle requirements are fixed by the managed catalog; callers needing different policy use NewVerificationRegistry.
 
