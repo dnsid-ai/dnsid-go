@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.37.1] - 2026-09-29
+
+### Bug Fixes
+
+- fix: use real ttl ([#44](https://github.com/dnsid-ai/dnsid-go/pull/44))
+
+### Chores
+
+- chore(deps): bump github/codeql-action/init ([#21](https://github.com/dnsid-ai/dnsid-go/pull/21))
+- chore(deps): bump github.com/aws/aws-sdk-go-v2/service/kms in /key/aws ([#22](https://github.com/dnsid-ai/dnsid-go/pull/22))
+- chore(deps): bump github/codeql-action/analyze ([#23](https://github.com/dnsid-ai/dnsid-go/pull/23))
+- chore(deps): bump anchore/sbom-action ([#24](https://github.com/dnsid-ai/dnsid-go/pull/24))
+- chore(deps): bump github/codeql-action/autobuild ([#25](https://github.com/dnsid-ai/dnsid-go/pull/25))
+- chore(deps): bump taiki-e/install-action from 2.87.5 to 2.87.16 ([#20](https://github.com/dnsid-ai/dnsid-go/pull/20))
+
 ## [0.37.0] - 2026-09-28
 
 ### Features
