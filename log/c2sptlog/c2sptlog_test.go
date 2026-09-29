@@ -1421,6 +1421,40 @@ func TestVerifyLifecycleBindingRebuildsHistoryOnce(t *testing.T) {
 	}
 }
 
+func TestPreloadedLifecycleBindingReusesVerifiedHistory(t *testing.T) {
+	source := &countingSource{entries: []ProvenEntry{{Index: 0, Entry: []byte(issuanceEntry)}, {Index: 1, Entry: []byte(keyRotationEntry)}}}
+	client, err := New("c2sp-tlog:testnet:http://dnsid-ledger:8080/log#identity-01", WithSource(source), WithPolicy(Policy{Now: func() time.Time { return time.Unix(1782259201, 0).UTC() }}), withProofVerifySkipped())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := client.PreloadLifecycleHistory(context.Background(), "agent.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := dnsidlog.BilateralBindingInput{Domain: "agent.example", GovernanceID: "example.com", EntityKey: mustKey(t, aeJWK), OperationalKey: mustKey(t, op2JWK)}
+	thumb := mustThumbprint(t, op2JWK)
+	if err := reader.(interface {
+		VerifyGovernanceRelationship(context.Context, string, string) error
+	}).VerifyGovernanceRelationship(context.Background(), input.Domain, input.GovernanceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.KeyTimestamp(context.Background(), input.Domain, thumb); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.(dnsidlog.LifecycleBindingVerifier).VerifyLifecycleBinding(context.Background(), input, thumb); err != nil {
+		t.Fatal(err)
+	}
+	if source.rebuilds != 1 {
+		t.Fatalf("history retrieved %d times, want 1", source.rebuilds)
+	}
+	if _, err := reader.(dnsidlog.LifecycleBindingVerifier).VerifyLifecycleBinding(context.Background(), input, "wrong"); err == nil {
+		t.Fatal("accepted incorrect ku binding")
+	}
+	if source.rebuilds != 1 {
+		t.Fatalf("history retrieved %d times, want 1", source.rebuilds)
+	}
+}
+
 func mustThumbprint(t *testing.T, data string) string {
 	t.Helper()
 	thumb, err := thumbprint(mustKey(t, data))

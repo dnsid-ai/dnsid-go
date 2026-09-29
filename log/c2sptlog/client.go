@@ -493,7 +493,11 @@ func (c *Client) KeyTimestamp(ctx context.Context, domain, keyThumbprint string)
 	if err != nil {
 		return time.Time{}, err
 	}
-	snapshot, err := dnsidlog.NewDomainLog(domain, events).SnapshotAt(c.policy.now())
+	return keyTimestampFromHistory(verified, events, domain, keyThumbprint, c.policy.now())
+}
+
+func keyTimestampFromHistory(verified []verifiedEvent, events []dnsidlog.LogEvent, domain, keyThumbprint string, at time.Time) (time.Time, error) {
+	snapshot, err := dnsidlog.NewDomainLog(domain, events).SnapshotAt(at)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -613,6 +617,66 @@ func activeHistoricalSnapshot(events []dnsidlog.LogEvent, domain string, at time
 		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTerminalState, false, fmt.Sprintf("dnsid: c2sp-tlog identity %s has terminal logged state %s", domain, snapshot.HistoricalState), nil)
 	}
 	return snapshot, nil
+}
+
+// PreloadLifecycleHistory returns a per-call view of verified history. The
+// shared Client is never mutated, and later independent reads remain fresh.
+func (c *Client) PreloadLifecycleHistory(ctx context.Context, domain string) (dnsidlog.LogReader, error) {
+	verified, events, err := c.rebuildVerifiedHistory(ctx, domain)
+	if err != nil {
+		return nil, err
+	}
+	return &preloadedHistory{Client: c, domain: domain, verified: verified, events: events}, nil
+}
+
+type preloadedHistory struct {
+	*Client
+	domain   string
+	verified []verifiedEvent
+	events   []dnsidlog.LogEvent
+}
+
+func (p *preloadedHistory) VerifyGovernanceRelationship(ctx context.Context, domain, governanceID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if domain != p.domain {
+		return logVerificationError(fmt.Errorf("dnsid: preloaded history domain mismatch"), false)
+	}
+	for _, event := range p.events {
+		if event.Type == dnsidlog.LogEventIssuance && event.GovernanceID == governanceID {
+			return nil
+		}
+	}
+	return logVerificationError(fmt.Errorf("dnsid: no c2sp-tlog governance relationship for %s and %s", domain, governanceID), false)
+}
+
+func (p *preloadedHistory) KeyTimestamp(ctx context.Context, domain, thumbprint string) (time.Time, error) {
+	if err := ctx.Err(); err != nil {
+		return time.Time{}, err
+	}
+	if domain != p.domain {
+		return time.Time{}, logVerificationError(fmt.Errorf("dnsid: preloaded history domain mismatch"), false)
+	}
+	timestamp, err := keyTimestampFromHistory(p.verified, p.events, domain, thumbprint, p.policy.now())
+	return timestamp, logVerificationError(err, false)
+}
+
+func (p *preloadedHistory) VerifyLifecycleBinding(ctx context.Context, input dnsidlog.BilateralBindingInput, currentOperationalThumbprint string) (dnsidlog.BilateralBinding, error) {
+	if err := ctx.Err(); err != nil {
+		return dnsidlog.BilateralBinding{}, err
+	}
+	if input.Domain != p.domain {
+		return dnsidlog.BilateralBinding{}, logVerificationError(fmt.Errorf("dnsid: preloaded history domain mismatch"), false)
+	}
+	binding, err := verifyBilateralBinding(p.events, input)
+	if err != nil {
+		return dnsidlog.BilateralBinding{}, logVerificationError(err, false)
+	}
+	if err := verifyOperationalContinuity(p.events, input.Domain, binding.InitialOperationalThumbprint, currentOperationalThumbprint, p.policy.now()); err != nil {
+		return dnsidlog.BilateralBinding{}, logVerificationError(err, false)
+	}
+	return binding, ctx.Err()
 }
 
 // VerifyLifecycleBinding verifies the bilateral ISSUANCE binding and

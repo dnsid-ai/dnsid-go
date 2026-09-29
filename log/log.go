@@ -238,6 +238,13 @@ type LifecycleBindingVerifier interface {
 	VerifyLifecycleBinding(ctx context.Context, input BilateralBindingInput, currentOperationalThumbprint string) (BilateralBinding, error)
 }
 
+// LifecycleHistoryPreloader optionally loads verified history before the current
+// operational key is available. The returned reader is scoped to this call and
+// reuses that history for policy and binding checks; it must not weaken any check.
+type LifecycleHistoryPreloader interface {
+	PreloadLifecycleHistory(ctx context.Context, domain string) (LogReader, error)
+}
+
 // LogRegistry maps log method names to bound LogReader factories.
 type LogRegistry struct {
 	mu        sync.RWMutex

@@ -1121,8 +1121,43 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 	identityResults := make(chan identityResult, 1)
 	statusResults := make(chan statusResult, 1)
 	go func() {
-		kuSet, runtimeCert, err := m.fetchJWKSForDomain(workCtx, rec.KeyURI, normalized)
+		reader, err := m.logReaderFor(rec.LogRef)
 		if err != nil {
+			identityResults <- identityResult{err: err}
+			return
+		}
+		policyReader := reader
+		identityCtx, stopIdentity := context.WithCancel(workCtx)
+		defer stopIdentity()
+		var preloaded chan struct {
+			reader dnsidlog.LogReader
+			err    error
+		}
+		if loader, ok := reader.(dnsidlog.LifecycleHistoryPreloader); ok {
+			preloaded = make(chan struct {
+				reader dnsidlog.LogReader
+				err    error
+			}, 1)
+			go func() {
+				loaded, err := loader.PreloadLifecycleHistory(identityCtx, normalized)
+				if err != nil {
+					stopIdentity()
+				}
+				preloaded <- struct {
+					reader dnsidlog.LogReader
+					err    error
+				}{loaded, err}
+			}()
+		}
+		kuSet, runtimeCert, err := m.fetchJWKSForDomain(identityCtx, rec.KeyURI, normalized)
+		if err != nil {
+			if preloaded != nil && errors.Is(err, context.Canceled) {
+				result := <-preloaded
+				if result.err != nil && !errors.Is(result.err, context.Canceled) {
+					identityResults <- identityResult{err: logVerificationError(result.err)}
+					return
+				}
+			}
 			identityResults <- identityResult{err: jwksVerificationError(fmt.Sprintf("dnsid: fetching ku JWKS for %s", normalized), err)}
 			return
 		}
@@ -1141,8 +1176,16 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 			identityResults <- identityResult{err: err}
 			return
 		}
-		vd := &VerifiedDomain{domain: normalized, record: rec, keySet: NewJWKS(kuSet), recordSigningKeySet: NewJWKS(set), signingKey: signingJWK, signingKeyThumbprint: signingKeyThumbprint, dnssecState: dnssec, dnsTTL: rdatas[0].TTL, jwksTLSCertificate: runtimeCert, ekTLSCertificate: jwksCert, operationalKeyThumbprint: operationalKeyThumbprint, kuKey: kuOpKey}
-		if err := m.enforceRecordPolicy(workCtx, rec, normalized, signingKeyThumbprint, operationalKeyThumbprint, vd); err != nil {
+		if preloaded != nil {
+			result := <-preloaded
+			if result.err != nil {
+				identityResults <- identityResult{err: logVerificationError(result.err)}
+				return
+			}
+			policyReader = result.reader
+		}
+		vd := &VerifiedDomain{domain: normalized, record: rec, keySet: NewJWKS(kuSet), recordSigningKeySet: NewJWKS(set), signingKey: signingJWK, signingKeyThumbprint: signingKeyThumbprint, dnssecState: dnssec, dnsTTL: rdatas[0].TTL, jwksTLSCertificate: runtimeCert, ekTLSCertificate: jwksCert, operationalKeyThumbprint: operationalKeyThumbprint, kuKey: kuOpKey, logReader: reader}
+		if err := m.enforceRecordPolicy(identityCtx, rec, normalized, signingKeyThumbprint, operationalKeyThumbprint, vd, policyReader); err != nil {
 			identityResults <- identityResult{err: err}
 			return
 		}
@@ -1314,14 +1357,7 @@ func (m *IdentityManager) enforceDNSSECPolicy(state DNSSECState) error {
 	}
 }
 
-func (m *IdentityManager) enforceRecordPolicy(ctx context.Context, rec *TXTRecord, domain, signingKeyThumbprint, operationalKeyThumbprint string, vd *VerifiedDomain) error {
-	reader, err := m.logReaderFor(rec.LogRef)
-	if err != nil {
-		return err
-	}
-	if vd != nil {
-		vd.logReader = reader
-	}
+func (m *IdentityManager) enforceRecordPolicy(ctx context.Context, rec *TXTRecord, domain, signingKeyThumbprint, operationalKeyThumbprint string, vd *VerifiedDomain, reader dnsidlog.LogReader) error {
 	govID := rec.GovernanceID
 	// A delegated governance domain requires an ISSUANCE evidence binding.
 	giDomain, _ := NormalizeFQDN(govID)
