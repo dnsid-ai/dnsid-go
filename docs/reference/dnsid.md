@@ -543,7 +543,7 @@ func (m *IdentityManager) EntityKeyURL() string
 EntityKeyURL returns the HTTPS URL where the draft 01 entity \(ek\) JWKS should be served. It returns an empty string when no entity KeyProvider is configured. Draft 01 defines no default path, so an unset EntityKeyURL returns an empty string.
 
 <a name="IdentityManager.EvictDomain"></a>
-### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1547>)
+### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1583>)
 
 ```go
 func (m *IdentityManager) EvictDomain(domain string)

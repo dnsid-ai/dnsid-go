@@ -70,6 +70,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(c \*Client\) EntryBytesWithChain\(event dnsidlog.LogEvent, chain Chain\) \(\[\]byte, error\)](<#Client.EntryBytesWithChain>)
   - [func \(c \*Client\) KeyTimestamp\(ctx context.Context, domain, keyThumbprint string\) \(timestamp time.Time, err error\)](<#Client.KeyTimestamp>)
   - [func \(c \*Client\) ParsePreparedEvent\(entry \[\]byte\) \(\*PreparedEvent, error\)](<#Client.ParsePreparedEvent>)
+  - [func \(c \*Client\) PreloadLifecycleHistory\(ctx context.Context, domain string\) \(dnsidlog.LogReader, error\)](<#Client.PreloadLifecycleHistory>)
   - [func \(c \*Client\) PrepareEvent\(event dnsidlog.LogEvent\) \(\*PreparedEvent, error\)](<#Client.PrepareEvent>)
   - [func \(c \*Client\) PrepareEventWithChain\(event dnsidlog.LogEvent, chain Chain\) \(\*PreparedEvent, error\)](<#Client.PrepareEventWithChain>)
   - [func \(c \*Client\) PreparedEntryBytes\(ctx context.Context, prepared \*PreparedEvent\) \(result \[\]byte, err error\)](<#Client.PreparedEntryBytes>)
@@ -579,6 +580,15 @@ func (c *Client) ParsePreparedEvent(entry []byte) (*PreparedEvent, error)
 
 ParsePreparedEvent treats received bytes as untrusted, canonicalizes the envelope independently, and preserves unknown signed fields.
 
+<a name="Client.PreloadLifecycleHistory"></a>
+### func \(\*Client\) [PreloadLifecycleHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L624>)
+
+```go
+func (c *Client) PreloadLifecycleHistory(ctx context.Context, domain string) (dnsidlog.LogReader, error)
+```
+
+PreloadLifecycleHistory returns a per\-call view of verified history. The shared Client is never mutated, and later independent reads remain fresh.
+
 <a name="Client.PrepareEvent"></a>
 ### func \(\*Client\) [PrepareEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L102>)
 
@@ -607,7 +617,7 @@ func (c *Client) PreparedEntryBytes(ctx context.Context, prepared *PreparedEvent
 PreparedEntryBytes returns exact canonical bytes after validating all required signatures. It never appends.
 
 <a name="Client.ReadEvent"></a>
-### func \(\*Client\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L854>)
+### func \(\*Client\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L918>)
 
 ```go
 func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsidlog.LogEvent, err error)
@@ -616,7 +626,7 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 ReadEvent reads and verifies the single event addressed by a final event reference \<lr\>@\<index\>. The entry's inclusion proof must verify, its index must match the reference, and the entry must appear in the domain's verified lifecycle history; otherwise an error is returned.
 
 <a name="Client.RebuildHistory"></a>
-### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L913>)
+### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L977>)
 
 ```go
 func (c *Client) RebuildHistory(ctx context.Context, domain string) ([]dnsidlog.LogEvent, error)
@@ -652,7 +662,7 @@ func (c *Client) SignPreparedEventWithKey(ctx context.Context, prepared *Prepare
 SignPreparedEventWithKey validates every signature already present and adds role using the named active or pending key. It is intended for transitions such as KEY\_ROTATION whose new\-key proof must be made before activation.
 
 <a name="Client.VerifyBilateralBinding"></a>
-### func \(\*Client\) [VerifyBilateralBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L516>)
+### func \(\*Client\) [VerifyBilateralBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L520>)
 
 ```go
 func (c *Client) VerifyBilateralBinding(ctx context.Context, input dnsidlog.BilateralBindingInput) (binding dnsidlog.BilateralBinding, err error)
@@ -661,7 +671,7 @@ func (c *Client) VerifyBilateralBinding(ctx context.Context, input dnsidlog.Bila
 VerifyBilateralBinding verifies the signed ISSUANCE event against the current DNS record material and returns its trusted continuity anchor.
 
 <a name="Client.VerifyGovernanceRelationship"></a>
-### func \(\*Client\) [VerifyGovernanceRelationship](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L653>)
+### func \(\*Client\) [VerifyGovernanceRelationship](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L717>)
 
 ```go
 func (c *Client) VerifyGovernanceRelationship(ctx context.Context, domain, governanceID string) (err error)
@@ -670,7 +680,7 @@ func (c *Client) VerifyGovernanceRelationship(ctx context.Context, domain, gover
 VerifyGovernanceRelationship verifies that a verified ISSUANCE event for domain names governanceID as the governing organization.
 
 <a name="Client.VerifyLifecycleBinding"></a>
-### func \(\*Client\) [VerifyLifecycleBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L620>)
+### func \(\*Client\) [VerifyLifecycleBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L684>)
 
 ```go
 func (c *Client) VerifyLifecycleBinding(ctx context.Context, input dnsidlog.BilateralBindingInput, currentOperationalThumbprint string) (binding dnsidlog.BilateralBinding, err error)
@@ -679,7 +689,7 @@ func (c *Client) VerifyLifecycleBinding(ctx context.Context, input dnsidlog.Bila
 VerifyLifecycleBinding verifies the bilateral ISSUANCE binding and operational continuity over one verified lifecycle snapshot.
 
 <a name="Client.VerifyNonRevocation"></a>
-### func \(\*Client\) [VerifyNonRevocation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L679>)
+### func \(\*Client\) [VerifyNonRevocation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L743>)
 
 ```go
 func (c *Client) VerifyNonRevocation(ctx context.Context, domain string, at time.Time) (evidence dnsidlog.LoggedStateEvidence, err error)
@@ -688,7 +698,7 @@ func (c *Client) VerifyNonRevocation(ctx context.Context, domain string, at time
 VerifyNonRevocation verifies that domain's identity was neither revoked nor retired as of time at. It requires the configured Source to implement CompleteSource, because proving the absence of a REVOCATION entry needs a complete view of the stream and a positive maximum checkpoint age; without either it fails closed. Success returns the exact accepted proof boundaries, including every prior stream imported by migration.
 
 <a name="Client.VerifyOperationalContinuity"></a>
-### func \(\*Client\) [VerifyOperationalContinuity](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L570>)
+### func \(\*Client\) [VerifyOperationalContinuity](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L574>)
 
 ```go
 func (c *Client) VerifyOperationalContinuity(ctx context.Context, domain, initialOperationalThumbprint, currentOperationalThumbprint string) (err error)

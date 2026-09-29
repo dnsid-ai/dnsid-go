@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -154,6 +155,87 @@ func (r *coalescingLogReader) ReadEvent(context.Context, dnsidlog.LogRef) (dnsid
 }
 func (r *coalescingLogReader) RebuildHistory(context.Context, string) ([]dnsidlog.LogEvent, error) {
 	return nil, nil
+}
+
+type preloadTestReader struct {
+	*coalescingLogReader
+	entered  chan struct{}
+	release  chan struct{}
+	loads    atomic.Int32
+	bindings atomic.Int32
+	failure  error
+}
+
+func (r *preloadTestReader) PreloadLifecycleHistory(ctx context.Context, _ string) (dnsidlog.LogReader, error) {
+	r.loads.Add(1)
+	close(r.entered)
+	select {
+	case <-r.release:
+		if r.failure != nil {
+			return nil, r.failure
+		}
+		return &preloadTestSnapshot{preloadTestReader: r}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+type preloadTestSnapshot struct{ *preloadTestReader }
+
+func (r *preloadTestSnapshot) VerifyLifecycleBinding(_ context.Context, _ dnsidlog.BilateralBindingInput, _ string) (dnsidlog.BilateralBinding, error) {
+	r.bindings.Add(1)
+	return dnsidlog.BilateralBinding{}, nil
+}
+
+func TestVerifyDomain_PreloadOverlapsKUAndReusesBinding(t *testing.T) {
+	const domain = "agent.example"
+	f := newCoalescingFixture(t, []string{domain}, nil)
+	r := &preloadTestReader{coalescingLogReader: f.reader, entered: make(chan struct{}), release: make(chan struct{})}
+	if err := f.manager.logRegistry.Register("testlog", func(string) dnsidlog.LogReader { return r }); err != nil {
+		t.Fatal(err)
+	}
+	kuStarted, kuRelease := make(chan struct{}), make(chan struct{})
+	f.manager.https = &controlledHTTPSFetcher{base: f.https, gates: map[string]<-chan struct{}{f.records[domain].KeyURI: kuRelease}, entered: map[string]chan struct{}{f.records[domain].KeyURI: kuStarted}}
+	result := make(chan error, 1)
+	go func() { _, err := f.manager.VerifyDomain(context.Background(), domain); result <- err }()
+	<-kuStarted
+	<-r.entered
+	close(kuRelease)
+	select {
+	case err := <-result:
+		t.Fatalf("verification finished before history: %v", err)
+	default:
+	}
+	close(r.release)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if r.loads.Load() != 1 || r.bindings.Load() != 1 || r.coalescingLogReader.bindings.Load() != 0 {
+		t.Fatalf("preloads=%d binding=%d fallback=%d", r.loads.Load(), r.bindings.Load(), r.coalescingLogReader.bindings.Load())
+	}
+}
+
+func TestVerifyDomain_PreloadFailureCancelsKU(t *testing.T) {
+	const domain = "agent.example"
+	f := newCoalescingFixture(t, []string{domain}, nil)
+	r := &preloadTestReader{coalescingLogReader: f.reader, entered: make(chan struct{}), release: make(chan struct{}), failure: errors.New("history failed")}
+	if err := f.manager.logRegistry.Register("testlog", func(string) dnsidlog.LogReader { return r }); err != nil {
+		t.Fatal(err)
+	}
+	kuStarted, kuRelease, kuCancelled := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	f.manager.https = &controlledHTTPSFetcher{base: f.https, gates: map[string]<-chan struct{}{f.records[domain].KeyURI: kuRelease}, entered: map[string]chan struct{}{f.records[domain].KeyURI: kuStarted}, cancelled: map[string]chan struct{}{f.records[domain].KeyURI: kuCancelled}}
+	result := make(chan error, 1)
+	go func() { _, err := f.manager.VerifyDomain(context.Background(), domain); result <- err }()
+	<-kuStarted
+	<-r.entered
+	close(r.release)
+	if err := <-result; err == nil || !strings.Contains(err.Error(), "history failed") {
+		t.Fatalf("preload error = %v", err)
+	}
+	<-kuCancelled
+	if f.manager.cachedDomain(domain) != nil {
+		t.Fatal("failed preload cached identity")
+	}
 }
 
 type coalescingFixture struct {

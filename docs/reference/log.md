@@ -57,6 +57,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(l \*DomainLog\) SnapshotAt\(at time.Time\) \(\*DomainSnapshot, error\)](<#DomainLog.SnapshotAt>)
 - [type DomainSnapshot](<#DomainSnapshot>)
 - [type LifecycleBindingVerifier](<#LifecycleBindingVerifier>)
+- [type LifecycleHistoryPreloader](<#LifecycleHistoryPreloader>)
 - [type Log](<#Log>)
 - [type LogEvent](<#LogEvent>)
 - [type LogEventType](<#LogEventType>)
@@ -103,7 +104,7 @@ const (
 ```
 
 <a name="ParseLogRef"></a>
-## func [ParseLogRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L298>)
+## func [ParseLogRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L305>)
 
 ```go
 func ParseLogRef(lr string) (method, entryRef string, err error)
@@ -215,7 +216,7 @@ type BilateralBindingInput struct {
 ```
 
 <a name="DomainLog"></a>
-## type [DomainLog](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L387-L390>)
+## type [DomainLog](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L394-L397>)
 
 DomainLog is a verified lifecycle event history for a domain.
 
@@ -226,7 +227,7 @@ type DomainLog struct {
 ```
 
 <a name="NewDomainLog"></a>
-### func [NewDomainLog](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L394>)
+### func [NewDomainLog](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L401>)
 
 ```go
 func NewDomainLog(domain string, events []LogEvent) *DomainLog
@@ -235,7 +236,7 @@ func NewDomainLog(domain string, events []LogEvent) *DomainLog
 NewDomainLog constructs a DomainLog over events already verified by a LogReader. It copies the events slice; events must be in log order.
 
 <a name="DomainLog.Domain"></a>
-### func \(\*DomainLog\) [Domain](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L400>)
+### func \(\*DomainLog\) [Domain](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L407>)
 
 ```go
 func (l *DomainLog) Domain() string
@@ -244,7 +245,7 @@ func (l *DomainLog) Domain() string
 Domain returns the domain the history belongs to. It returns "" on a nil receiver.
 
 <a name="DomainLog.Events"></a>
-### func \(\*DomainLog\) [Events](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L409>)
+### func \(\*DomainLog\) [Events](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L416>)
 
 ```go
 func (l *DomainLog) Events() []LogEvent
@@ -253,7 +254,7 @@ func (l *DomainLog) Events() []LogEvent
 Events returns a copy of the lifecycle events in log order. It returns nil on a nil receiver.
 
 <a name="DomainLog.SnapshotAt"></a>
-### func \(\*DomainLog\) [SnapshotAt](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L438>)
+### func \(\*DomainLog\) [SnapshotAt](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L445>)
 
 ```go
 func (l *DomainLog) SnapshotAt(at time.Time) (*DomainSnapshot, error)
@@ -262,7 +263,7 @@ func (l *DomainLog) SnapshotAt(at time.Time) (*DomainSnapshot, error)
 SnapshotAt replays the domain's events with timestamps at or before at and returns the resulting lifecycle state. It enforces the lifecycle state machine while replaying and returns an error if the log is empty, if the events at or before at are not a contiguous prefix of the log, if no ISSUANCE event is found, or if an event sequence is invalid \(for example, a rotation before issuance or a non\-migration event after a terminal state\). Events for other domains are ignored.
 
 <a name="DomainSnapshot"></a>
-## type [DomainSnapshot](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L420-L429>)
+## type [DomainSnapshot](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L427-L436>)
 
 DomainSnapshot is the materialized lifecycle state at a point in time. HistoricalState holds one of the AgentState\* values; ActiveKey, ActiveKeyThumbprint, and KeyBoundAt describe the operational key in effect at SnapshotAt; Events holds the lifecycle prefix the snapshot was materialized from.
 
@@ -287,6 +288,17 @@ LifecycleBindingVerifier optionally combines bilateral\-binding and operational\
 ```go
 type LifecycleBindingVerifier interface {
     VerifyLifecycleBinding(ctx context.Context, input BilateralBindingInput, currentOperationalThumbprint string) (BilateralBinding, error)
+}
+```
+
+<a name="LifecycleHistoryPreloader"></a>
+## type [LifecycleHistoryPreloader](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L244-L246>)
+
+LifecycleHistoryPreloader optionally loads verified history before the current operational key is available. The returned reader is scoped to this call and reuses that history for policy and binding checks; it must not weaken any check.
+
+```go
+type LifecycleHistoryPreloader interface {
+    PreloadLifecycleHistory(ctx context.Context, domain string) (LogReader, error)
 }
 ```
 
@@ -422,7 +434,7 @@ type LogRef string
 ```
 
 <a name="LogRegistry"></a>
-## type [LogRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L242-L245>)
+## type [LogRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L249-L252>)
 
 LogRegistry maps log method names to bound LogReader factories.
 
@@ -433,7 +445,7 @@ type LogRegistry struct {
 ```
 
 <a name="NewLogRegistry"></a>
-### func [NewLogRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L248>)
+### func [NewLogRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L255>)
 
 ```go
 func NewLogRegistry() *LogRegistry
@@ -442,7 +454,7 @@ func NewLogRegistry() *LogRegistry
 NewLogRegistry returns an empty registry with no methods registered.
 
 <a name="LogRegistry.NewReader"></a>
-### func \(\*LogRegistry\) [NewReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L274>)
+### func \(\*LogRegistry\) [NewReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L281>)
 
 ```go
 func (r *LogRegistry) NewReader(lr string) (LogReader, error)
@@ -451,7 +463,7 @@ func (r *LogRegistry) NewReader(lr string) (LogReader, error)
 NewReader returns a LogReader bound to the lr value. It returns an error only when lr is malformed; a nil registry, an unregistered method, or a factory that returns nil all yield a NoopLogReader, so evidence failures surface at verification time rather than at construction. NewReader is safe for concurrent use.
 
 <a name="LogRegistry.Register"></a>
-### func \(\*LogRegistry\) [Register](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L256>)
+### func \(\*LogRegistry\) [Register](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L263>)
 
 ```go
 func (r *LogRegistry) Register(method string, factory func(lr string) LogReader) error
@@ -479,7 +491,7 @@ type LoggedStateEvidence struct {
 ```
 
 <a name="NoopLogReader"></a>
-## type [NoopLogReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L347>)
+## type [NoopLogReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L354>)
 
 NoopLogReader fails every evidence operation for an unregistered method. Each method returns a \*VerificationError with code "log\_error" naming the unregistered Method; the error is not transient.
 
@@ -488,7 +500,7 @@ type NoopLogReader struct{ Method string }
 ```
 
 <a name="NoopLogReader.Canonical"></a>
-### func \(NoopLogReader\) [Canonical](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L354>)
+### func \(NoopLogReader\) [Canonical](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L361>)
 
 ```go
 func (n NoopLogReader) Canonical(LogEvent) ([]byte, error)
@@ -497,7 +509,7 @@ func (n NoopLogReader) Canonical(LogEvent) ([]byte, error)
 Canonical implements LogReader; it always fails.
 
 <a name="NoopLogReader.KeyTimestamp"></a>
-### func \(NoopLogReader\) [KeyTimestamp](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L357>)
+### func \(NoopLogReader\) [KeyTimestamp](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L364>)
 
 ```go
 func (n NoopLogReader) KeyTimestamp(context.Context, string, string) (time.Time, error)
@@ -506,7 +518,7 @@ func (n NoopLogReader) KeyTimestamp(context.Context, string, string) (time.Time,
 KeyTimestamp implements LogReader; it always fails.
 
 <a name="NoopLogReader.ReadEvent"></a>
-### func \(NoopLogReader\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L377>)
+### func \(NoopLogReader\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L384>)
 
 ```go
 func (n NoopLogReader) ReadEvent(context.Context, LogRef) (LogEvent, error)
@@ -515,7 +527,7 @@ func (n NoopLogReader) ReadEvent(context.Context, LogRef) (LogEvent, error)
 ReadEvent implements LogReader; it always fails.
 
 <a name="NoopLogReader.RebuildHistory"></a>
-### func \(NoopLogReader\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L382>)
+### func \(NoopLogReader\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L389>)
 
 ```go
 func (n NoopLogReader) RebuildHistory(context.Context, string) ([]LogEvent, error)
@@ -524,7 +536,7 @@ func (n NoopLogReader) RebuildHistory(context.Context, string) ([]LogEvent, erro
 RebuildHistory implements LogReader; it always fails.
 
 <a name="NoopLogReader.VerifyBilateralBinding"></a>
-### func \(NoopLogReader\) [VerifyBilateralBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L362>)
+### func \(NoopLogReader\) [VerifyBilateralBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L369>)
 
 ```go
 func (n NoopLogReader) VerifyBilateralBinding(context.Context, BilateralBindingInput) (BilateralBinding, error)
@@ -533,7 +545,7 @@ func (n NoopLogReader) VerifyBilateralBinding(context.Context, BilateralBindingI
 VerifyBilateralBinding implements LogReader; it always fails.
 
 <a name="NoopLogReader.VerifyNonRevocation"></a>
-### func \(NoopLogReader\) [VerifyNonRevocation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L372>)
+### func \(NoopLogReader\) [VerifyNonRevocation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L379>)
 
 ```go
 func (n NoopLogReader) VerifyNonRevocation(context.Context, string, time.Time) (LoggedStateEvidence, error)
@@ -542,7 +554,7 @@ func (n NoopLogReader) VerifyNonRevocation(context.Context, string, time.Time) (
 VerifyNonRevocation implements LogReader; it always fails.
 
 <a name="NoopLogReader.VerifyOperationalContinuity"></a>
-### func \(NoopLogReader\) [VerifyOperationalContinuity](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L367>)
+### func \(NoopLogReader\) [VerifyOperationalContinuity](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L374>)
 
 ```go
 func (n NoopLogReader) VerifyOperationalContinuity(context.Context, string, string, string) error
@@ -551,7 +563,7 @@ func (n NoopLogReader) VerifyOperationalContinuity(context.Context, string, stri
 VerifyOperationalContinuity implements LogReader; it always fails.
 
 <a name="VerificationError"></a>
-## type [VerificationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L311-L315>)
+## type [VerificationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L318-L322>)
 
 VerificationError is a structured lifecycle\-log verification failure.
 
@@ -562,7 +574,7 @@ type VerificationError struct {
 ```
 
 <a name="VerificationError.Code"></a>
-### func \(\*VerificationError\) [Code](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L321>)
+### func \(\*VerificationError\) [Code](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L328>)
 
 ```go
 func (e *VerificationError) Code() string
@@ -571,7 +583,7 @@ func (e *VerificationError) Code() string
 Code returns the machine\-readable failure code \(for example "log\_error"\).
 
 <a name="VerificationError.Error"></a>
-### func \(\*VerificationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L318>)
+### func \(\*VerificationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L325>)
 
 ```go
 func (e *VerificationError) Error() string
@@ -580,7 +592,7 @@ func (e *VerificationError) Error() string
 Error implements the error interface; it returns the failure message.
 
 <a name="VerificationError.Message"></a>
-### func \(\*VerificationError\) [Message](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L324>)
+### func \(\*VerificationError\) [Message](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L331>)
 
 ```go
 func (e *VerificationError) Message() string
@@ -589,7 +601,7 @@ func (e *VerificationError) Message() string
 Message returns the human\-readable failure message.
 
 <a name="VerificationError.Transient"></a>
-### func \(\*VerificationError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L327>)
+### func \(\*VerificationError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L334>)
 
 ```go
 func (e *VerificationError) Transient() bool
