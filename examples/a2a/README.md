@@ -19,27 +19,25 @@ From the `dnsid-go` repository root:
 bash examples/a2a/run.sh
 ```
 
-The script uses `~/.dnsid-local-a2a` to avoid older local state with a different zone. Set `DNSID_LOCAL_STATE` to use another fresh state directory.
-
 The script starts the testnet, prepares both identities and their C2SP ISSUANCE entries, starts Bob, sends one message from Alice, and stops Bob.
 
 To run the agents separately:
 
 ```sh
 CLI="${DNSID_CLI:-dnsid}"
-"$CLI" local up --state "$HOME/.dnsid-local-a2a" --zone test
-"$CLI" local agent ensure bob --state "$HOME/.dnsid-local-a2a" --upstream http://localhost:3002 \
+"$CLI" local up --zone test
+"$CLI" local agent ensure bob --upstream http://localhost:3002 \
   --cu https://bob.test/.well-known/agent-card.json -- \
   "$CLI" log issue --domain bob.test
-"$CLI" local agent ensure alice --state "$HOME/.dnsid-local-a2a" --upstream http://localhost:3001 \
+"$CLI" local agent ensure alice --upstream http://localhost:3001 \
   --cu https://alice.test/.well-known/agent-card.json -- \
   "$CLI" log issue --domain alice.test
 
 # Terminal 1
-"$CLI" local run bob --state "$HOME/.dnsid-local-a2a" --port 3002 -- go run ./examples/a2a
+"$CLI" local run bob --port 3002 -- go run ./examples/a2a
 
 # Terminal 2
-"$CLI" local run alice --state "$HOME/.dnsid-local-a2a" --port 3001 -- go run ./examples/a2a bob.test
+"$CLI" local run alice --port 3001 -- go run ./examples/a2a bob.test
 ```
 
 Expected Alice output includes:
