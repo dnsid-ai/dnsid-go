@@ -313,8 +313,8 @@ type DNSResolver interface {
 	FetchTXT(ctx context.Context, name string) ([]TXTRecordRData, DNSSECState, error)
 }
 
-// netDNSResolver is the built-in resolver backed by the OS stub resolver via
-// net.Resolver. The Go standard library does not expose the AD/CD bits, so this
+// netDNSResolver is the built-in resolver backed by Go's DNS stub resolver.
+// The Go standard library does not expose the AD/CD bits, so this
 // resolver performs NO DNSSEC validation and ALWAYS reports DNSSECStateUnknown.
 // A real in-transit DNSSEC failure is therefore invisible here. Integrators who
 // select DNSSECModeValidated or DNSSECModeRequired MUST supply a DNSSEC-aware
@@ -327,17 +327,28 @@ type netDNSResolver struct{ r *net.Resolver }
 type customDNSServerResolver struct{ server string }
 
 func (r netDNSResolver) FetchTXT(ctx context.Context, name string) ([]TXTRecordRData, DNSSECState, error) {
-	resolver := r.r
-	if resolver == nil {
-		resolver = net.DefaultResolver
+	var baseDial func(context.Context, string, string) (net.Conn, error)
+	if r.r != nil {
+		baseDial = r.r.Dial
 	}
+	if baseDial == nil {
+		baseDial = (&net.Dialer{}).DialContext
+	}
+	capture := &txtTTLCapture{ttls: make(map[string]time.Duration)}
+	resolver := &net.Resolver{PreferGo: true, Dial: capture.dial(baseDial)}
 	values, err := resolver.LookupTXT(ctx, name)
 	if err != nil {
 		return nil, DNSSECStateUnknown, err
 	}
 	out := make([]TXTRecordRData, 0, len(values))
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
 	for _, v := range values {
-		out = append(out, TXTRecordRData{Value: v, TTL: 5 * time.Minute})
+		ttl, ok := capture.ttls[v]
+		if !ok {
+			return nil, DNSSECStateUnknown, fmt.Errorf("dnsid: DNS TXT TTL unavailable for %s", name)
+		}
+		out = append(out, TXTRecordRData{Value: v, TTL: ttl})
 	}
 	// Always DNSSECStateUnknown: net.Resolver does not expose validation state.
 	// See the netDNSResolver type doc — supply a DNSSEC-aware resolver for prod.
