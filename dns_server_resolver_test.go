@@ -28,6 +28,7 @@ func TestNetDNSResolverUsesWireTTL(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer server.Close()
+			queried := make(chan string, 4)
 			go func() {
 				buf := make([]byte, 4096)
 				for {
@@ -43,6 +44,10 @@ func TestNetDNSResolverUsesWireTTL(t *testing.T) {
 					q, err := p.Question()
 					if err != nil {
 						return
+					}
+					select {
+					case queried <- q.Name.String():
+					default:
 					}
 					msg := dnsmessage.Message{Header: dnsmessage.Header{ID: h.ID, Response: true, RecursionAvailable: true}, Questions: []dnsmessage.Question{q}}
 					if tc.aliasTTL > 0 {
@@ -60,9 +65,12 @@ func TestNetDNSResolverUsesWireTTL(t *testing.T) {
 			}}}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			records, _, err := resolver.FetchTXT(ctx, "_dnsid.example.com.")
+			records, _, err := resolver.FetchTXT(ctx, "_dnsid.example.com")
 			if err != nil {
 				t.Fatal(err)
+			}
+			if got := <-queried; got != "_dnsid.example.com." {
+				t.Fatalf("wire query = %q, want absolute _dnsid.example.com.", got)
 			}
 			if len(records) != 1 || records[0].Value != "firstsecond" || records[0].TTL != tc.want {
 				t.Fatalf("records = %+v, want firstsecond with TTL %s", records, tc.want)

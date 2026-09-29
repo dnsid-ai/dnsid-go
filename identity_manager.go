@@ -336,7 +336,8 @@ func (r netDNSResolver) FetchTXT(ctx context.Context, name string) ([]TXTRecordR
 	}
 	capture := &txtTTLCapture{ttls: make(map[string]time.Duration)}
 	resolver := &net.Resolver{PreferGo: true, Dial: capture.dial(baseDial)}
-	values, err := resolver.LookupTXT(ctx, name)
+	// DNSResolver names omit the root dot, but the wire query must not use search domains.
+	values, err := resolver.LookupTXT(ctx, strings.TrimSuffix(name, ".")+".")
 	if err != nil {
 		return nil, DNSSECStateUnknown, err
 	}
