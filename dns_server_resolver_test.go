@@ -11,6 +11,74 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 )
 
+func TestNetDNSResolverUsesWireTTL(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ttl      uint32
+		aliasTTL uint32
+		want     time.Duration
+	}{
+		{"ordinary", 17, 0, 17 * time.Second},
+		{"alias", 90, 4, 4 * time.Second},
+		{"zero", 0, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, err := net.ListenPacket("udp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer server.Close()
+			queried := make(chan string, 4)
+			go func() {
+				buf := make([]byte, 4096)
+				for {
+					n, addr, err := server.ReadFrom(buf)
+					if err != nil {
+						return
+					}
+					var p dnsmessage.Parser
+					h, err := p.Start(buf[:n])
+					if err != nil {
+						return
+					}
+					q, err := p.Question()
+					if err != nil {
+						return
+					}
+					select {
+					case queried <- q.Name.String():
+					default:
+					}
+					msg := dnsmessage.Message{Header: dnsmessage.Header{ID: h.ID, Response: true, RecursionAvailable: true}, Questions: []dnsmessage.Question{q}}
+					if tc.aliasTTL > 0 {
+						msg.Answers = append(msg.Answers, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: q.Name, Class: dnsmessage.ClassINET, TTL: tc.aliasTTL}, Body: &dnsmessage.CNAMEResource{CNAME: dnsmessage.MustNewName("target.example.com.")}})
+					}
+					msg.Answers = append(msg.Answers, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: q.Name, Class: dnsmessage.ClassINET, TTL: tc.ttl}, Body: &dnsmessage.TXTResource{TXT: []string{"first", "second"}}})
+					answer, err := msg.Pack()
+					if err == nil {
+						server.WriteTo(answer, addr)
+					}
+				}
+			}()
+			resolver := netDNSResolver{r: &net.Resolver{Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, server.LocalAddr().String())
+			}}}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			records, _, err := resolver.FetchTXT(ctx, "_dnsid.example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := <-queried; got != "_dnsid.example.com." {
+				t.Fatalf("wire query = %q, want absolute _dnsid.example.com.", got)
+			}
+			if len(records) != 1 || records[0].Value != "firstsecond" || records[0].TTL != tc.want {
+				t.Fatalf("records = %+v, want firstsecond with TTL %s", records, tc.want)
+			}
+		})
+	}
+}
+
 // TestDialDNSServerHonoursNetwork guards the TCP retry the Go resolver makes
 // when a UDP answer is truncated: the dial must use the network it was asked
 // for, not always UDP.
@@ -145,7 +213,7 @@ func TestCustomDNSServerResolverRetriesTruncatedAnswerOverTCP(t *testing.T) {
 	default:
 		t.Fatal("the resolver never asked over UDP; the test did not exercise the truncation retry")
 	}
-	if len(records) != 1 || records[0].Value != txt {
-		t.Fatalf("records = %+v, want the record served over TCP", records)
+	if len(records) != 1 || records[0].Value != txt || records[0].TTL != time.Minute {
+		t.Fatalf("records = %+v, want the record and its TTL served over TCP", records)
 	}
 }
