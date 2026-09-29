@@ -40,7 +40,7 @@ func (c *txtTTLCapture) observe(data []byte) {
 		return
 	}
 	// Aliases cannot be trusted longer than the CNAME that led to the TXT.
-	var aliasTTL uint32 = ^uint32(0)
+	aliasTTL := ^uint32(0)
 	for _, answer := range msg.Answers {
 		if answer.Header.Type == dnsmessage.TypeCNAME && answer.Header.TTL < aliasTTL {
 			aliasTTL = answer.Header.TTL
