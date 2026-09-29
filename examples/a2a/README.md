@@ -19,12 +19,7 @@ From the `dnsid-go` repository root:
 bash examples/a2a/run.sh
 ```
 
-The script uses `~/.dnsid-local-a2a` to avoid older local state with a different zone. Set `DNSID_LOCAL_STATE` to use another fresh state directory. If the published registry image does not yet support `bob.test`, build the current CLI and image from `~/dnsid` first:
-
-```sh
-(cd ~/dnsid && go build -o /tmp/dnsid-local-cli ./cmd/cli && docker build -f Dockerfile.local -t dnsid-local-registry:a2a-2ld .)
-DNSID_CLI=/tmp/dnsid-local-cli DNSID_LOCAL_IMAGE=dnsid-local-registry:a2a-2ld bash examples/a2a/run.sh
-```
+The script uses `~/.dnsid-local-a2a` to avoid older local state with a different zone. Set `DNSID_LOCAL_STATE` to use another fresh state directory.
 
 The script starts the testnet, prepares both identities and their C2SP ISSUANCE entries, starts Bob, sends one message from Alice, and stops Bob.
 
