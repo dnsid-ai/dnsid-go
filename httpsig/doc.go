@@ -13,7 +13,7 @@
 //
 //	signer := httpsig.NewFromIdentityManagerKeyProvider(idm, httpsig.Config{})
 //
-//	req, _ := http.NewRequest(http.MethodGet, "https://api.example.com/data", nil)
+//	req, _ := http.NewRequest(http.MethodGet, "https://api.example/data", nil)
 //	signed, err := signer.CreateSignedHTTPRequest(req, httpsig.SigningOptions{})
 //	// ... dispatch signed; the receiver runs:
 //

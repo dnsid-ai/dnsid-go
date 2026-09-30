@@ -237,7 +237,7 @@ func (c VerificationConfig) snapshot() VerificationConfig {
 //
 // SDK-managed HTTPS refuses to dial loopback, private, link-local, multicast,
 // reserved, and other non-routable addresses. PrivateAddressHosts is the only
-// exemption: entries are hostnames ("agent.example.test", exact match) or
+// exemption: entries are hostnames ("agent.test", exact match) or
 // leading-dot suffixes (".test", matching "test" and every name beneath it on
 // a DNS-label boundary). A matching destination may resolve to loopback or
 // private-use (RFC 1918, RFC 4193) addresses; link-local, multicast, reserved,

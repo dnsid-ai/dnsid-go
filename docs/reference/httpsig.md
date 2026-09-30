@@ -23,7 +23,7 @@ A typical exchange signs a request on one side and verifies it on the other:
 ```
 signer := httpsig.NewFromIdentityManagerKeyProvider(idm, httpsig.Config{})
 
-req, _ := http.NewRequest(http.MethodGet, "https://api.example.com/data", nil)
+req, _ := http.NewRequest(http.MethodGet, "https://api.example/data", nil)
 signed, err := signer.CreateSignedHTTPRequest(req, httpsig.SigningOptions{})
 // ... dispatch signed; the receiver runs:
 
@@ -54,9 +54,9 @@ import (
 
 func main() {
 	key := dnsid.GenerateEd25519KeyProvider()
-	profile := httpsig.New(nil, "agent.example.com", key, httpsig.Config{})
+	profile := httpsig.New(nil, "agent.example", key, httpsig.Config{})
 
-	req, err := http.NewRequest(http.MethodGet, "https://api.example.com/search?q=dnsid", nil)
+	req, err := http.NewRequest(http.MethodGet, "https://api.example/search?q=dnsid", nil)
 	if err != nil {
 		panic(err)
 	}

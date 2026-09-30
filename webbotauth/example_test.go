@@ -12,7 +12,7 @@ import (
 // Ed25519.
 func Example() {
 	key := dnsid.GenerateEd25519KeyProvider()
-	profile := webbotauth.New("bot.example.com", key, webbotauth.Config{})
+	profile := webbotauth.New("bot.example", key, webbotauth.Config{})
 
 	req, err := http.NewRequest(http.MethodGet, "https://target.example/search?q=dnsid", nil)
 	if err != nil {
@@ -28,6 +28,6 @@ func Example() {
 	fmt.Println("Signature-Agent:", signed.Header.Get("Signature-Agent"))
 	fmt.Println("signature present:", signed.Header.Get("Signature") != "")
 	// Output:
-	// Signature-Agent: sig1="https://bot.example.com";type=directory
+	// Signature-Agent: sig1="https://bot.example";type=directory
 	// signature present: true
 }

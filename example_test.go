@@ -56,12 +56,12 @@ func ExampleIdentityManager_VerifyDomain() {
 	entityKey := dnsid.GenerateES256KeyProvider()
 	operationalKey := dnsid.GenerateEd25519KeyProvider()
 	publisher, err := dnsid.NewIdentityManager(dnsid.Config{Identity: &dnsid.IdentityConfig{
-		Domain:       "agent.example.com",
-		GovernanceID: "example.com",
+		Domain:       "agent.example",
+		GovernanceID: "agent.example",
 		LogRef:       "example-log:1",
-		StatusURL:    "https://agent.example.com/dnsid-status.json",
-		KeyURL:       "https://agent.example.com/jwks.json",
-		EntityKeyURL: "https://example.com/entity-jwks.json",
+		StatusURL:    "https://agent.example/dnsid-status.json",
+		KeyURL:       "https://agent.example/jwks.json",
+		EntityKeyURL: "https://agent.example/entity-jwks.json",
 	}}, operationalKey, dnsid.WithEntityKeyProvider(entityKey))
 	if err != nil {
 		log.Fatal(err)
@@ -83,7 +83,7 @@ func ExampleIdentityManager_VerifyDomain() {
 	}
 	verifier, err := dnsid.NewIdentityManager(dnsid.Config{}, nil,
 		dnsid.WithDNSResolver(exampleDNSResolver{
-			"_dnsid.agent.example.com": {{Value: record.Serialize(), TTL: time.Minute}},
+			"_dnsid.agent.example": {{Value: record.Serialize(), TTL: time.Minute}},
 		}),
 		dnsid.WithHTTPSFetcher(exampleHTTPSFetcher{
 			record.EntityKeyURI: ekJSON,
@@ -98,7 +98,7 @@ func ExampleIdentityManager_VerifyDomain() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	verified, err := verifier.VerifyDomain(ctx, "agent.example.com")
+	verified, err := verifier.VerifyDomain(ctx, "agent.example")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func ExampleIdentityManager_VerifyDomain() {
 	fmt.Println("governance:", verified.Record().GovernanceID)
 	fmt.Println("status:", verified.Status().State)
 	// Output:
-	// domain: agent.example.com
-	// governance: example.com
+	// domain: agent.example
+	// governance: agent.example
 	// status: ACTIVE
 }

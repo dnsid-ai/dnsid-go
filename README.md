@@ -43,7 +43,7 @@ func main() {
 		panic(err)
 	}
 
-	verified, err := idm.VerifyDomain(ctx, "your-agent.example.com")
+	verified, err := idm.VerifyDomain(ctx, "your-agent.example")
 	if err != nil {
 		panic(err)
 	}
@@ -54,7 +54,7 @@ func main() {
 }
 ```
 
-Replace `your-agent.example.com` with a DNSid-enabled domain. `VerifyDomain` resolves its `_dnsid`
+Replace the placeholder `your-agent.example` with a published DNSid-enabled domain. `VerifyDomain` resolves its `_dnsid`
 record, verifies the record-signing and runtime JWKS selected by its profile, and queries the status
 endpoint—all over SSRF-safe, DNS-rebinding-resistant transport. The default `auto` DNSSEC policy
 accepts the built-in resolver's `UNKNOWN` validation state, while still rejecting a resolver-reported

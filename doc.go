@@ -23,7 +23,7 @@
 //		log.Fatal(err)
 //	}
 //
-//	verified, err := idm.VerifyDomain(ctx, "your-agent.example.com")
+//	verified, err := idm.VerifyDomain(ctx, "your-agent.example")
 //	if err != nil {
 //		log.Fatal(err)
 //	}
