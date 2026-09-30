@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.37.2] - 2026-09-30
+
+### Bug Fixes
+
+- fix: a2a short testnet domains ([#51](https://github.com/dnsid-ai/dnsid-go/pull/51))
+
 ## [0.37.1] - 2026-09-29
 
 ### Bug Fixes
