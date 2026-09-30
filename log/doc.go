@@ -18,15 +18,15 @@
 //
 //	registry := log.NewLogRegistry()
 //	// A log method binding (e.g. c2sptlog.Register) populates the registry.
-//	reader, err := registry.NewReader("c2sp-tlog:public:https://tlog.example.com/dnsid#N4m8yB1Qk6RzT3w7Vp2JxA")
+//	reader, err := registry.NewReader("c2sp-tlog:public:https://tlog.example/dnsid#N4m8yB1Qk6RzT3w7Vp2JxA")
 //	if err != nil {
 //		// handle malformed lr value
 //	}
-//	events, err := reader.RebuildHistory(ctx, "agent.example.com")
+//	events, err := reader.RebuildHistory(ctx, "agent.example")
 //	if err != nil {
 //		// handle verification failure
 //	}
-//	snapshot, err := log.NewDomainLog("agent.example.com", events).SnapshotAt(time.Now())
+//	snapshot, err := log.NewDomainLog("agent.example", events).SnapshotAt(time.Now())
 //
 // Verification entry points on LogReader check the bilateral binding
 // established by ISSUANCE (entity key and operational key signing each

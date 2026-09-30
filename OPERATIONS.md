@@ -31,7 +31,7 @@ manager, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, 
 if err != nil {
 	return err
 }
-_, err = manager.VerifyDomain(ctx, "agent.example.com")
+_, err = manager.VerifyDomain(ctx, "agent.example")
 ```
 
 ## DNS lookup, DNSSEC, and cache behavior

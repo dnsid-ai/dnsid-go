@@ -12,10 +12,10 @@
 //
 //	profile := jose.NewFromIdentityManagerKeyProvider(idm, jose.Config{})
 //
-//	token, err := profile.CreateJWT(jose.JWTOptions{Audience: "bob.example.com"})
-//	// ... send token to bob.example.com ...
+//	token, err := profile.CreateJWT(jose.JWTOptions{Audience: "bob.example"})
+//	// ... send token to bob.example ...
 //
-//	vd, claims, err := profile.VerifyJWT(ctx, token, jose.VerifyJWTOptions{ExpectedAudience: "bob.example.com"})
+//	vd, claims, err := profile.VerifyJWT(ctx, token, jose.VerifyJWTOptions{ExpectedAudience: "bob.example"})
 //	// At the receiving side, Bob must verify against its own expected audience.
 //	// vd identifies the verified issuer domain; claims holds the parsed JWT.
 //

@@ -19,37 +19,35 @@ From the `dnsid-go` repository root:
 bash examples/a2a/run.sh
 ```
 
-Set `DNSID_TESTNET_STATE` to use a non-default testnet state directory.
-
 The script starts the testnet, prepares both identities and their C2SP ISSUANCE entries, starts Bob, sends one message from Alice, and stops Bob.
 
 To run the agents separately:
 
 ```sh
 CLI="${DNSID_CLI:-dnsid}"
-"$CLI" testnet up
-"$CLI" testnet agent ensure bob --upstream http://localhost:3002 \
-  --cu https://bob.dev.dnsid.test/.well-known/agent-card.json -- \
-  "$CLI" log issue --domain bob.dev.dnsid.test
-"$CLI" testnet agent ensure alice --upstream http://localhost:3001 \
-  --cu https://alice.dev.dnsid.test/.well-known/agent-card.json -- \
-  "$CLI" log issue --domain alice.dev.dnsid.test
+"$CLI" local up --zone test
+"$CLI" local agent ensure bob --upstream http://localhost:3002 \
+  --cu https://bob.test/.well-known/agent-card.json -- \
+  "$CLI" log issue --domain bob.test
+"$CLI" local agent ensure alice --upstream http://localhost:3001 \
+  --cu https://alice.test/.well-known/agent-card.json -- \
+  "$CLI" log issue --domain alice.test
 
 # Terminal 1
-"$CLI" testnet run bob --port 3002 -- go run ./examples/a2a
+"$CLI" local run bob --port 3002 -- go run ./examples/a2a
 
 # Terminal 2
-"$CLI" testnet run alice --port 3001 -- go run ./examples/a2a bob.dev.dnsid.test
+"$CLI" local run alice --port 3001 -- go run ./examples/a2a bob.test
 ```
 
 Expected Alice output includes:
 
 ```text
-verified: alice.dev.dnsid.test -> bob.dev.dnsid.test
-reply: "[from: bob.dev.dnsid.test; verified sender: alice.dev.dnsid.test] hello from alice.dev.dnsid.test"
+verified: alice.test -> bob.test
+reply: "[from: bob.test; verified sender: alice.test] hello from alice.test"
 ```
 
-`dnsid testnet run` supplies the C2SP policy location separately as
+`dnsid local run` supplies the C2SP policy location separately as
 `DNSID_LOG_POLICY_URL`. `config.LoadEnvironment` treats that value as trusted
 testnet configuration and never derives it from `DNSID_LOG_REF` or the log
 prefix, so custom testnet proxy ports are preserved. Verification fails closed

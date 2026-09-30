@@ -5,11 +5,11 @@ from `config.IdentityManagerFromDnsid`, then exchanges it at the issuer's token 
 an access token.
 
 ```sh
-go run ./examples/oidc https://issuer.example.com my-audience
+go run ./examples/oidc https://issuer.example my-audience
 ```
 
 Uses the current identity selected by `~/.dnsid/config.json` and its
 `~/.dnsid/<fqdn>/private.jwk` — create one with `dnsid auth login` + `dnsid init` (see
 [QUICKSTART.md](../../QUICKSTART.md)). The issuer must be an HTTPS OIDC issuer URL without a
 trailing slash whose token endpoint accepts the `urn:ietf:params:oauth:grant-type:jwt-bearer`
-grant for DNSid agents.
+grant for DNSid agents. Replace `https://issuer.example` with your real issuer.

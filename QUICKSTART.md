@@ -37,7 +37,7 @@ idm, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, conf
 if err != nil {
 	log.Fatal(err)
 }
-verified, err := idm.VerifyDomain(ctx, "your-agent.example.com")
+verified, err := idm.VerifyDomain(ctx, "your-agent.example")
 if err != nil {
 	log.Fatalf("invalid: %v", err)
 }
@@ -49,10 +49,10 @@ Runnable version: [`examples/validate-domain`](examples/validate-domain).
 
 ```sh
 DNSID_LOG_TRUST_PROFILE_FILE=/path/to/trusted-profile.json \
-  go run ./examples/validate-domain your-agent.example.com
+  go run ./examples/validate-domain your-agent.example
 ```
 
-Replace `your-agent.example.com` with a DNSid-enabled domain. Choose log trust based on the
+Replace the placeholder `your-agent.example` with a published DNSid-enabled domain. Choose log trust based on the
 log you expect to verify:
 
 - **DNSid-managed development or production logs:** the SDK includes reviewed trust profiles.
@@ -65,8 +65,9 @@ log you expect to verify:
   ```
 
   This is not an environment-variable default and does not trust local or third-party logs.
-- **Local CLI registry:** `eval "$(dnsid local env)"` supplies `DNSID_LOG_POLICY_URL` plus
-  local DNS and CA settings; see the [example README](examples/validate-domain/README.md).
+- **Local CLI registry:** provision `bob.test`, then `eval "$(dnsid local env bob)"`
+  supplies its identity/key paths, `DNSID_LOG_POLICY_URL`, and local DNS/CA settings;
+  see the [example README](examples/validate-domain/README.md).
 - **Other logs or independently pinned policy:** set `DNSID_LOG_TRUST_PROFILE_FILE` (preferred
   for stream-bundle verification), `DNSID_LOG_POLICY_FILE`, or an independently trusted
   `DNSID_LOG_POLICY_URL`. Do not derive trust from the unverified `DNSID_LOG_REF`.
@@ -80,7 +81,7 @@ for the API details.
 **Local (default).** Start the local registry and run your program as an agent under it:
 
 ```sh
-dnsid local up                          # local registry, DNS, and CA in Docker
+dnsid local up --zone test              # local registry, DNS, and CA in Docker
 dnsid local run my-agent -- go run .    # registers my-agent if needed, runs with DNSID_* set
 ```
 
@@ -122,7 +123,7 @@ The JOSE profile signs a DNSid JWT with your agent's active key:
 profile := jose.NewFromIdentityManagerKeyProvider(idm, jose.Config{})
 
 token, err := profile.CreateJWT(jose.JWTOptions{
-	Audience:         "bob.example.com",
+	Audience:         "bob.example",
 	AdditionalClaims: map[string]any{"purpose": "quickstart"},
 })
 if err != nil {
@@ -132,7 +133,7 @@ fmt.Println(token)
 ```
 
 To check this token locally, use
-`profile.VerifyJWT(ctx, token, jose.VerifyJWTOptions{ExpectedAudience: "bob.example.com"})`.
+`profile.VerifyJWT(ctx, token, jose.VerifyJWTOptions{ExpectedAudience: "bob.example"})`.
 A real recipient must set the expected audience from its own trusted configuration, not the token;
 verification resolves the issuer's DNSid identity and checks its published JWKS. The
 [`examples/local-key-provider`](examples/local-key-provider) walkthrough also shows key generation,

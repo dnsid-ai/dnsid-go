@@ -142,11 +142,11 @@ func TestPublicationValidationRequiresBothRoleURLsAtBoundary(t *testing.T) {
 
 func TestIdentityConfigURLNamesPreserveTXTWireTags(t *testing.T) {
 	manager, err := NewIdentityManager(Config{Identity: &IdentityConfig{
-		Domain:       "agent.example.com",
+		Domain:       "example.com",
 		GovernanceID: "example.com",
 		LogRef:       "test:agent",
-		StatusURL:    "https://agent.example.com/status.json",
-		KeyURL:       "https://agent.example.com/ku.json",
+		StatusURL:    "https://example.com/status.json",
+		KeyURL:       "https://example.com/ku.json",
 		EntityKeyURL: "https://example.com/ek.json",
 	}}, GenerateEd25519KeyProvider(), WithEntityKeyProvider(GenerateEd25519KeyProvider()))
 	if err != nil {
@@ -156,7 +156,7 @@ func TestIdentityConfigURLNamesPreserveTXTWireTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildUnsignedTXTRecord: %v", err)
 	}
-	const want = "ek=https://example.com/ek.json;gi=example.com;ku=https://agent.example.com/ku.json;lr=test:agent;su=https://agent.example.com/status.json;v=dnsid-draft-01"
+	const want = "ek=https://example.com/ek.json;gi=example.com;ku=https://example.com/ku.json;lr=test:agent;su=https://example.com/status.json;v=dnsid-draft-01"
 	if got := string(record.CanonicalContent()); got != want {
 		t.Fatalf("CanonicalContent = %q, want %q", got, want)
 	}

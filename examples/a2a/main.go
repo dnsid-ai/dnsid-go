@@ -127,7 +127,7 @@ func newApplication(ctx context.Context) (*application, int, error) {
 		return nil, 0, fmt.Errorf("DNSID_AGENT_PORT is required; run with `dnsid local run`")
 	}
 
-	// `dnsid testnet run` exports the identity, key location, log trust
+	// `dnsid local run` exports the identity, key location, log trust
 	// (DNSID_LOG_POLICY_URL), and the testnet's DNS server and CA. The same
 	// transport config also drives the outbound A2A client. Production
 	// applications leave transport unset for SDK defaults.

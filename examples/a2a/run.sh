@@ -2,8 +2,7 @@
 set -eu
 
 CLI=${DNSID_CLI:-dnsid}
-STATE=${DNSID_TESTNET_STATE:-$HOME/.dnsid-testnet}
-ZONE=${DNSID_TESTNET_ZONE:-dev.dnsid.test}
+ZONE=test
 BOB_PORT=${BOB_PORT:-3002}
 ALICE_PORT=${ALICE_PORT:-3001}
 BOB_LOG=${TMPDIR:-/tmp}/dnsid-go-a2a-bob.log
@@ -20,16 +19,16 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-"$CLI" testnet up --state "$STATE"
-"$CLI" testnet agent ensure bob --state "$STATE" --upstream "http://localhost:$BOB_PORT" \
+"$CLI" local up --zone "$ZONE"
+"$CLI" local agent ensure bob --upstream "http://localhost:$BOB_PORT" \
   --cu "https://bob.$ZONE/.well-known/agent-card.json" -- \
   "$CLI" log issue --domain "bob.$ZONE"
-"$CLI" testnet agent ensure alice --state "$STATE" --upstream "http://localhost:$ALICE_PORT" \
+"$CLI" local agent ensure alice --upstream "http://localhost:$ALICE_PORT" \
   --cu "https://alice.$ZONE/.well-known/agent-card.json" -- \
   "$CLI" log issue --domain "alice.$ZONE"
 
 go build -o "$BOB_BIN" ./examples/a2a
-"$CLI" testnet run bob --state "$STATE" --port "$BOB_PORT" -- "$BOB_BIN" >"$BOB_LOG" 2>&1 &
+"$CLI" local run bob --port "$BOB_PORT" -- "$BOB_BIN" >"$BOB_LOG" 2>&1 &
 BOB_PID=$!
 
 for _ in $(seq 1 120); do
@@ -43,6 +42,6 @@ for _ in $(seq 1 120); do
   sleep .25
 done
 
-"$CLI" testnet run alice --state "$STATE" --port "$ALICE_PORT" -- go run ./examples/a2a "bob.$ZONE"
+"$CLI" local run alice --port "$ALICE_PORT" -- go run ./examples/a2a "bob.$ZONE"
 printf '\n--- Bob ---\n'
 cat "$BOB_LOG"

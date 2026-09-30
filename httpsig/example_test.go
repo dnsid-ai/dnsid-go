@@ -13,9 +13,9 @@ import (
 // only needed for verification, so this signing-only profile passes nil.
 func Example() {
 	key := dnsid.GenerateEd25519KeyProvider()
-	profile := httpsig.New(nil, "agent.example.com", key, httpsig.Config{})
+	profile := httpsig.New(nil, "agent.example", key, httpsig.Config{})
 
-	req, err := http.NewRequest(http.MethodGet, "https://api.example.com/search?q=dnsid", nil)
+	req, err := http.NewRequest(http.MethodGet, "https://api.example/search?q=dnsid", nil)
 	if err != nil {
 		panic(err)
 	}

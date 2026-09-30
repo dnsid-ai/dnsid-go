@@ -12,7 +12,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
-func dnsid1Publisher(t *testing.T, alg JoseAlg) (*IdentityManager, KeyProvider, KeyProvider) {
+func dnsid1Publisher(t *testing.T, alg JoseAlg, domain string) (*IdentityManager, KeyProvider, KeyProvider) {
 	t.Helper()
 	var operational, entity KeyProvider
 	if alg == JoseAlgEdDSA {
@@ -23,11 +23,11 @@ func dnsid1Publisher(t *testing.T, alg JoseAlg) (*IdentityManager, KeyProvider, 
 		entity = GenerateES256KeyProvider()
 	}
 	m, err := NewIdentityManager(Config{Identity: &IdentityConfig{
-		Domain:       "agent.example.com",
+		Domain:       domain,
 		GovernanceID: "example.com",
 		LogRef:       "testlog:agent",
-		StatusURL:    "https://agent.example.com/status",
-		KeyURL:       "https://agent.example.com/ku.json",
+		StatusURL:    "https://" + domain + "/status",
+		KeyURL:       "https://" + domain + "/ku.json",
 		EntityKeyURL: "https://keys.example.com/ek.json",
 	}}, operational, WithEntityKeyProvider(entity))
 	if err != nil {
@@ -39,7 +39,7 @@ func dnsid1Publisher(t *testing.T, alg JoseAlg) (*IdentityManager, KeyProvider, 
 func TestDraft01CreateTXTRecord(t *testing.T) {
 	for _, alg := range []JoseAlg{JoseAlgEdDSA, JoseAlgES256} {
 		t.Run(string(alg), func(t *testing.T) {
-			publisher, entity, _ := dnsid1Publisher(t, alg)
+			publisher, entity, _ := dnsid1Publisher(t, alg, "agent.example.com")
 			unsigned, err := publisher.BuildUnsignedTXTRecord()
 			if err != nil {
 				t.Fatalf("BuildUnsignedTXTRecord: %v", err)
@@ -204,7 +204,7 @@ func TestDNSid1AllowsEntityKeyHostBelowGovernanceID(t *testing.T) {
 }
 
 func TestDNSid1VerifyDomainExposesOperationLogCheck(t *testing.T) {
-	publisher, entity, operational := dnsid1Publisher(t, JoseAlgES256)
+	publisher, entity, operational := dnsid1Publisher(t, JoseAlgES256, "agent.example.com")
 	publisher.identity.PolicyFlags = []PolicyFlag{PolicyFlagLogCheck}
 	record, err := publisher.CreateTXTRecord()
 	if err != nil {
@@ -254,8 +254,8 @@ func TestDNSid1VerifyDomainExposesOperationLogCheck(t *testing.T) {
 	}
 }
 
-func TestDNSid1VerifyDomain(t *testing.T) {
-	publisher, entity, operational := dnsid1Publisher(t, JoseAlgES256)
+func TestDNSid1VerifyDomain2LD(t *testing.T) {
+	publisher, entity, operational := dnsid1Publisher(t, JoseAlgES256, "example.com")
 	record, err := publisher.CreateTXTRecord()
 	if err != nil {
 		t.Fatalf("CreateTXTRecord: %v", err)
@@ -270,7 +270,7 @@ func TestDNSid1VerifyDomain(t *testing.T) {
 	}
 	status := json.RawMessage(`{"state":"ACTIVE","lastTransitionAt":"` + time.Now().UTC().Format(time.RFC3339Nano) + `"}`)
 	dns := &testDNSResolver{records: map[string][]TXTRecordRData{
-		"_dnsid.agent.example.com": {{Value: record.Serialize(), TTL: time.Minute}},
+		"_dnsid.example.com": {{Value: record.Serialize(), TTL: time.Minute}},
 	}}
 	fetchOptions := make(map[string]FetchOptions)
 	https := testHTTPSFetcher{responses: map[string]json.RawMessage{
@@ -283,7 +283,7 @@ func TestDNSid1VerifyDomain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := withoutLog.VerifyDomain(context.Background(), "agent.example.com"); err == nil {
+	if _, err := withoutLog.VerifyDomain(context.Background(), "example.com"); err == nil {
 		t.Fatal("DNSid1 verification succeeded without a registered log reader")
 	}
 
@@ -296,7 +296,7 @@ func TestDNSid1VerifyDomain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	verified, err := verifier.VerifyDomain(context.Background(), "agent.example.com")
+	verified, err := verifier.VerifyDomain(context.Background(), "example.com")
 	if err != nil {
 		t.Fatalf("VerifyDomain: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestDNSid1VerifyDomain(t *testing.T) {
 		t.Fatal("DNSid1 bilateral binding and continuity did not receive the current ku key")
 	}
 	reader.bindingHit, reader.continuityHit = false, false
-	if _, err := verifier.VerifyDomain(context.Background(), "agent.example.com"); err != nil {
+	if _, err := verifier.VerifyDomain(context.Background(), "example.com"); err != nil {
 		t.Fatalf("cached VerifyDomain: %v", err)
 	}
 	if reader.bindingHit || reader.continuityHit {

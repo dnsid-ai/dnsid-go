@@ -53,9 +53,9 @@ func main() {
 		die("superseding old key", err)
 	}
 
-	profile := joseprofile.New(nil, "alice.example.com", keyProvider, joseprofile.Config{})
+	profile := joseprofile.New(nil, "alice.example", keyProvider, joseprofile.Config{})
 	jwt, err := profile.CreateJWT(joseprofile.JWTOptions{
-		Audience:         "bob.example.com",
+		Audience:         "bob.example",
 		AdditionalClaims: map[string]any{"example": "local-key-provider"},
 	})
 	if err != nil {

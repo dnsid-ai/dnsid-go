@@ -23,10 +23,10 @@ A typical round trip mints a JWT as the local agent and verifies a peer's token 
 ```
 profile := jose.NewFromIdentityManagerKeyProvider(idm, jose.Config{})
 
-token, err := profile.CreateJWT(jose.JWTOptions{Audience: "bob.example.com"})
-// ... send token to bob.example.com ...
+token, err := profile.CreateJWT(jose.JWTOptions{Audience: "bob.example"})
+// ... send token to bob.example ...
 
-vd, claims, err := profile.VerifyJWT(ctx, token, jose.VerifyJWTOptions{ExpectedAudience: "bob.example.com"})
+vd, claims, err := profile.VerifyJWT(ctx, token, jose.VerifyJWTOptions{ExpectedAudience: "bob.example"})
 // At the receiving side, Bob must verify against its own expected audience.
 // vd identifies the verified issuer domain; claims holds the parsed JWT.
 ```
@@ -38,7 +38,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
 <details><summary>Example</summary>
 <p>
 
-Example mints a DNSid JWT as agent.example.com and verifies it as relying\-party.example.com, entirely offline.
+Example mints a DNSid JWT as agent.example and verifies it as relying\-party.example, entirely offline.
 
 ```go
 package main
@@ -98,19 +98,19 @@ func (fakeLogReader) RebuildHistory(context.Context, string) ([]dnsidlog.LogEven
 	return nil, nil
 }
 
-// Example mints a DNSid JWT as agent.example.com and verifies it as
-// relying-party.example.com, entirely offline.
+// Example mints a DNSid JWT as agent.example and verifies it as
+// relying-party.example, entirely offline.
 func main() {
 	// The agent's identity: its domain, governing organization, entity
 	// record-signing key, and operational key.
 	agentKey := dnsid.GenerateES256KeyProvider()
 	issuer, err := dnsid.NewIdentityManager(dnsid.Config{Identity: &dnsid.IdentityConfig{
-		Domain:       "agent.example.com",
-		GovernanceID: "example.com",
+		Domain:       "agent.example",
+		GovernanceID: "agent.example",
 		LogRef:       "algorand:ADDR",
-		StatusURL:    "https://agent.example.com/.well-known/dnsid/status.json",
-		KeyURL:       "https://agent.example.com/ku.json",
-		EntityKeyURL: "https://example.com/ek.json",
+		StatusURL:    "https://agent.example/.well-known/dnsid/status.json",
+		KeyURL:       "https://agent.example/ku.json",
+		EntityKeyURL: "https://agent.example/ek.json",
 	}}, agentKey, dnsid.WithEntityKeyProvider(dnsid.GenerateES256KeyProvider()))
 	if err != nil {
 		panic(err)
@@ -138,13 +138,13 @@ func main() {
 	// The relying party's manager resolves the agent's identity from the
 	// fakes above.
 	verifier, err := dnsid.NewIdentityManager(dnsid.Config{Identity: &dnsid.IdentityConfig{
-		Domain:       "relying-party.example.com",
-		GovernanceID: "example.com",
+		Domain:       "relying-party.example",
+		GovernanceID: "relying-party.example",
 		LogRef:       "algorand:ADDR",
-		StatusURL:    "https://relying-party.example.com/.well-known/dnsid/status.json",
+		StatusURL:    "https://relying-party.example/.well-known/dnsid/status.json",
 	}}, dnsid.GenerateES256KeyProvider(),
 		dnsid.WithDNSResolver(fakeDNSResolver{records: map[string][]dnsid.TXTRecordRData{
-			"_dnsid.agent.example.com": {{Value: record.Serialize(), TTL: time.Minute}},
+			"_dnsid.agent.example": {{Value: record.Serialize(), TTL: time.Minute}},
 		}}),
 		dnsid.WithHTTPSFetcher(fakeHTTPSFetcher{responses: map[string]json.RawMessage{
 			record.KeyURI:       jwksBytes,
@@ -160,7 +160,7 @@ func main() {
 	// Mint a JWT as the agent.
 	issuerProfile := jose.NewFromIdentityManager(issuer, agentKey, jose.Config{})
 	token, err := issuerProfile.CreateJWT(jose.JWTOptions{
-		Audience:         "relying-party.example.com",
+		Audience:         "relying-party.example",
 		AdditionalClaims: map[string]any{"purpose": "quickstart"},
 	})
 	if err != nil {
@@ -184,9 +184,9 @@ func main() {
 #### Output
 
 ```
-verified domain: agent.example.com
-issuer: agent.example.com
-audience: relying-party.example.com
+verified domain: agent.example
+issuer: agent.example
+audience: relying-party.example
 purpose: quickstart
 ```
 

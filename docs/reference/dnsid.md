@@ -28,7 +28,7 @@ if err != nil {
 	log.Fatal(err)
 }
 
-verified, err := idm.VerifyDomain(ctx, "your-agent.example.com")
+verified, err := idm.VerifyDomain(ctx, "your-agent.example")
 if err != nil {
 	log.Fatal(err)
 }
@@ -716,12 +716,12 @@ func main() {
 	entityKey := dnsid.GenerateES256KeyProvider()
 	operationalKey := dnsid.GenerateEd25519KeyProvider()
 	publisher, err := dnsid.NewIdentityManager(dnsid.Config{Identity: &dnsid.IdentityConfig{
-		Domain:       "agent.example.com",
-		GovernanceID: "example.com",
+		Domain:       "agent.example",
+		GovernanceID: "agent.example",
 		LogRef:       "example-log:1",
-		StatusURL:    "https://agent.example.com/dnsid-status.json",
-		KeyURL:       "https://agent.example.com/jwks.json",
-		EntityKeyURL: "https://example.com/entity-jwks.json",
+		StatusURL:    "https://agent.example/dnsid-status.json",
+		KeyURL:       "https://agent.example/jwks.json",
+		EntityKeyURL: "https://agent.example/entity-jwks.json",
 	}}, operationalKey, dnsid.WithEntityKeyProvider(entityKey))
 	if err != nil {
 		log.Fatal(err)
@@ -743,7 +743,7 @@ func main() {
 	}
 	verifier, err := dnsid.NewIdentityManager(dnsid.Config{}, nil,
 		dnsid.WithDNSResolver(exampleDNSResolver{
-			"_dnsid.agent.example.com": {{Value: record.Serialize(), TTL: time.Minute}},
+			"_dnsid.agent.example": {{Value: record.Serialize(), TTL: time.Minute}},
 		}),
 		dnsid.WithHTTPSFetcher(exampleHTTPSFetcher{
 			record.EntityKeyURI: ekJSON,
@@ -758,7 +758,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	verified, err := verifier.VerifyDomain(ctx, "agent.example.com")
+	verified, err := verifier.VerifyDomain(ctx, "agent.example")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -771,8 +771,8 @@ func main() {
 #### Output
 
 ```
-domain: agent.example.com
-governance: example.com
+domain: agent.example
+governance: agent.example
 status: ACTIVE
 ```
 
@@ -939,7 +939,7 @@ SDKConformance returns an immutable snapshot of this release's protocol conforma
 
 TransportConfig contains deployment controls for SDK\-managed DNS and HTTPS: a custom DNS server for TXT lookups and HTTPS name resolution, and an additional CA bundle for HTTPS trust. Settings apply only to the default implementations; injected resolvers and fetchers are never inspected or modified. Setting a DNS server routes lookups through the stdlib resolver, which performs no DNSSEC validation.
 
-SDK\-managed HTTPS refuses to dial loopback, private, link\-local, multicast, reserved, and other non\-routable addresses. PrivateAddressHosts is the only exemption: entries are hostnames \("agent.example.test", exact match\) or leading\-dot suffixes \(".test", matching "test" and every name beneath it on a DNS\-label boundary\). A matching destination may resolve to loopback or private\-use \(RFC 1918, RFC 4193\) addresses; link\-local, multicast, reserved, and mixed public\+private resolutions are still rejected, IP\-literal URLs are never exempted, and every redirect hop is matched independently. The list is empty by default and there is no built\-in exemption for .test or any other name; a local \`dnsid\` stack needs PrivateAddressHosts: \[\]string\{".test"\} \(or DNSID\_PRIVATE\_HOSTS=.test via config.LoadEnvironment\). Entries with an IP literal, port, scheme, path, or credentials are rejected at construction.
+SDK\-managed HTTPS refuses to dial loopback, private, link\-local, multicast, reserved, and other non\-routable addresses. PrivateAddressHosts is the only exemption: entries are hostnames \("agent.test", exact match\) or leading\-dot suffixes \(".test", matching "test" and every name beneath it on a DNS\-label boundary\). A matching destination may resolve to loopback or private\-use \(RFC 1918, RFC 4193\) addresses; link\-local, multicast, reserved, and mixed public\+private resolutions are still rejected, IP\-literal URLs are never exempted, and every redirect hop is matched independently. The list is empty by default and there is no built\-in exemption for .test or any other name; a local \`dnsid\` stack needs PrivateAddressHosts: \[\]string\{".test"\} \(or DNSID\_PRIVATE\_HOSTS=.test via config.LoadEnvironment\). Entries with an IP literal, port, scheme, path, or credentials are rejected at construction.
 
 ```go
 type TransportConfig struct {
