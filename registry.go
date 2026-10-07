@@ -87,11 +87,17 @@ type SubmissionResult struct {
 
 // AgentRegistrationInput is input for registering a local identity with a registry.
 type AgentRegistrationInput struct {
-	Domain       string         `json:"domain"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
-	PublicKeyJWK any            `json:"publicKeyJwk,omitempty"`
-	Environment  string         `json:"environment,omitempty"`
-	Managed      bool           `json:"managed,omitempty"`
+	GovernanceDomain string         `json:"governance_domain,omitempty"`
+	RootDomain       string         `json:"root_domain,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	ZoneID           string         `json:"zone_id,omitempty"`
+	Tier             string         `json:"tier,omitempty"`
+	CapabilitiesURL  string         `json:"capabilities_url,omitempty"`
+	Domain           string         `json:"domain,omitempty"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
+	PublicKeyJWK     any            `json:"public_key,omitempty"`
+	Environment      string         `json:"environment,omitempty"`
+	Managed          bool           `json:"managed,omitempty"`
 }
 
 // PublicationAuthority identifies who controls the accountable-entity key and
@@ -107,6 +113,8 @@ const (
 
 // AgentRegistration is normalized registry workflow state for a local identity.
 type AgentRegistration struct {
+	ID                   string               `json:"id"`
+	PublicationConfig    PublicationConfig    `json:"publication_config"`
 	Domain               string               `json:"domain"`
 	PublicationAuthority PublicationAuthority `json:"publicationAuthority"`
 	RegistryStatus       string               `json:"registryStatus"`
@@ -133,9 +141,13 @@ type PublishedRecord struct {
 
 // CreateAgentRequest matches the OpenAPI CreateAgentRequest schema.
 type CreateAgentRequest struct {
-	Domain    string `json:"domain,omitempty"`
-	Name      string `json:"name,omitempty"`
-	PublicKey any    `json:"public_key"`
+	Domain           string         `json:"domain,omitempty"`
+	GovernanceDomain string         `json:"governance_domain,omitempty"`
+	RootDomain       string         `json:"root_domain,omitempty"`
+	Tier             string         `json:"tier,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	PublicKey        any            `json:"public_key,omitempty"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
 	// Optional fields
 	Environment     string `json:"environment,omitempty"`
 	Managed         bool   `json:"managed,omitempty"`
@@ -685,41 +697,83 @@ func (c *HTTPRegistryClient) PublishSignature(ctx context.Context, domain, sig s
 
 // --- New RegistryClient methods ---
 
-// CreateAgent registers an agent. Pass Domain for a name you control
-// (self-managed), or ZoneID for a registry-assigned name in a delegated zone
-// (managed); the two are mutually exclusive, and Managed requires ZoneID.
-// Environment defaults to "production"; "sandbox" is also accepted. Private JWK members in PublicKey are rejected
-// before anything is sent. Use CreateLiveAgent for Live names.
+// CreateAgent performs ordinary registration without retry-safe replay.
+// The registry resolves hosting; no legacy defaults are injected.
+// Use CreateLiveAgent for managed Live registration.
 func (c *HTTPRegistryClient) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*CreateAgentResponse, error) {
+	return c.CreateAgentWithIdempotencyKey(ctx, req, "")
+}
+
+// CreateAgentWithIdempotencyKey creates an ordinary HTTP 201 registration.
+// Retry only with the same request and non-empty key. No automatic retry occurs.
+func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, req *CreateAgentRequest, idempotencyKey string) (*CreateAgentResponse, error) {
 	if req == nil {
 		return nil, NewArgumentError("dnsid: create agent request is required", nil)
 	}
 	normalized := *req
-	if normalized.Environment == "" {
-		normalized.Environment = "production"
-	}
-	if normalized.Environment != "production" && normalized.Environment != "sandbox" {
+	if normalized.Environment != "" && normalized.Environment != "production" && normalized.Environment != "sandbox" {
 		return nil, NewArgumentError("dnsid: environment must be \"production\" or \"sandbox\"", nil)
 	}
 	if normalized.Domain != "" && normalized.ZoneID != "" {
 		return nil, NewArgumentError("dnsid: domain and zone_id cannot both be supplied", nil)
 	}
-	if normalized.Managed && normalized.ZoneID == "" {
-		return nil, NewArgumentError("dnsid: managed registration requires zone_id", nil)
+	if normalized.Domain != "" && normalized.RootDomain != "" {
+		return nil, NewArgumentError("dnsid: domain and root_domain cannot both be supplied", nil)
 	}
-	managed := normalized.Managed || normalized.ZoneID != ""
-	if managed && normalized.Domain != "" {
-		return nil, NewArgumentError("dnsid: domain must not be supplied for managed registrations; the registry assigns it", nil)
+	if normalized.Tier == "live" {
+		return nil, NewArgumentError("dnsid: use CreateLiveAgent for managed Live", nil)
 	}
-	if !managed && normalized.Domain == "" {
-		return nil, NewArgumentError("dnsid: self-managed registration requires a domain", nil)
+	for _, selector := range []*string{&normalized.Domain, &normalized.RootDomain, &normalized.GovernanceDomain} {
+		if *selector != "" {
+			value, err := NormalizeFQDN(*selector)
+			if err != nil {
+				return nil, NewArgumentError("dnsid: invalid registration selector", err)
+			}
+			*selector = value
+		}
+	}
+	normalized.Name = strings.TrimSpace(normalized.Name)
+	if utf8.RuneCountInString(normalized.Name) > 255 {
+		return nil, NewArgumentError("dnsid: name exceeds 255 characters", nil)
+	}
+	if normalized.CapabilitiesURL != "" {
+		if err := validateHTTPSURL(normalized.CapabilitiesURL, "capabilities_url"); err != nil {
+			return nil, err
+		}
+	}
+	if req.PublicKey == nil && (normalized.Domain == "" || normalized.Managed || normalized.ZoneID != "") {
+		return nil, NewArgumentError("dnsid: assigned or managed identity requires a public key", nil)
+	}
+	if idempotencyKey != "" {
+		if err := validateRegistryIdempotencyKey(idempotencyKey); err != nil {
+			return nil, err
+		}
 	}
 	if req.PublicKey != nil {
 		if err := rejectPrivateJWK(req.PublicKey); err != nil {
 			return nil, err
 		}
 	}
-	return registryJSONStatus[CreateAgentResponse](c, ctx, http.MethodPost, "/api/v1/agent", &normalized, http.StatusCreated)
+	request, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, NewArgumentError("dnsid: encoding registration request", err)
+	}
+	var response CreateAgentResponse
+	headers := map[string]string{}
+	if idempotencyKey != "" {
+		headers["Idempotency-Key"] = idempotencyKey
+	}
+	status, err := c.doJSONStatus(ctx, http.MethodPost, "/api/v1/agent", json.RawMessage(request), &response, headers)
+	if err == nil && status != http.StatusCreated {
+		err = NewValidationError(fmt.Sprintf("dnsid: registry returned HTTP %d, want HTTP 201", status), nil)
+	}
+	if err == nil {
+		err = validateRegistrationCreation(&normalized, &response)
+	}
+	if err != nil {
+		return &response, &RegistrationError{Request: request, IdempotencyKey: idempotencyKey, Creation: &response, Cause: err}
+	}
+	return &response, nil
 }
 
 // CreateLiveAgent starts the separate managed Live HTTP 202 flow. It sends
@@ -822,6 +876,8 @@ func (c *HTTPRegistryClient) GetRegistration(ctx context.Context, fqdn string) (
 	}
 	raw, _ := json.Marshal(detail)
 	return &AgentRegistration{
+		ID:                   detail.ID,
+		PublicationConfig:    detail.PublicationConfig,
 		Domain:               detail.Domain,
 		PublicationAuthority: authority,
 		RegistryStatus:       status,
@@ -966,6 +1022,9 @@ func rejectPrivateJWKJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return NewArgumentError("dnsid: invalid public key JWK", err)
+	}
+	if fields == nil {
+		return NewArgumentError("dnsid: public key JWK must be an object", nil)
 	}
 	for _, name := range []string{"d", "p", "q", "dp", "dq", "qi", "oth", "k"} {
 		if _, ok := fields[name]; ok {

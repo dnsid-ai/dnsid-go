@@ -9,7 +9,7 @@ description: "HTTPRegistryClient, publication workflows, and registry request/re
 
 Part of the root package `github.com/dnsid-ai/dnsid-go` — see [Core: IdentityManager](https://docs.dnsid.ai/reference/go/dnsid) for the package overview.
 
-## type [AgentDetail](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L233-L258>)
+## type [AgentDetail](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L245-L270>)
 
 AgentDetail matches the OpenAPI AgentDetail schema.
 
@@ -43,7 +43,7 @@ type AgentDetail struct {
 ```
 
 <a name="WaitForRegistryStatus"></a>
-### func [WaitForRegistryStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1225>)
+### func [WaitForRegistryStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1284>)
 
 ```go
 func WaitForRegistryStatus(ctx context.Context, client RegistryStatusReader, fqdn string, targetStatuses []string, opts *WaitForStatusOptions) (*AgentDetail, error)
@@ -52,7 +52,7 @@ func WaitForRegistryStatus(ctx context.Context, client RegistryStatusReader, fqd
 WaitForRegistryStatus polls client until the agent at fqdn reaches one of targetStatuses \(compared case\-insensitively\) and returns that AgentDetail. It returns an error when a terminal registry status is reached first, when polling fails, or when ctx \(bounded by opts.Timeout, if set\) is done. A nil opts polls every second with no timeout beyond ctx's own.
 
 <a name="AgentError"></a>
-## type [AgentEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L379-L386>)
+## type [AgentEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L391-L398>)
 
 AgentEvent matches the OpenAPI AgentEvent schema.
 
@@ -68,7 +68,7 @@ type AgentEvent struct {
 ```
 
 <a name="AgentListItem"></a>
-## type [AgentListItem](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L208-L216>)
+## type [AgentListItem](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L220-L228>)
 
 AgentListItem matches the OpenAPI Agent schema.
 
@@ -85,7 +85,7 @@ type AgentListItem struct {
 ```
 
 <a name="AgentListResponse"></a>
-## type [AgentListResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L219-L222>)
+## type [AgentListResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L231-L234>)
 
 AgentListResponse matches the OpenAPI AgentListResponse schema.
 
@@ -97,12 +97,14 @@ type AgentListResponse struct {
 ```
 
 <a name="AgentRegistration"></a>
-## type [AgentRegistration](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L109-L119>)
+## type [AgentRegistration](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L115-L127>)
 
 AgentRegistration is normalized registry workflow state for a local identity.
 
 ```go
 type AgentRegistration struct {
+    ID                   string               `json:"id"`
+    PublicationConfig    PublicationConfig    `json:"publication_config"`
     Domain               string               `json:"domain"`
     PublicationAuthority PublicationAuthority `json:"publicationAuthority"`
     RegistryStatus       string               `json:"registryStatus"`
@@ -116,17 +118,23 @@ type AgentRegistration struct {
 ```
 
 <a name="AgentRegistrationInput"></a>
-## type [AgentRegistrationInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L89-L95>)
+## type [AgentRegistrationInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L89-L101>)
 
 AgentRegistrationInput is input for registering a local identity with a registry.
 
 ```go
 type AgentRegistrationInput struct {
-    Domain       string         `json:"domain"`
-    Metadata     map[string]any `json:"metadata,omitempty"`
-    PublicKeyJWK any            `json:"publicKeyJwk,omitempty"`
-    Environment  string         `json:"environment,omitempty"`
-    Managed      bool           `json:"managed,omitempty"`
+    GovernanceDomain string         `json:"governance_domain,omitempty"`
+    RootDomain       string         `json:"root_domain,omitempty"`
+    Name             string         `json:"name,omitempty"`
+    ZoneID           string         `json:"zone_id,omitempty"`
+    Tier             string         `json:"tier,omitempty"`
+    CapabilitiesURL  string         `json:"capabilities_url,omitempty"`
+    Domain           string         `json:"domain,omitempty"`
+    Metadata         map[string]any `json:"metadata,omitempty"`
+    PublicKeyJWK     any            `json:"public_key,omitempty"`
+    Environment      string         `json:"environment,omitempty"`
+    Managed          bool           `json:"managed,omitempty"`
 }
 ```
 
@@ -144,7 +152,7 @@ type CanonicalRecordContentResponse struct {
 ```
 
 <a name="ChallengeRequest"></a>
-## type [ChallengeRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L298-L301>)
+## type [ChallengeRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L310-L313>)
 
 ChallengeRequest matches the OpenAPI ChallengeRequest schema.
 
@@ -156,15 +164,19 @@ type ChallengeRequest struct {
 ```
 
 <a name="Config"></a>
-## type [CreateAgentRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L135-L144>)
+## type [CreateAgentRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L143-L156>)
 
 CreateAgentRequest matches the OpenAPI CreateAgentRequest schema.
 
 ```go
 type CreateAgentRequest struct {
-    Domain    string `json:"domain,omitempty"`
-    Name      string `json:"name,omitempty"`
-    PublicKey any    `json:"public_key"`
+    Domain           string         `json:"domain,omitempty"`
+    GovernanceDomain string         `json:"governance_domain,omitempty"`
+    RootDomain       string         `json:"root_domain,omitempty"`
+    Tier             string         `json:"tier,omitempty"`
+    Name             string         `json:"name,omitempty"`
+    PublicKey        any            `json:"public_key,omitempty"`
+    Metadata         map[string]any `json:"metadata,omitempty"`
     // Optional fields
     Environment     string `json:"environment,omitempty"`
     Managed         bool   `json:"managed,omitempty"`
@@ -174,7 +186,7 @@ type CreateAgentRequest struct {
 ```
 
 <a name="CreateAgentResponse"></a>
-## type [CreateAgentResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L147-L156>)
+## type [CreateAgentResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L159-L168>)
 
 CreateAgentResponse matches the OpenAPI CreateAgentResponse schema.
 
@@ -192,7 +204,7 @@ type CreateAgentResponse struct {
 ```
 
 <a name="DNSRecord"></a>
-## type [EventListOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L438-L441>)
+## type [EventListOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L450-L453>)
 
 EventListOptions contains optional parameters for GetAgentEvents.
 
@@ -204,7 +216,7 @@ type EventListOptions struct {
 ```
 
 <a name="EventListResponse"></a>
-## type [EventListResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L389-L392>)
+## type [EventListResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L401-L404>)
 
 EventListResponse matches the OpenAPI EventListResponse schema.
 
@@ -216,7 +228,7 @@ type EventListResponse struct {
 ```
 
 <a name="FetchOptions"></a>
-## type [HTTPRegistryClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L524-L529>)
+## type [HTTPRegistryClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L536-L541>)
 
 HTTPRegistryClient implements RegistryClient against the standard DNSid registry endpoints.
 
@@ -227,7 +239,7 @@ type HTTPRegistryClient struct {
 ```
 
 <a name="NewRegistryClient"></a>
-### func [NewRegistryClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L585>)
+### func [NewRegistryClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L597>)
 
 ```go
 func NewRegistryClient(baseURL string, transportConfig ...TransportConfig) (*HTTPRegistryClient, error)
@@ -236,7 +248,7 @@ func NewRegistryClient(baseURL string, transportConfig ...TransportConfig) (*HTT
 NewRegistryClient creates an HTTP registry client for baseURL. An empty baseURL means DefaultRegistryURL \(the local registry\). HTTPS is required except on loopback hosts.
 
 <a name="NewRegistryClientWithOptions"></a>
-### func [NewRegistryClientWithOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L598>)
+### func [NewRegistryClientWithOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L610>)
 
 ```go
 func NewRegistryClientWithOptions(baseURL string, opts ...RegistryClientOption) (*HTTPRegistryClient, error)
@@ -245,7 +257,7 @@ func NewRegistryClientWithOptions(baseURL string, opts ...RegistryClientOption) 
 NewRegistryClientWithOptions creates an HTTP registry client with functional options. URL rules follow NewRegistryClient.
 
 <a name="HTTPRegistryClient.CancelAgent"></a>
-### func \(\*HTTPRegistryClient\) [CancelAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L936>)
+### func \(\*HTTPRegistryClient\) [CancelAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L992>)
 
 ```go
 func (c *HTTPRegistryClient) CancelAgent(ctx context.Context, fqdn string) (*LifecycleResponse, error)
@@ -254,7 +266,7 @@ func (c *HTTPRegistryClient) CancelAgent(ctx context.Context, fqdn string) (*Lif
 CancelAgent cancels an in\-progress registration workflow for fqdn.
 
 <a name="HTTPRegistryClient.CanonicalRecordContent"></a>
-### func \(\*HTTPRegistryClient\) [CanonicalRecordContent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L650>)
+### func \(\*HTTPRegistryClient\) [CanonicalRecordContent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L662>)
 
 ```go
 func (c *HTTPRegistryClient) CanonicalRecordContent(ctx context.Context, domain, signingKid string) (*CanonicalRecordContentResponse, error)
@@ -263,7 +275,7 @@ func (c *HTTPRegistryClient) CanonicalRecordContent(ctx context.Context, domain,
 CanonicalRecordContent fetches the registry\-prepared unsigned canonical TXT content for domain, targeted at the given record\-signing kid.
 
 <a name="HTTPRegistryClient.ConfirmReady"></a>
-### func \(\*HTTPRegistryClient\) [ConfirmReady](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L953>)
+### func \(\*HTTPRegistryClient\) [ConfirmReady](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1009>)
 
 ```go
 func (c *HTTPRegistryClient) ConfirmReady(ctx context.Context, fqdn string) (*LifecycleResponse, error)
@@ -272,16 +284,25 @@ func (c *HTTPRegistryClient) ConfirmReady(ctx context.Context, fqdn string) (*Li
 ConfirmReady confirms the agent at fqdn is ready to go live. It is an alias for VerifyAgent.
 
 <a name="HTTPRegistryClient.CreateAgent"></a>
-### func \(\*HTTPRegistryClient\) [CreateAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L693>)
+### func \(\*HTTPRegistryClient\) [CreateAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L703>)
 
 ```go
 func (c *HTTPRegistryClient) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*CreateAgentResponse, error)
 ```
 
-CreateAgent registers an agent. Pass Domain for a name you control \(self\-managed\), or ZoneID for a registry\-assigned name in a delegated zone \(managed\); the two are mutually exclusive, and Managed requires ZoneID. Environment defaults to "production"; "sandbox" is also accepted. Private JWK members in PublicKey are rejected before anything is sent. Use CreateLiveAgent for Live names.
+CreateAgent performs ordinary registration without retry\-safe replay. The registry resolves hosting; no legacy defaults are injected. Use CreateLiveAgent for managed Live registration.
+
+<a name="HTTPRegistryClient.CreateAgentWithIdempotencyKey"></a>
+### func \(\*HTTPRegistryClient\) [CreateAgentWithIdempotencyKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L709>)
+
+```go
+func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, req *CreateAgentRequest, idempotencyKey string) (*CreateAgentResponse, error)
+```
+
+CreateAgentWithIdempotencyKey creates an ordinary HTTP 201 registration. Retry only with the same request and non\-empty key. No automatic retry occurs.
 
 <a name="HTTPRegistryClient.CreateLiveAgent"></a>
-### func \(\*HTTPRegistryClient\) [CreateLiveAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L728>)
+### func \(\*HTTPRegistryClient\) [CreateLiveAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L782>)
 
 ```go
 func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgentRegistrationInput, idempotencyKey string) (*LiveProvisioningResponse, error)
@@ -290,7 +311,7 @@ func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgent
 CreateLiveAgent starts the separate managed Live HTTP 202 flow. It sends tier="live", managed=true, and environment="production". The idempotency key is required and must be reused for retries.
 
 <a name="HTTPRegistryClient.GetAgentEvents"></a>
-### func \(\*HTTPRegistryClient\) [GetAgentEvents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L837>)
+### func \(\*HTTPRegistryClient\) [GetAgentEvents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L893>)
 
 ```go
 func (c *HTTPRegistryClient) GetAgentEvents(ctx context.Context, fqdn string, opts *EventListOptions) (*EventListResponse, error)
@@ -299,7 +320,7 @@ func (c *HTTPRegistryClient) GetAgentEvents(ctx context.Context, fqdn string, op
 GetAgentEvents lists registry audit events for the agent at fqdn. A nil opts requests the first page with the server's default limit.
 
 <a name="HTTPRegistryClient.GetAgentStatus"></a>
-### func \(\*HTTPRegistryClient\) [GetAgentStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L797>)
+### func \(\*HTTPRegistryClient\) [GetAgentStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L851>)
 
 ```go
 func (c *HTTPRegistryClient) GetAgentStatus(ctx context.Context, fqdn string) (*AgentDetail, error)
@@ -308,7 +329,7 @@ func (c *HTTPRegistryClient) GetAgentStatus(ctx context.Context, fqdn string) (*
 GetAgentStatus returns the registry's detailed view of the agent at fqdn, including workflow status, DNS publication state, and any workflow error.
 
 <a name="HTTPRegistryClient.GetIdentityRecord"></a>
-### func \(\*HTTPRegistryClient\) [GetIdentityRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1180>)
+### func \(\*HTTPRegistryClient\) [GetIdentityRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1239>)
 
 ```go
 func (c *HTTPRegistryClient) GetIdentityRecord(ctx context.Context, fqdn string, req *IdentityRecordRequest) (*IdentityRecordResponse, error)
@@ -317,7 +338,7 @@ func (c *HTTPRegistryClient) GetIdentityRecord(ctx context.Context, fqdn string,
 GetIdentityRecord fetches the registry\-prepared canonical identity record content for fqdn, targeted at the signing kid named in req.
 
 <a name="HTTPRegistryClient.GetRegistration"></a>
-### func \(\*HTTPRegistryClient\) [GetRegistration](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L805>)
+### func \(\*HTTPRegistryClient\) [GetRegistration](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L859>)
 
 ```go
 func (c *HTTPRegistryClient) GetRegistration(ctx context.Context, fqdn string) (*AgentRegistration, error)
@@ -326,7 +347,7 @@ func (c *HTTPRegistryClient) GetRegistration(ctx context.Context, fqdn string) (
 GetRegistration returns normalized registry workflow state for fqdn, mapping the registry's managed mode \("self" or "dnsid"\) to a PublicationAuthority. It returns a \*ValidationError for unknown managed modes.
 
 <a name="HTTPRegistryClient.ListAgents"></a>
-### func \(\*HTTPRegistryClient\) [ListAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L778>)
+### func \(\*HTTPRegistryClient\) [ListAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L832>)
 
 ```go
 func (c *HTTPRegistryClient) ListAgents(ctx context.Context, opts *ListAgentsOptions) (*AgentListResponse, error)
@@ -335,7 +356,7 @@ func (c *HTTPRegistryClient) ListAgents(ctx context.Context, opts *ListAgentsOpt
 ListAgents lists the caller's agents. A nil opts requests the first page with the server's default limit; use the response's NextCursor to page.
 
 <a name="HTTPRegistryClient.ListExpiringAgents"></a>
-### func \(\*HTTPRegistryClient\) [ListExpiringAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1191>)
+### func \(\*HTTPRegistryClient\) [ListExpiringAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1250>)
 
 ```go
 func (c *HTTPRegistryClient) ListExpiringAgents(ctx context.Context) (*OperationsAgentListResponse, error)
@@ -344,7 +365,7 @@ func (c *HTTPRegistryClient) ListExpiringAgents(ctx context.Context) (*Operation
 ListExpiringAgents lists agents whose identity records are approaching expiry.
 
 <a name="HTTPRegistryClient.ListFlaggedAgents"></a>
-### func \(\*HTTPRegistryClient\) [ListFlaggedAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1197>)
+### func \(\*HTTPRegistryClient\) [ListFlaggedAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1256>)
 
 ```go
 func (c *HTTPRegistryClient) ListFlaggedAgents(ctx context.Context) (*OperationsAgentListResponse, error)
@@ -353,7 +374,7 @@ func (c *HTTPRegistryClient) ListFlaggedAgents(ctx context.Context) (*Operations
 ListFlaggedAgents lists agents the registry has flagged for operator attention.
 
 <a name="HTTPRegistryClient.ListPendingAgents"></a>
-### func \(\*HTTPRegistryClient\) [ListPendingAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1203>)
+### func \(\*HTTPRegistryClient\) [ListPendingAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1262>)
 
 ```go
 func (c *HTTPRegistryClient) ListPendingAgents(ctx context.Context) (*OperationsAgentListResponse, error)
@@ -362,7 +383,7 @@ func (c *HTTPRegistryClient) ListPendingAgents(ctx context.Context) (*Operations
 ListPendingAgents lists agents whose registration workflows have not yet completed.
 
 <a name="HTTPRegistryClient.PrepareIssuance"></a>
-### func \(\*HTTPRegistryClient\) [PrepareIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1095>)
+### func \(\*HTTPRegistryClient\) [PrepareIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1154>)
 
 ```go
 func (c *HTTPRegistryClient) PrepareIssuance(ctx context.Context, fqdn, idempotencyKey string) (*PreparedRegistryEvent, error)
@@ -371,7 +392,7 @@ func (c *HTTPRegistryClient) PrepareIssuance(ctx context.Context, fqdn, idempote
 PrepareIssuance asks the registry to prepare a transparency\-log ISSUANCE event for fqdn. The returned entry bytes are untrusted: parse and validate them against the returned log reference before signing. The idempotency key must be 1 to 200 bytes without surrounding whitespace; reuse the same key when retrying.
 
 <a name="HTTPRegistryClient.PrepareKeyRotation"></a>
-### func \(\*HTTPRegistryClient\) [PrepareKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1115>)
+### func \(\*HTTPRegistryClient\) [PrepareKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1174>)
 
 ```go
 func (c *HTTPRegistryClient) PrepareKeyRotation(ctx context.Context, fqdn string, req *KeyRotationPreparationRequest, idempotencyKey string) (*PreparedRegistryEvent, error)
@@ -380,7 +401,7 @@ func (c *HTTPRegistryClient) PrepareKeyRotation(ctx context.Context, fqdn string
 PrepareKeyRotation asks the registry to prepare a transparency\-log KEY\_ROTATION event for fqdn. Authenticate with an organization session or API key; an agent bearer token is not accepted. The request must name the previous key ID and carry the new public key, which is rejected if it contains private JWK members. As with PrepareIssuance, the returned entry bytes are untrusted and must be validated before signing.
 
 <a name="HTTPRegistryClient.PublishSignature"></a>
-### func \(\*HTTPRegistryClient\) [PublishSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L663>)
+### func \(\*HTTPRegistryClient\) [PublishSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L675>)
 
 ```go
 func (c *HTTPRegistryClient) PublishSignature(ctx context.Context, domain, sig string) (*PublishedRecord, error)
@@ -388,8 +409,17 @@ func (c *HTTPRegistryClient) PublishSignature(ctx context.Context, domain, sig s
 
 PublishSignature submits an encoded record signature for domain and returns the resulting publication state as a PublishedRecord.
 
+<a name="HTTPRegistryClient.RegisterAgent"></a>
+### func \(\*HTTPRegistryClient\) [RegisterAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L47>)
+
+```go
+func (c *HTTPRegistryClient) RegisterAgent(ctx context.Context, input *AgentRegistrationInput, idempotencyKey string) (*AgentRegistration, error)
+```
+
+RegisterAgent creates an identity and reads publication authority from authenticated management detail. The optional key is transport metadata. Creation facts survive a failed detail read in RegistrationError.
+
 <a name="HTTPRegistryClient.ReissueLiveProof"></a>
-### func \(\*HTTPRegistryClient\) [ReissueLiveProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L885>)
+### func \(\*HTTPRegistryClient\) [ReissueLiveProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L941>)
 
 ```go
 func (c *HTTPRegistryClient) ReissueLiveProof(ctx context.Context, fqdn string, req *LiveProofReissueRequest) (*LiveProofReissueResponse, error)
@@ -398,7 +428,7 @@ func (c *HTTPRegistryClient) ReissueLiveProof(ctx context.Context, fqdn string, 
 ReissueLiveProof requests a replacement challenge for an expired Live proof. RequestID is also sent as the required Idempotency\-Key header.
 
 <a name="HTTPRegistryClient.RejectAgent"></a>
-### func \(\*HTTPRegistryClient\) [RejectAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L941>)
+### func \(\*HTTPRegistryClient\) [RejectAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L997>)
 
 ```go
 func (c *HTTPRegistryClient) RejectAgent(ctx context.Context, fqdn string) (*LifecycleResponse, error)
@@ -407,7 +437,7 @@ func (c *HTTPRegistryClient) RejectAgent(ctx context.Context, fqdn string) (*Lif
 RejectAgent marks the registration workflow for fqdn as rejected.
 
 <a name="HTTPRegistryClient.RetireAgent"></a>
-### func \(\*HTTPRegistryClient\) [RetireAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L928>)
+### func \(\*HTTPRegistryClient\) [RetireAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L984>)
 
 ```go
 func (c *HTTPRegistryClient) RetireAgent(ctx context.Context, fqdn string, req *RetireAgentRequest) (*LifecycleResponse, error)
@@ -416,7 +446,7 @@ func (c *HTTPRegistryClient) RetireAgent(ctx context.Context, fqdn string, req *
 RetireAgent retires the immutable agent identity without revoking its key.
 
 <a name="HTTPRegistryClient.RevokeAgent"></a>
-### func \(\*HTTPRegistryClient\) [RevokeAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L917>)
+### func \(\*HTTPRegistryClient\) [RevokeAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L973>)
 
 ```go
 func (c *HTTPRegistryClient) RevokeAgent(ctx context.Context, fqdn string, req *RevokeAgentRequest) (*LifecycleResponse, error)
@@ -425,7 +455,7 @@ func (c *HTTPRegistryClient) RevokeAgent(ctx context.Context, fqdn string, req *
 RevokeAgent revokes the immutable agent identity at fqdn with the supplied reason. Revocation is a terminal lifecycle transition whose persistence and transparency\-log append are owned by the registry.
 
 <a name="HTTPRegistryClient.SetAuthToken"></a>
-### func \(\*HTTPRegistryClient\) [SetAuthToken](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L571>)
+### func \(\*HTTPRegistryClient\) [SetAuthToken](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L583>)
 
 ```go
 func (c *HTTPRegistryClient) SetAuthToken(token string) error
@@ -434,7 +464,7 @@ func (c *HTTPRegistryClient) SetAuthToken(token string) error
 SetAuthToken updates the Bearer token on an existing client \(e.g. after refresh\). It returns an error if the client is configured for plaintext HTTP on a non\-loopback host without WithInsecureHTTP.
 
 <a name="HTTPRegistryClient.SubmitChallenge"></a>
-### func \(\*HTTPRegistryClient\) [SubmitChallenge](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L856>)
+### func \(\*HTTPRegistryClient\) [SubmitChallenge](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L912>)
 
 ```go
 func (c *HTTPRegistryClient) SubmitChallenge(ctx context.Context, fqdn string, req *ChallengeRequest) error
@@ -443,7 +473,7 @@ func (c *HTTPRegistryClient) SubmitChallenge(ctx context.Context, fqdn string, r
 SubmitChallenge submits a signed domain\-control challenge response for the agent at fqdn. A nil error means the registry accepted the submission.
 
 <a name="HTTPRegistryClient.SubmitLiveProof"></a>
-### func \(\*HTTPRegistryClient\) [SubmitLiveProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L863>)
+### func \(\*HTTPRegistryClient\) [SubmitLiveProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L919>)
 
 ```go
 func (c *HTTPRegistryClient) SubmitLiveProof(ctx context.Context, fqdn string, req *LiveProofRequest) (*LiveProofResponse, error)
@@ -452,7 +482,7 @@ func (c *HTTPRegistryClient) SubmitLiveProof(ctx context.Context, fqdn string, r
 SubmitLiveProof submits proof of possession for a managed Live registration. RequestID is also sent as the required Idempotency\-Key header.
 
 <a name="HTTPRegistryClient.SubmitPreparedEvent"></a>
-### func \(\*HTTPRegistryClient\) [SubmitPreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1145>)
+### func \(\*HTTPRegistryClient\) [SubmitPreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1204>)
 
 ```go
 func (c *HTTPRegistryClient) SubmitPreparedEvent(ctx context.Context, fqdn string, entryBytes []byte, idempotencyKey string) (*SubmissionResult, error)
@@ -461,7 +491,7 @@ func (c *HTTPRegistryClient) SubmitPreparedEvent(ctx context.Context, fqdn strin
 SubmitPreparedEvent submits the exact signed entry bytes of a prepared event \(1 to 65535 bytes\) for transparency\-log inclusion. On an accepted result it verifies that the registry's reported entry hash matches the SHA\-256 of the submitted bytes and returns a \*ValidationError on mismatch. Retry with the same bytes and idempotency key when the registry reports a retryable state \(see RegistryAPIError.RetrySameEntry\).
 
 <a name="HTTPRegistryClient.SubmitSignature"></a>
-### func \(\*HTTPRegistryClient\) [SubmitSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1185>)
+### func \(\*HTTPRegistryClient\) [SubmitSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1244>)
 
 ```go
 func (c *HTTPRegistryClient) SubmitSignature(ctx context.Context, fqdn string, req *SignatureRequest) (*SignatureResponse, error)
@@ -470,7 +500,7 @@ func (c *HTTPRegistryClient) SubmitSignature(ctx context.Context, fqdn string, r
 SubmitSignature posts a signature through the legacy self\-managed identity\-record endpoint.
 
 <a name="HTTPRegistryClient.UnregisterAgent"></a>
-### func \(\*HTTPRegistryClient\) [UnregisterAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L767>)
+### func \(\*HTTPRegistryClient\) [UnregisterAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L821>)
 
 ```go
 func (c *HTTPRegistryClient) UnregisterAgent(ctx context.Context, fqdn string) error
@@ -479,7 +509,7 @@ func (c *HTTPRegistryClient) UnregisterAgent(ctx context.Context, fqdn string) e
 UnregisterAgent removes the agent at fqdn. It is best\-effort for registry compatibility: an already\-absent agent or a registry without DELETE support is treated as a successful no\-op.
 
 <a name="HTTPRegistryClient.VerifyAgent"></a>
-### func \(\*HTTPRegistryClient\) [VerifyAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L947>)
+### func \(\*HTTPRegistryClient\) [VerifyAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1003>)
 
 ```go
 func (c *HTTPRegistryClient) VerifyAgent(ctx context.Context, fqdn string) (*LifecycleResponse, error)
@@ -488,7 +518,7 @@ func (c *HTTPRegistryClient) VerifyAgent(ctx context.Context, fqdn string) (*Lif
 VerifyAgent asks the registry to run its verification step for fqdn and advance the registration workflow.
 
 <a name="HTTPRegistryClient.VerifyDomainRemote"></a>
-### func \(\*HTTPRegistryClient\) [VerifyDomainRemote](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1210>)
+### func \(\*HTTPRegistryClient\) [VerifyDomainRemote](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1269>)
 
 ```go
 func (c *HTTPRegistryClient) VerifyDomainRemote(ctx context.Context, req *VerifyDomainRequest) (*VerifyDomainResponse, error)
@@ -497,7 +527,7 @@ func (c *HTTPRegistryClient) VerifyDomainRemote(ctx context.Context, req *Verify
 VerifyDomainRemote asks the registry to check a domain's DNSid state from its vantage point. It complements, but does not replace, local IdentityManager.VerifyDomain verification.
 
 <a name="HTTPRegistryClient.WaitForStatus"></a>
-### func \(\*HTTPRegistryClient\) [WaitForStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1216>)
+### func \(\*HTTPRegistryClient\) [WaitForStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1275>)
 
 ```go
 func (c *HTTPRegistryClient) WaitForStatus(ctx context.Context, fqdn string, targetStatuses []string, opts *WaitForStatusOptions) (*AgentDetail, error)
@@ -506,7 +536,7 @@ func (c *HTTPRegistryClient) WaitForStatus(ctx context.Context, fqdn string, tar
 WaitForStatus polls the registry until the agent at fqdn reaches one of targetStatuses. It is shorthand for WaitForRegistryStatus with this client.
 
 <a name="HTTPSFetcher"></a>
-## type [IdentityRecordRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L261-L263>)
+## type [IdentityRecordRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L273-L275>)
 
 IdentityRecordRequest matches the OpenAPI IdentityRecordRequest schema.
 
@@ -517,7 +547,7 @@ type IdentityRecordRequest struct {
 ```
 
 <a name="IdentityRecordResponse"></a>
-## type [IdentityRecordResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L266-L272>)
+## type [IdentityRecordResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L278-L284>)
 
 IdentityRecordResponse matches the OpenAPI IdentityRecordResponse schema.
 
@@ -544,7 +574,7 @@ type KeyRotationPreparationRequest struct {
 ```
 
 <a name="KeySignature"></a>
-## type [LifecycleResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L372-L376>)
+## type [LifecycleResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L384-L388>)
 
 LifecycleResponse matches the OpenAPI LifecycleResponse schema.
 
@@ -557,7 +587,7 @@ type LifecycleResponse struct {
 ```
 
 <a name="ListAgentsOptions"></a>
-## type [ListAgentsOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L432-L435>)
+## type [ListAgentsOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L444-L447>)
 
 ListAgentsOptions contains optional parameters for ListAgents.
 
@@ -569,7 +599,7 @@ type ListAgentsOptions struct {
 ```
 
 <a name="LiveAgentRegistrationInput"></a>
-## type [LiveAgentRegistrationInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L161-L167>)
+## type [LiveAgentRegistrationInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L173-L179>)
 
 LiveAgentRegistrationInput is the caller\-controlled input for managed Live registration. The client supplies the fixed tier, managed, and environment fields on the wire.
 
@@ -584,7 +614,7 @@ type LiveAgentRegistrationInput struct {
 ```
 
 <a name="LiveChallengeTranscript"></a>
-## type [LiveChallengeTranscript](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L171-L179>)
+## type [LiveChallengeTranscript](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L183-L191>)
 
 LiveChallengeTranscript is the validated proof\-of\-possession transcript decoded from a Live challenge message.
 
@@ -601,7 +631,7 @@ type LiveChallengeTranscript struct {
 ```
 
 <a name="LiveProofReissueRequest"></a>
-## type [LiveProofReissueRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L323-L327>)
+## type [LiveProofReissueRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L335-L339>)
 
 LiveProofReissueRequest requests a fresh challenge after an expired proof.
 
@@ -614,7 +644,7 @@ type LiveProofReissueRequest struct {
 ```
 
 <a name="LiveProofReissueResponse"></a>
-## type [LiveProofReissueResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L331-L339>)
+## type [LiveProofReissueResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L343-L351>)
 
 LiveProofReissueResponse contains the replacement Live proof challenge. Domain and ChallengeTranscript are derived from the validated latest message.
 
@@ -631,7 +661,7 @@ type LiveProofReissueResponse struct {
 ```
 
 <a name="LiveProofRequest"></a>
-## type [LiveProofRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L304-L313>)
+## type [LiveProofRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L316-L325>)
 
 LiveProofRequest proves possession of the key supplied for Live registration.
 
@@ -649,7 +679,7 @@ type LiveProofRequest struct {
 ```
 
 <a name="LiveProofResponse"></a>
-## type [LiveProofResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L316-L320>)
+## type [LiveProofResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L328-L332>)
 
 LiveProofResponse reports the durable Live proof handoff status.
 
@@ -662,7 +692,7 @@ type LiveProofResponse struct {
 ```
 
 <a name="LiveProvisioningResponse"></a>
-## type [LiveProvisioningResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L184-L192>)
+## type [LiveProvisioningResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L196-L204>)
 
 LiveProvisioningResponse is the HTTP 202 response for a managed Live registration. Domain and ChallengeTranscript are derived and populated while Status is challenge\_pending.
 
@@ -679,7 +709,7 @@ type LiveProvisioningResponse struct {
 ```
 
 <a name="LocalKeyProvider"></a>
-## type [OperationsAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L395-L406>)
+## type [OperationsAgent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L407-L418>)
 
 OperationsAgent matches the OpenAPI OperationsAgent schema.
 
@@ -699,7 +729,7 @@ type OperationsAgent struct {
 ```
 
 <a name="OperationsAgentListResponse"></a>
-## type [OperationsAgentListResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L409-L411>)
+## type [OperationsAgentListResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L421-L423>)
 
 OperationsAgentListResponse matches the OpenAPI OperationsAgentListResponse schema.
 
@@ -722,7 +752,7 @@ type PreparedRegistryEvent struct {
 ```
 
 <a name="PublicationAuthority"></a>
-## type [PublicationAuthority](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L99>)
+## type [PublicationAuthority](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L105>)
 
 PublicationAuthority identifies who controls the accountable\-entity key and signs the DNSid record.
 
@@ -740,7 +770,7 @@ const (
 ```
 
 <a name="PublicationConfig"></a>
-## type [PublicationConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L196-L205>)
+## type [PublicationConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L208-L217>)
 
 PublicationConfig is the authoritative set of profile\-known values the registry uses to construct an agent's unsigned identity record.
 
@@ -758,7 +788,7 @@ type PublicationConfig struct {
 ```
 
 <a name="PublishedRecord"></a>
-## type [PublishedRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L122-L130>)
+## type [PublishedRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L130-L138>)
 
 PublishedRecord is the result of a registry TXT publication workflow.
 
@@ -775,7 +805,7 @@ type PublishedRecord struct {
 ```
 
 <a name="RedirectPolicy"></a>
-## type [RegistryClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L471-L504>)
+## type [RegistryClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L483-L516>)
 
 RegistryClient is the full control\-plane client for the DNSid registry API.
 
@@ -817,7 +847,7 @@ type RegistryClient interface {
 ```
 
 <a name="RegistryClientControlledPublisher"></a>
-## type [RegistryClientControlledPublisher](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L457-L460>)
+## type [RegistryClientControlledPublisher](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L469-L472>)
 
 RegistryClientControlledPublisher adds the registration state needed to enforce client publication authority before signing.
 
@@ -829,7 +859,7 @@ type RegistryClientControlledPublisher interface {
 ```
 
 <a name="RegistryClientOption"></a>
-## type [RegistryClientOption](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L549>)
+## type [RegistryClientOption](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L561>)
 
 RegistryClientOption configures an HTTPRegistryClient.
 
@@ -838,7 +868,7 @@ type RegistryClientOption func(*HTTPRegistryClient)
 ```
 
 <a name="WithAuthToken"></a>
-### func [WithAuthToken](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L552>)
+### func [WithAuthToken](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L564>)
 
 ```go
 func WithAuthToken(token string) RegistryClientOption
@@ -847,7 +877,7 @@ func WithAuthToken(token string) RegistryClientOption
 WithAuthToken sets a Bearer token for authenticated API calls.
 
 <a name="WithInsecureHTTP"></a>
-### func [WithInsecureHTTP](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L564>)
+### func [WithInsecureHTTP](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L576>)
 
 ```go
 func WithInsecureHTTP() RegistryClientOption
@@ -856,7 +886,7 @@ func WithInsecureHTTP() RegistryClientOption
 WithInsecureHTTP allows the client to use plaintext HTTP transport. This is intended only for local development and testing; production callers should always use HTTPS.
 
 <a name="WithRegistryHTTPClient"></a>
-### func [WithRegistryHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L557>)
+### func [WithRegistryHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L569>)
 
 ```go
 func WithRegistryHTTPClient(client *http.Client) RegistryClientOption
@@ -865,7 +895,7 @@ func WithRegistryHTTPClient(client *http.Client) RegistryClientOption
 WithRegistryHTTPClient sets a custom HTTP client for the registry client.
 
 <a name="RegistryConfig"></a>
-## type [RegistryPreparedEventClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L464-L468>)
+## type [RegistryPreparedEventClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L476-L480>)
 
 RegistryPreparedEventClient is the capability required for prepared C2SP transparency\-log preparation and submission transport.
 
@@ -878,7 +908,7 @@ type RegistryPreparedEventClient interface {
 ```
 
 <a name="RegistryPublisher"></a>
-## type [RegistryPublisher](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L450-L453>)
+## type [RegistryPublisher](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L462-L465>)
 
 RegistryPublisher is the canonical\-record and signature\-publication capability shared by registry clients.
 
@@ -890,7 +920,7 @@ type RegistryPublisher interface {
 ```
 
 <a name="RegistryRegistrationReader"></a>
-## type [RegistryRegistrationReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L444-L446>)
+## type [RegistryRegistrationReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L456-L458>)
 
 RegistryRegistrationReader reads normalized registry workflow state.
 
@@ -901,7 +931,7 @@ type RegistryRegistrationReader interface {
 ```
 
 <a name="RegistryRevocationReason"></a>
-## type [RegistryRevocationReason](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L343>)
+## type [RegistryRevocationReason](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L355>)
 
 RegistryRevocationReason is an owner\-authorized registry revocation reason. It is distinct from the protocol REVOCATION reason vocabulary.
 
@@ -930,7 +960,7 @@ type RegistryRevoker interface {
 ```
 
 <a name="RegistryStatusReader"></a>
-## type [RegistryStatusReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L538-L540>)
+## type [RegistryStatusReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L550-L552>)
 
 RegistryStatusReader is the subset needed by WaitForRegistryStatus.
 
@@ -941,7 +971,7 @@ type RegistryStatusReader interface {
 ```
 
 <a name="RegistryWorkflowError"></a>
-## type [RetireAgentRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L367-L369>)
+## type [RetireAgentRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L379-L381>)
 
 RetireAgentRequest matches the OpenAPI RetireRequest schema.
 
@@ -952,7 +982,7 @@ type RetireAgentRequest struct {
 ```
 
 <a name="RevokeAgentRequest"></a>
-## type [RevokeAgentRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L361-L364>)
+## type [RevokeAgentRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L373-L376>)
 
 RevokeAgentRequest matches the OpenAPI RevokeRequest schema.
 
@@ -964,7 +994,7 @@ type RevokeAgentRequest struct {
 ```
 
 <a name="SDKConformanceMetadata"></a>
-## type [SignatureRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L275-L277>)
+## type [SignatureRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L287-L289>)
 
 SignatureRequest matches the OpenAPI SignatureRequest schema.
 
@@ -975,7 +1005,7 @@ type SignatureRequest struct {
 ```
 
 <a name="SignatureResponse"></a>
-## type [SignatureResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L289-L295>)
+## type [SignatureResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L301-L307>)
 
 SignatureResponse is the legacy response for POST /agent/\{fqdn\}/signature. Its Status is publication workflow state, not protocol AgentStatus.
 
@@ -1028,7 +1058,7 @@ const (
 ```
 
 <a name="TXTRecord"></a>
-## type [VerifyDomainRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L414-L416>)
+## type [VerifyDomainRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L426-L428>)
 
 VerifyDomainRequest matches the OpenAPI VerifyDomainRequest schema.
 
@@ -1039,7 +1069,7 @@ type VerifyDomainRequest struct {
 ```
 
 <a name="VerifyDomainResponse"></a>
-## type [VerifyDomainResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L419-L429>)
+## type [VerifyDomainResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L431-L441>)
 
 VerifyDomainResponse matches the OpenAPI VerifyDomainResponse schema.
 
@@ -1058,7 +1088,7 @@ type VerifyDomainResponse struct {
 ```
 
 <a name="WaitForStatusOptions"></a>
-## type [WaitForStatusOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L543-L546>)
+## type [WaitForStatusOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L555-L558>)
 
 WaitForStatusOptions configures registry status polling.
 

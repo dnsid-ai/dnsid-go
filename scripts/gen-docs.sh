@@ -137,6 +137,7 @@ AgentError dnsid-errors
 ArgumentError dnsid-errors
 ParseError dnsid-errors
 RegistryAPIError dnsid-errors
+RegistrationError dnsid-errors
 RegistryWorkflowError dnsid-errors
 ValidationError dnsid-errors
 VerificationCode dnsid-errors
