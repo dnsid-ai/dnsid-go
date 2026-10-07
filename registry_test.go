@@ -417,7 +417,7 @@ func TestHTTPRegistryClient_CreateAgent(t *testing.T) {
 				GovernanceID:   "example.com",
 				KeyURL:         "https://agent.example.com/ku.json",
 				EntityKeyURL:   "https://example.com/ek.json",
-				LogRef:         "log.example:1",
+				LogRef:         "testlog:1",
 				StatusURL:      "https://agent.example.com/status.json",
 			},
 		})
@@ -429,7 +429,7 @@ func TestHTTPRegistryClient_CreateAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	if resp.ID != "id-1" || resp.Status != "PENDING" || resp.PublicationConfig.LogRef != "log.example:1" || resp.OIDCIssuerURL != "https://issuer.example.com" {
+	if resp.ID != "id-1" || resp.Status != "PENDING" || resp.PublicationConfig.LogRef != "testlog:1" || resp.OIDCIssuerURL != "https://issuer.example.com" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{PublicKey: map[string]string{"kty": "OKP", "d": "private"}}); err == nil {
@@ -473,7 +473,11 @@ func TestHTTPRegistryClient_CreateAgentValidatesEnvironment(t *testing.T) {
 		}
 		requests = append(requests, req)
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(CreateAgentResponse{Domain: "assigned.zone.example"})
+		domain := req.Domain
+		if domain == "" {
+			domain = "assigned.zone.example"
+		}
+		json.NewEncoder(w).Encode(CreateAgentResponse{ID: "id-1", Domain: domain, PublicationConfig: registrationTestConfig()})
 	}))
 	defer srv.Close()
 
@@ -487,7 +491,7 @@ func TestHTTPRegistryClient_CreateAgentValidatesEnvironment(t *testing.T) {
 	if _, err := client.CreateAgent(context.Background(), &CreateAgentRequest{Domain: "agent.example.com", Environment: "sandbox", PublicKey: map[string]string{"kty": "OKP"}}); err != nil {
 		t.Fatalf("CreateAgent sandbox: %v", err)
 	}
-	if len(requests) != 3 || requests[0].Environment != "production" || requests[0].Domain != "agent.example.com" || requests[1].Environment != "production" || requests[1].ZoneID != "zone-1" || requests[1].Domain != "" || requests[2].Environment != "sandbox" {
+	if len(requests) != 3 || requests[0].Environment != "" || requests[0].Domain != "agent.example.com" || requests[1].Environment != "" || requests[1].ZoneID != "zone-1" || requests[1].Domain != "" || requests[2].Environment != "sandbox" {
 		t.Fatalf("requests = %+v", requests)
 	}
 	for _, req := range []*CreateAgentRequest{
@@ -495,7 +499,6 @@ func TestHTTPRegistryClient_CreateAgentValidatesEnvironment(t *testing.T) {
 		{Domain: "agent.example.com", Environment: "development"},
 		{Domain: "agent.example.com", Environment: "staging"},
 		{Domain: "agent.example.com", ZoneID: "zone-1", Environment: "production"},
-		{Domain: "agent.example.com", Managed: true, Environment: "production"},
 		{Managed: true},
 		{Environment: "production"},
 	} {

@@ -36,6 +36,19 @@ expected to work. Cross a major version (e.g. `jwx/v3` → `v4`) only after it i
 Until the SDK reaches v1.0.0, breaking public API changes increment the minor version. Features
 increment the minor version and backward-compatible fixes increment the patch version.
 
+### Unified registration
+
+Ordinary registration now preserves explicit GI/root selectors and omits legacy
+selector defaults. A public-key-only request selects the server sandbox default;
+set `Environment: "production"` with `Managed: true` explicitly for the supported
+legacy production flow. The registry determines hosting even for an exact domain.
+Use `CreateAgentWithIdempotencyKey` for retry-safe creation or `RegisterAgent` to
+also read publication authority with an organization credential. Retain the
+returned immutable ID, publication configuration, and OIDC issuer. Recover
+failed attempts from `RegistrationError` with the same request and key; a failure
+does not establish that no agent exists. Publication configuration is not trust
+policy. Managed Live remains the separate HTTP 202 operation.
+
 ### Since v0.36.0: breaking C2SP logical-identity correction
 
 This SDK targets DNSid C2SP method revision
