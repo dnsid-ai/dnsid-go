@@ -4,12 +4,32 @@ Register one hosted **dev sandbox** identity and independently verify its ACTIVE
 status and lifecycle evidence through public DNS. No challenge server or DNS
 hosting is needed.
 
+## Server prerequisite
+
+**Do not run this example until server integration tests verify the revised
+permanent creation-idempotency contract.** Current hosted-service support is not
+established by the SDK tests. An expiring 24-hour, organization-local replay cache
+is insufficient. See [the required contract](../../registration/README.md#required-server-contract).
+
+The registry must atomically bind each registry-wide unique registration key to
+its authenticated organization, complete request, and one immutable identity.
+Matching retries must return that identity or a terminal error, including after
+restart, long interruption, retirement, or deletion. Reuse by another organization
+must fail without disclosure or another allocation. These are server guarantees,
+not an SDK adapter or a client-side replay timer.
+
+`--server-contract-verified` confirms that this deployment has passed those
+integration tests. It does not probe or establish server support. Without the
+flag, the example stops before key creation or network work.
+
 ## Run
 
-Requires Go 1.26.6+, public DNS/HTTPS access, and a dev organization API key:
+After the server prerequisite is met, use Go 1.26.6+, public DNS/HTTPS access, and
+a dev organization API key:
 
 ```sh
 go run ./examples/managed-registration \
+  --server-contract-verified \
   --api-key-file "$HOME/.dev-dnsid-api-key" \
   --state-dir "$HOME/.dnsid-examples/managed-registration-go"
 ```
@@ -28,35 +48,17 @@ use a DNSSEC-aware resolver when required.
 
 ## SDK workflow
 
-One `registration.RegisterManagedIdentity()` call owns key creation, durable
-request replay, bilateral ISSUANCE recovery, publication polling, and fresh
-credential-free public verification. `NewFileRegistrationStore()` owns locking,
-owner-only permissions, atomic writes, and fsync. The CLI implements none of
-these operations. See [the workflow documentation](../../registration/README.md).
+One `registration.RegisterManagedIdentity()` call owns the registry client, key
+creation, durable request replay, bilateral ISSUANCE recovery, publication polling,
+and fresh credential-free public verification. `NewFileRegistrationStore()` owns
+locking, owner-only permissions, atomic writes, and fsync. No organization lookup,
+recovery adapter, replay deadline, or reconciliation callback is needed.
 
 The example loads SDK environment configuration, then explicitly selects the dev
 registry, managed log trust, expected governance ID, and independent entity-key
 endpoint. A different `DNSID_REGISTRY_URL` is rejected. Existing identity and
 key-source settings are not used. Transport settings such as `DNSID_DNS_SERVER`
 and `DNSID_CA_BUNDLE` still apply.
-
-### Dev adapter contract
-
-The workflow requires service-specific organization and replay capabilities.
-`devAdapter` embeds the SDK registry client and resolves authenticated ownership
-through `GET /api/v1/auth/me` (`user.org_id`). It rejects redirects and bounds the
-response body. An organization label supplied by the user is not sufficient.
-
-The adapter assumes the dev service retains creation replay keys for **24 hours**,
-scoped to registry, organization, and request key, starting at the server's claim
-(no earlier than the first request attempt). The service source at revision
-`95c68f3ea8aa2532b5cd07d7a6ab43c5eb6d6dc2` defines these behaviors in
-`internal/api/auth_handler.go`, `internal/api/agent_create.go`, and
-`internal/db/pgstore/idempotency.go`. Confirm the deployed service honors this
-contract before use. Keep the local clock within five minutes of server time,
-including across restarts. The workflow subtracts that uncertainty from the
-replay deadline. Expired or uncertain creation outcomes stop for authenticated
-reconciliation; this adapter does not invent a reconciliation endpoint.
 
 ## Recovery
 
@@ -65,12 +67,14 @@ and `recovery.json` (public recovery data). Use a local filesystem that supports
 POSIX permissions, atomic rename, and file/directory fsync. Rerun with the same
 directory after interruption; do not replace the key or edit recovery data.
 Each call has the SDK's ten-minute budget; do not add an outer retry loop.
+Registration keys do not expire. Invocation deadlines do not authorize replacement
+allocation.
 
 After a hard crash, remove `.lock` only after confirming no process still uses
-the directory. Recovery files from the previous manual example are **not
-compatible**. They are rejected without creating a replacement key. Finish those
-operations with the previous example version; do not delete their state and
-register again as a recovery step.
+the directory. Earlier manual-example and expiring-replay recovery files are
+**not compatible** with schema version 2. They are rejected without creating a
+replacement key. Finish those operations with their original example/SDK version;
+do not delete their state and register again as a recovery step.
 
 Retire the identity through the registry before discarding its key. Production,
 Live challenges, and self-managed publication are outside this example.

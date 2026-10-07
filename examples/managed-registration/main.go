@@ -3,15 +3,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 	"unicode"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
@@ -26,6 +22,7 @@ const entityKeyURL = "https://dnsid.dev.dnsid.ai/.well-known/dnsid-ek.json"
 func main() {
 	directory := flag.String("state-dir", "", "dedicated private state directory (required)")
 	keyFile := flag.String("api-key-file", "", "API token file; otherwise use DNSID_API_KEY")
+	verified := flag.Bool("server-contract-verified", false, "confirm server integration tests verified permanent creation idempotency")
 	flag.Parse()
 	if *directory == "" || flag.NArg() != 0 {
 		flag.Usage()
@@ -41,7 +38,7 @@ func main() {
 		token = string(data)
 	}
 	token = strings.TrimSpace(token)
-	if err := run(context.Background(), *directory, token); err != nil {
+	if err := run(context.Background(), *directory, token, *verified); err != nil {
 		message := err.Error()
 		if token != "" {
 			message = strings.ReplaceAll(message, token, "[REDACTED]")
@@ -52,7 +49,10 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, directory, token string) error {
+func run(ctx context.Context, directory, token string, contractVerified bool) error {
+	if !contractVerified {
+		return errors.New("verify permanent server-side creation idempotency with server integration tests before using --server-contract-verified")
+	}
 	if token == "" || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
 		return errors.New("provide one API token through DNSID_API_KEY or --api-key-file")
 	}
@@ -71,69 +71,10 @@ func run(ctx context.Context, directory, token string) error {
 
 	result, err := registration.RegisterManagedIdentity(ctx, loaded, token,
 		registration.NewFileRegistrationStore(directory),
-		&dnsid.AgentRegistrationInput{Environment: "sandbox"},
-		registration.Options{NewAdapter: func(client *dnsid.HTTPRegistryClient) (registration.Adapter, error) {
-			httpClient, err := dnsid.CreateDnsidHTTPClient(loaded.Dnsid.Transport)
-			if err != nil {
-				return nil, err
-			}
-			// Never forward the organization credential to a redirect target.
-			httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-			return &devAdapter{HTTPRegistryClient: client, http: httpClient, token: token}, nil
-		}})
+		&dnsid.AgentRegistrationInput{Environment: "sandbox"})
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Verified: %s status=ACTIVE\n", result.Registration.Domain)
 	return nil
-}
-
-// The SDK has no portable organization endpoint or implicit replay guarantee.
-// This adapter is specific to the hosted dev service, not a general preset.
-type devAdapter struct {
-	*dnsid.HTTPRegistryClient
-	http  *http.Client
-	token string
-}
-
-func (a *devAdapter) ResolveOrganization(ctx context.Context) (string, registration.ReplayGuarantee, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+"/api/v1/auth/me", nil)
-	if err != nil {
-		return "", registration.ReplayGuarantee{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+a.token)
-	response, err := a.http.Do(req)
-	if err != nil {
-		return "", registration.ReplayGuarantee{}, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return "", registration.ReplayGuarantee{}, fmt.Errorf("organization lookup HTTP %d", response.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, 65_537))
-	if err != nil {
-		return "", registration.ReplayGuarantee{}, err
-	}
-	if len(data) > 65_536 {
-		return "", registration.ReplayGuarantee{}, errors.New("organization response exceeds 64 KiB")
-	}
-	var body struct {
-		User struct {
-			OrgID string `json:"org_id"`
-		} `json:"user"`
-	}
-	if err := json.Unmarshal(data, &body); err != nil {
-		return "", registration.ReplayGuarantee{}, err
-	}
-	if body.User.OrgID == "" {
-		return "", registration.ReplayGuarantee{}, errors.New("authenticated organization is unavailable")
-	}
-	// Service contract: organization-scoped creation keys are retained for 24h
-	// from claim, which is no earlier than the first request attempt. See the
-	// source references and clock requirement in README.md. Expiry fails closed;
-	// this adapter has no authoritative reconciliation endpoint.
-	return body.User.OrgID, registration.ReplayGuarantee{
-		Retention: 24 * time.Hour, ClockUncertainty: 5 * time.Minute,
-		Scope: "registry/organization/request-key", StartConditions: "first request attempt",
-	}, nil
 }
