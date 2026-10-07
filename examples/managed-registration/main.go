@@ -21,23 +21,13 @@ const entityKeyURL = "https://dnsid.dev.dnsid.ai/.well-known/dnsid-ek.json"
 
 func main() {
 	directory := flag.String("state-dir", "", "dedicated private state directory (required)")
-	keyFile := flag.String("api-key-file", "", "API token file; otherwise use DNSID_API_KEY")
 	verified := flag.Bool("server-contract-verified", false, "confirm server integration tests verified permanent creation idempotency")
 	flag.Parse()
 	if *directory == "" || flag.NArg() != 0 {
 		flag.Usage()
 		os.Exit(2)
 	}
-	token := os.Getenv("DNSID_API_KEY")
-	if *keyFile != "" {
-		data, err := os.ReadFile(*keyFile)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "cannot read API key file")
-			os.Exit(1)
-		}
-		token = string(data)
-	}
-	token = strings.TrimSpace(token)
+	token := strings.TrimSpace(os.Getenv("DNSID_API_KEY"))
 	if err := run(context.Background(), *directory, token, *verified); err != nil {
 		message := err.Error()
 		if token != "" {
@@ -54,7 +44,7 @@ func run(ctx context.Context, directory, token string, contractVerified bool) er
 		return errors.New("verify permanent server-side creation idempotency with server integration tests before using --server-contract-verified")
 	}
 	if token == "" || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
-		return errors.New("provide one API token through DNSID_API_KEY or --api-key-file")
+		return errors.New("set DNSID_API_KEY to one API token")
 	}
 	loaded, err := config.LoadEnvironment(os.Getenv)
 	if err != nil {

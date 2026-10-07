@@ -28,14 +28,13 @@ After the server prerequisite is met, use Go 1.26.6+, public DNS/HTTPS access, a
 a dev organization API key:
 
 ```sh
+export DNSID_API_KEY='your-dev-organization-api-key'
 go run ./examples/managed-registration \
   --server-contract-verified \
-  --api-key-file "$HOME/.dev-dnsid-api-key" \
   --state-dir "$HOME/.dnsid-examples/managed-registration-go"
 ```
 
-Alternatively, omit `--api-key-file` and set `DNSID_API_KEY`. The file must
-contain one token; protect it with mode `600`. Credentials are not saved or
+`DNSID_API_KEY` is the only credential input. Credentials are not saved or
 printed.
 
 **This creates a real sandbox identity and a permanent dev transparency-log
@@ -59,6 +58,52 @@ registry, managed log trust, expected governance ID, and independent entity-key
 endpoint. A different `DNSID_REGISTRY_URL` is rejected. Existing identity and
 key-source settings are not used. Transport settings such as `DNSID_DNS_SERVER`
 and `DNSID_CA_BUNDLE` still apply.
+
+## Using an AWS KMS key instead
+
+The runnable example uses a local key. To use an existing KMS signing key, add
+these imports in your own application:
+
+```go
+awsconfig "github.com/aws/aws-sdk-go-v2/config"
+"github.com/aws/aws-sdk-go-v2/service/kms"
+awskms "github.com/dnsid-ai/dnsid-go/key/aws"
+```
+
+After preparing `loaded`, replace the registration call with:
+
+```go
+awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+if err != nil {
+    return err
+}
+keyARN := "arn:aws:kms:us-east-1:123456789012:key/your-key-id"
+provider, err := awskms.Load(ctx,
+    awskms.SDKClient{Client: kms.NewFromConfig(awsCfg)},
+    awskms.Config{State: awskms.State{ActiveKeyID: keyARN}})
+if err != nil {
+    return err
+}
+result, err := registration.RegisterManagedIdentity(ctx, loaded, token,
+    registration.NewFileRegistrationStore(directory),
+    &dnsid.AgentRegistrationInput{Environment: "sandbox"},
+    registration.Options{
+        Dependencies: config.Dependencies{KeyProvider: provider},
+        ProviderReference: keyARN,
+    })
+```
+
+Install the separate `github.com/dnsid-ai/dnsid-go/key/aws` module and AWS SDK
+config package in that application. Set the AWS region and credentials through
+the normal AWS credential chain; the organization API token remains separate.
+Use an existing `SIGN_VERIFY`, `ECC_NIST_P256` key (ES256, the provider default)
+and grant `kms:GetPublicKey` and `kms:Sign`.
+
+Private key material stays in KMS; no local private-key file is created. Keep
+`recovery.json` and reuse the same immutable key ARN and state directory on every
+resume. Do not use a mutable alias or switch an existing local-key setup to KMS.
+The server prerequisite still applies. If you later rotate keys, persist
+`provider.State()` separately and restore it through `awskms.Config.State`.
 
 ## Recovery
 
