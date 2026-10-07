@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.38.0] - 2026-10-07
+
+### Features
+
+- feat: support unified registry registration ([#56](https://github.com/dnsid-ai/dnsid-go/pull/56))
+
 ## [0.37.2] - 2026-09-30
 
 ### Bug Fixes
