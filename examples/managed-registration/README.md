@@ -1,10 +1,12 @@
 # Managed registration
 
-Register one hosted **dev sandbox** identity, complete bilateral ISSUANCE, wait for registry-managed publication, and verify it independently through public DNS. No challenge server or DNS hosting is needed.
+Register one hosted **dev sandbox** identity and independently verify its ACTIVE
+status and lifecycle evidence through public DNS. No challenge server or DNS
+hosting is needed.
 
 ## Run
 
-Requires Go 1.26.6+, public DNS/HTTPS access, and a dev organization API key. From the repository root:
+Requires Go 1.26.6+, public DNS/HTTPS access, and a dev organization API key:
 
 ```sh
 go run ./examples/managed-registration \
@@ -12,52 +14,69 @@ go run ./examples/managed-registration \
   --state-dir "$HOME/.dnsid-examples/managed-registration-go"
 ```
 
-Alternatively, omit `--api-key-file` and set `DNSID_API_KEY`. The credential file must contain one token; protect it with mode `600`. Credentials are not saved or printed.
+Alternatively, omit `--api-key-file` and set `DNSID_API_KEY`. The file must
+contain one token; protect it with mode `600`. Credentials are not saved or
+printed.
 
-**This creates a real sandbox identity and a permanent dev transparency-log entry.** It leaves the identity active. Use a dedicated directory outside the repository, and keep the private key backed up. Do not share recovery directories between SDKs.
+**This creates a real sandbox identity and a permanent dev transparency-log
+entry.** It leaves the identity active. Keep the private key backed up and use
+a dedicated directory outside the repository.
 
-## Common setup flow
+Success prints `Verified: <assigned-domain>.sandbox.dev.dnsid.ai status=ACTIVE`.
+This does not imply authenticated DNSSEC; set `DNSID_DNSSEC_MODE=required` and
+use a DNSSEC-aware resolver when required.
 
-1. Generate and persist an Ed25519 operational key through `LocalKeyProvider`.
-2. Save the complete sandbox registration request and replay keys before registration. Retain the creation-time publication configuration; wait for automatic ownership verification.
-3. Fetch and validate the entity JWKS from the configured dev HTTPS endpoint. `BeginManagedIssuance()` / `ResumeManagedIssuance()` validate the prepared identity/key bindings and entity signature, countersign, save exact bytes before submission, and persist the outcome.
-4. Use `AwaitRegistryManagedPublication()` to confirm registry publication and verify public evidence. Do not append separately to the log.
-5. Use a fresh, credential-free verifier with the configured governance ID and entity-key thumbprint. Check `ACTIVE` status, the assigned log reference, and fresh lifecycle evidence with `VerifyLogEvidence()`. Mark setup complete with `CompleteManagedIssuance()`.
+## SDK workflow
 
-This CLI serves no application. The coordinator's durable activation block gates setup completion; it does not control the registry's automatic publication.
+One `registration.RegisterManagedIdentity()` call owns key creation, durable
+request replay, bilateral ISSUANCE recovery, publication polling, and fresh
+credential-free public verification. `NewFileRegistrationStore()` owns locking,
+owner-only permissions, atomic writes, and fsync. The CLI implements none of
+these operations. See [the workflow documentation](../../registration/README.md).
 
-Success prints:
+The example loads SDK environment configuration, then explicitly selects the dev
+registry, managed log trust, expected governance ID, and independent entity-key
+endpoint. A different `DNSID_REGISTRY_URL` is rejected. Existing identity and
+key-source settings are not used. Transport settings such as `DNSID_DNS_SERVER`
+and `DNSID_CA_BUNDLE` still apply.
 
-```text
-Registered: <assigned-domain>.sandbox.dev.dnsid.ai
-Verified: <assigned-domain>.sandbox.dev.dnsid.ai status=ACTIVE DNSSEC=UNKNOWN
-```
+### Dev adapter contract
 
-`UNKNOWN` is not authenticated DNSSEC. Configure a DNSSEC-aware resolver and the appropriate verification policy when required.
+The workflow requires service-specific organization and replay capabilities.
+`devAdapter` embeds the SDK registry client and resolves authenticated ownership
+through `GET /api/v1/auth/me` (`user.org_id`). It rejects redirects and bounds the
+response body. An organization label supplied by the user is not sufficient.
 
-## Configuration
-
-The example uses `config.LoadEnvironment()`, `config.Merge()`, `config.Construct()`, and `config.RegistryClientFromEnvironment()`. SDK environment settings such as `DNSID_DNS_SERVER`, `DNSID_DNSSEC_MODE`, and `DNSID_CA_BUNDLE` are read by the SDK rather than duplicated here.
-
-The dev registry is the explicit default. A different `DNSID_REGISTRY_URL` is rejected: this example's governance ID, entity-key endpoint, and log prefix are dev-specific. Managed log trust is explicitly selected with `config.LogTrust{Managed: true}`; trust is never taken from an unverified record. Setup owns the new identity and key, so existing `DNSID_DOMAIN` and key-source settings are not used. The assigned publication snapshot is overlaid after registration.
+The adapter assumes the dev service retains creation replay keys for **24 hours**,
+scoped to registry, organization, and request key, starting at the server's claim
+(no earlier than the first request attempt). The service source at revision
+`95c68f3ea8aa2532b5cd07d7a6ab43c5eb6d6dc2` defines these behaviors in
+`internal/api/auth_handler.go`, `internal/api/agent_create.go`, and
+`internal/db/pgstore/idempotency.go`. Confirm the deployed service honors this
+contract before use. Keep the local clock within five minutes of server time,
+including across restarts. The workflow subtracts that uncertainty from the
+replay deadline. Expired or uncertain creation outcomes stop for authenticated
+reconciliation; this adapter does not invent a reconciliation endpoint.
 
 ## Recovery
 
-Fresh runs retain only:
+Back up the **whole directory**, including `operational-key.json` (private key)
+and `recovery.json` (public recovery data). Use a local filesystem that supports
+POSIX permissions, atomic rename, and file/directory fsync. Rerun with the same
+directory after interruption; do not replace the key or edit recovery data.
+Each call has the SDK's ten-minute budget; do not add an outer retry loop.
 
-- `operational-key.json`: private operational key; keep secret and backed up.
-- `recovery.json`: original request, replay keys, creation snapshot, trusted entity key, exact signed bytes, and issuance outcome.
+After a hard crash, remove `.lock` only after confirming no process still uses
+the directory. Recovery files from the previous manual example are **not
+compatible**. They are rejected without creating a replacement key. Finish those
+operations with the previous example version; do not delete their state and
+register again as a recovery step.
 
-The directory must be owner-only (`700`); recovery files use `600`. Writes sync the temporary file, atomically rename it, and sync the directory. Use a local filesystem that supports these operations.
-
-Rerun with the **same directory** after interruption. Do not delete recovery state, replace the key, or edit signed bytes. Accepted issuance is not resubmitted; rejected outcomes stop. Pending or unknown outcomes retain the same bytes and idempotency key. Only transient public-read failures and publication-DNS failures are retried; integrity and policy failures stop immediately. Each run has a ten-minute deadline.
-
-The directory lock prevents concurrent runs. After a hard crash, remove `.lock` only after confirming that no copy is still running. Original recovery files are read in place; old exact signed bytes and outcomes are imported into the SDK coordinator state before any submission.
-
-Cleanup is explicit: retire the immutable identity through the registry before discarding its key. Production, Live challenges, and self-managed publication are outside this example.
+Retire the identity through the registry before discarding its key. Production,
+Live challenges, and self-managed publication are outside this example.
 
 ## Offline checks
 
 ```sh
-go test ./examples/managed-registration ./log/c2sptlog
+go test ./examples/managed-registration ./registration
 ```
