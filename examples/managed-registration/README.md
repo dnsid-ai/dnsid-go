@@ -1,128 +1,116 @@
-# Managed registration
+# Named managed registration
 
-Register one hosted **dev sandbox** identity and independently verify its ACTIVE
-status and lifecycle evidence through public DNS. No challenge server or DNS
-hosting is needed.
+Create or resume `managed-registration-example` within one dev organization,
+then independently verify public ACTIVE status and complete lifecycle evidence.
+The SDK owns registry access, keys, named storage, issuance, retries, and public
+verification. No recovery adapter or challenge server is needed.
 
 ## Server prerequisite
 
-**Do not run this example until server integration tests verify the revised
-permanent creation-idempotency contract.** Current hosted-service support is not
-established by the SDK tests. An expiring 24-hour, organization-local replay cache
-is insufficient. See [the required contract](../../registration/README.md#required-server-contract).
+**The dev CLI is currently disabled.** The server must first pass real
+persistence/integration checks for derived-key validation, atomic name/key
+ownership, permanent organization-scoped replay, and existing-issuance recovery.
+A 24-hour replay cache is insufficient. SDK tests simulate the required server;
+they do not establish deployed support. An acknowledgment flag cannot establish
+support, so there is no such flag. The repository owner can enable
+`namedRegistrationAvailable` only after those server checks pass.
 
-The registry must atomically bind each registry-wide unique registration key to
-its authenticated organization, complete request, and one immutable identity.
-Matching retries must return that identity or a terminal error, including after
-restart, long interruption, retirement, or deletion. Reuse by another organization
-must fail without disclosure or another allocation. These are server guarantees,
-not an SDK adapter or a client-side replay timer.
+See [the SDK contract](../../registration/README.md#required-server-contract).
+These SDK changes do not implement the required server work.
 
-`--server-contract-verified` confirms that this deployment has passed those
-integration tests. It does not probe or establish server support. Without the
-flag, the example stops before key creation or network work.
+## Configuration and run
 
-## Run
+After server readiness is established, create a non-secret deployment file:
 
-After the server prerequisite is met, use Go 1.26.6+, public DNS/HTTPS access, and
-a dev organization API key:
+```json
+{
+  "logTrust": { "managed": true },
+  "registry": { "registryUrl": "https://api.dev.dnsid.ai" },
+  "registration": {
+    "organizationId": "your-authenticated-internal-organization-id",
+    "governanceId": "dev.dnsid.ai",
+    "entityKeyUrl": "https://dnsid.dev.dnsid.ai/.well-known/dnsid-ek.json"
+  }
+}
+```
+
+Organization ID is the registry account ID, not a credential hash or GI.
+Fully configured account bindings need no discovery. Omitted bindings require
+verified authenticated onboarding; pending governance proof/delegation fails.
+The entity-key URL remains independently configured.
 
 ```sh
 export DNSID_API_KEY='your-dev-organization-api-key'
 go run ./examples/managed-registration \
-  --server-contract-verified \
+  --config deployment.json \
   --state-dir "$HOME/.dnsid-examples/managed-registration-go"
 ```
 
-`DNSID_API_KEY` is the only credential input. Credentials are not saved or
-printed.
+`DNSID_API_KEY` is the only API credential input; it is not saved or printed.
+Use Go 1.26.6+ and public DNS/HTTPS access. The CLI accepts only the dev registry
+and uses the fixed, case-sensitive name `managed-registration-example`. It
+passes no routing selectors: the SDK sends name/public key only, without
+translating the expected GI into a root or silently selecting production.
+Transport, DNSSEC, log trust, acceptance policy, and key-source settings come from
+the file. No environment overlay or implicit trust preset is added.
 
-**This creates a real sandbox identity and a permanent dev transparency-log
-entry.** It leaves the identity active. Keep the private key backed up and use
-a dedicated directory outside the repository.
+**This creates a real identity and permanent log entry when enabled.** It leaves
+the identity active. Success prints `Verified: <assigned-domain> status=ACTIVE`.
+Set file `dnsid.verification.dnssecMode` to `required` and use a DNSSEC-aware
+resolver when authenticated DNSSEC is required.
 
-Success prints `Verified: <assigned-domain>.sandbox.dev.dnsid.ai status=ACTIVE`.
-This does not imply authenticated DNSSEC; set `DNSID_DNSSEC_MODE=required` and
-use a DNSSEC-aware resolver when required.
+## AWS KMS configuration
 
-## SDK workflow
-
-One `registration.RegisterManagedIdentity()` call owns the registry client, key
-creation, durable request replay, bilateral ISSUANCE recovery, publication polling,
-and fresh credential-free public verification. `NewFileRegistrationStore()` owns
-locking, owner-only permissions, atomic writes, and fsync. No organization lookup,
-recovery adapter, replay deadline, or reconciliation callback is needed.
-
-The example loads SDK environment configuration, then explicitly selects the dev
-registry, managed log trust, expected governance ID, and independent entity-key
-endpoint. A different `DNSID_REGISTRY_URL` is rejected. Existing identity and
-key-source settings are not used. Transport settings such as `DNSID_DNS_SERVER`
-and `DNSID_CA_BUNDLE` still apply.
-
-## Using an AWS KMS key instead
-
-The runnable example uses a local key. To use an existing KMS signing key, add
-these imports in your own application:
+Default file keys are for development, not production; the SDK warns when using
+them. To use an existing KMS key, add the separate AWS provider module dependency
+and this import to the application:
 
 ```go
-awsconfig "github.com/aws/aws-sdk-go-v2/config"
-"github.com/aws/aws-sdk-go-v2/service/kms"
-awskms "github.com/dnsid-ai/dnsid-go/key/aws"
+import _ "github.com/dnsid-ai/dnsid-go/key/aws"
 ```
 
-After preparing `loaded`, replace the registration call with:
+Then add this section to the same deployment file; the registration call does
+not change:
 
-```go
-awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
-if err != nil {
-    return err
+```json
+{
+  "keySource": {
+    "provider": "aws-kms",
+    "keyRef": "arn:aws:kms:us-east-1:123456789012:key/your-key-id",
+    "settings": { "region": "us-east-1", "algorithm": "ES256" }
+  }
 }
-keyARN := "arn:aws:kms:us-east-1:123456789012:key/your-key-id"
-provider, err := awskms.Load(ctx,
-    awskms.SDKClient{Client: kms.NewFromConfig(awsCfg)},
-    awskms.Config{State: awskms.State{ActiveKeyID: keyARN}})
-if err != nil {
-    return err
-}
-result, err := registration.RegisterManagedIdentity(ctx, loaded, token,
-    registration.NewFileRegistrationStore(directory),
-    &dnsid.AgentRegistrationInput{Environment: "sandbox"},
-    registration.Options{
-        Dependencies: config.Dependencies{KeyProvider: provider},
-        ProviderReference: keyARN,
-    })
 ```
 
-Install the separate `github.com/dnsid-ai/dnsid-go/key/aws` module and AWS SDK
-config package in that application. Set the AWS region and credentials through
-the normal AWS credential chain; the organization API token remains separate.
-Use an existing `SIGN_VERIFY`, `ECC_NIST_P256` key (ES256, the provider default)
-and grant `kms:GetPublicKey` and `kms:Sign`.
-
-Private key material stays in KMS; no local private-key file is created. Keep
-`recovery.json` and reuse the same immutable key ARN and state directory on every
-resume. Do not use a mutable alias or switch an existing local-key setup to KMS.
-The server prerequisite still applies. If you later rotate keys, persist
-`provider.State()` separately and restore it through `awskms.Config.State`.
+Use an existing `SIGN_VERIFY`, `ECC_NIST_P256` key and grant `kms:GetPublicKey`
+and `kms:Sign`. AWS credentials come from the standard chain; the organization
+API token is separate. Private key material stays in KMS. Use an immutable key
+ARN, never a mutable alias. This factory rejects cloud generation because it
+cannot atomically create-or-recover a key across replicas. Installing the module
+without importing it does not link the factory; unavailable providers fail early
+without local-file fallback. AWS dependencies are not linked in this base example.
 
 ## Recovery
 
-Back up the **whole directory**, including `operational-key.json` (private key)
-and `recovery.json` (public recovery data). Use a local filesystem that supports
-POSIX permissions, atomic rename, and file/directory fsync. Rerun with the same
-directory after interruption; do not replace the key or edit recovery data.
-Each call has the SDK's ten-minute budget; do not add an outer retry loop.
-Registration keys do not expire. Invocation deadlines do not authorize replacement
-allocation.
+Back up the **whole state root**, including each named operation's key files and
+`recovery.json`. State and locks are isolated by a digest of registry/account/name;
+raw names are never paths. Use a local filesystem with POSIX permissions, atomic
+rename, and file/directory fsync. Rerun with the same store/configuration/name.
+Do not edit state, replace a key, or start another registration after interruption.
+The SDK has one ten-minute budget; no outer retry loop is needed.
 
-After a hard crash, remove `.lock` only after confirming no process still uses
-the directory. Earlier manual-example and expiring-replay recovery files are
-**not compatible** with schema version 2. They are rejected without creating a
-replacement key. Finish those operations with their original example/SDK version;
-do not delete their state and register again as a recovery step.
+After a hard crash, clear an operation's `.lock` only after confirming no process
+still uses it. Unnamed schemas 1/2 are incompatible with named schema 3 and are
+rejected without creating replacement keys. Recover them with the original SDK.
 
-Retire the identity through the registry before discarding its key. Production,
-Live challenges, and self-managed publication are outside this example.
+Creation input is discarded after validated identity facts are durable. Accepted
+issuance bytes are compacted only after trusted hash/inclusion verification;
+completed calls retrieve historical evidence without preparation or append.
+Missing history fails instead of reissuing. Authorized completed rotation can
+change key/`ku`, without the old private key or an old-URL fallback. Pending
+rotation uses the existing coordinator; changing key-source settings alone is
+not rotation. Retire the identity before discarding keys or requesting explicit
+fresh-key replacement, and preserve its previous state/history.
 
 ## Offline checks
 

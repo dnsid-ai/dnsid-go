@@ -1,4 +1,4 @@
-// Register and independently verify one managed dev sandbox identity.
+// Register and independently verify one named managed dev identity.
 package main
 
 import (
@@ -10,25 +10,26 @@ import (
 	"strings"
 	"unicode"
 
-	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
 	"github.com/dnsid-ai/dnsid-go/registration"
 )
 
 const registryURL = "https://api.dev.dnsid.ai"
-const governanceID = "dev.dnsid.ai"
-const entityKeyURL = "https://dnsid.dev.dnsid.ai/.well-known/dnsid-ek.json"
+const identityName = "managed-registration-example"
+
+// Enable only after real hosted-server persistence/integration checks pass.
+const namedRegistrationAvailable = false
 
 func main() {
-	directory := flag.String("state-dir", "", "dedicated private state directory (required)")
-	verified := flag.Bool("server-contract-verified", false, "confirm server integration tests verified permanent creation idempotency")
+	deployment := flag.String("config", "", "deployment JSON file (required)")
+	directory := flag.String("state-dir", "", "private state-store directory (required)")
 	flag.Parse()
-	if *directory == "" || flag.NArg() != 0 {
+	if *deployment == "" || *directory == "" || flag.NArg() != 0 {
 		flag.Usage()
 		os.Exit(2)
 	}
 	token := strings.TrimSpace(os.Getenv("DNSID_API_KEY"))
-	if err := run(context.Background(), *directory, token, *verified); err != nil {
+	if err := run(context.Background(), *deployment, *directory, token); err != nil {
 		message := err.Error()
 		if token != "" {
 			message = strings.ReplaceAll(message, token, "[REDACTED]")
@@ -39,29 +40,22 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, directory, token string, contractVerified bool) error {
-	if !contractVerified {
-		return errors.New("verify permanent server-side creation idempotency with server integration tests before using --server-contract-verified")
-	}
+func run(ctx context.Context, deployment, directory, token string) error {
 	if token == "" || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
 		return errors.New("set DNSID_API_KEY to one API token")
 	}
-	loaded, err := config.LoadEnvironment(os.Getenv)
+	if !namedRegistrationAvailable {
+		return errors.New("dev named registration is disabled until permanent replay, name ownership, and issuance recovery pass real server integration tests")
+	}
+	loaded, err := config.LoadDeploymentFile(deployment)
 	if err != nil {
 		return err
 	}
-	if loaded.Registry.RegistryURL != "" && loaded.Registry.RegistryURL != registryURL {
+	if loaded.Registry.RegistryURL != registryURL {
 		return errors.New("this example supports only the dev registry")
 	}
-	loaded.Registry.RegistryURL = registryURL
-	loaded.Dnsid.Identity = nil
-	loaded.KeySource = config.KeySource{}
-	loaded.LogTrust = config.LogTrust{Managed: true}
-	loaded.Registration = config.ManagedRegistrationConfig{GovernanceID: governanceID, EntityKeyURL: entityKeyURL}
-
-	result, err := registration.RegisterManagedIdentity(ctx, loaded, token,
-		registration.NewFileRegistrationStore(directory),
-		&dnsid.AgentRegistrationInput{Environment: "sandbox"})
+	result, err := registration.RegisterManagedIdentity(ctx, identityName, loaded, token,
+		registration.NewFileRegistrationStore(directory), nil)
 	if err != nil {
 		return err
 	}
