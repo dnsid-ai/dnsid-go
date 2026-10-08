@@ -5,38 +5,33 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/dnsid-ai/dnsid-go/config"
 	"github.com/dnsid-ai/dnsid-go/registration"
 )
 
-func TestRun_RequiresVerifiedServerContractBeforeEffects(t *testing.T) {
+func TestRun_DisabledUntilServerIntegrationChecksPass(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "new-setup")
-	if err := run(context.Background(), directory, "test-token", false); err == nil {
-		t.Fatal("enabled automatic recovery without a verified server contract")
+	err := run(context.Background(), "must-not-read.json", directory, "test-token")
+	if err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("enabled unverified server contract: %v", err)
 	}
 	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("created state before contract confirmation: %v", err)
+		t.Fatalf("created state before server readiness: %v", err)
 	}
 }
 
 func TestRun_RejectsInvalidTokenBeforeSetup(t *testing.T) {
 	for _, token := range []string{"", "two tokens", "token\n"} {
-		if err := run(context.Background(), "", token, true); err == nil {
+		if err := run(context.Background(), "", "", token); err == nil {
 			t.Fatalf("accepted token %q", token)
 		}
 	}
 }
 
-func TestRun_RejectsDifferentRegistry(t *testing.T) {
-	t.Setenv("DNSID_REGISTRY_URL", "https://other.example")
-	if err := run(context.Background(), "", "test-token", true); err == nil || err.Error() != "this example supports only the dev registry" {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestRun_RejectsLegacyRecoveryWithoutReplacingKey(t *testing.T) {
-	t.Setenv("DNSID_REGISTRY_URL", "")
+func TestSDK_RejectsLegacyRecoveryWithoutReplacingKey(t *testing.T) {
 	directory := t.TempDir()
 	if err := os.Chmod(directory, 0700); err != nil {
 		t.Fatal(err)
@@ -46,16 +41,22 @@ func TestRun_RejectsLegacyRecoveryWithoutReplacingKey(t *testing.T) {
 	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
 		t.Fatal(err)
 	}
-	err := run(context.Background(), directory, "test-token", true)
+	loaded := config.Loaded{
+		Registry:     config.Registry{RegistryURL: registryURL},
+		LogTrust:     config.LogTrust{Managed: true},
+		Registration: config.ManagedRegistrationConfig{OrganizationID: "original-org", GovernanceID: "dev.dnsid.ai", EntityKeyURL: "https://dnsid.dev.dnsid.ai/.well-known/dnsid-ek.json"},
+	}
+	_, err := registration.RegisterManagedIdentity(context.Background(), identityName, loaded, "test-token", registration.NewFileRegistrationStore(directory), nil)
 	var setup *registration.Error
 	if !errors.As(err, &setup) || setup.Phase != "recovery" || setup.Code != "store" {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || string(data) != legacy {
-		t.Fatalf("changed original recovery: %s, %v", data, err)
+	data, readErr := os.ReadFile(path)
+	if readErr != nil || string(data) != legacy {
+		t.Fatalf("changed original recovery: %s, %v", data, readErr)
 	}
-	if _, err := os.Stat(filepath.Join(directory, "operational-key.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("created a replacement key: %v", err)
+	entries, readErr := os.ReadDir(directory)
+	if readErr != nil || len(entries) != 1 {
+		t.Fatal("created replacement state/key")
 	}
 }
