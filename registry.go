@@ -705,52 +705,23 @@ func (c *HTTPRegistryClient) CreateAgent(ctx context.Context, req *CreateAgentRe
 }
 
 // CreateAgentWithIdempotencyKey creates an ordinary HTTP 201 registration.
+// Automatic named recovery requires permanent organization-scoped replay and
+// atomic name/key allocation. The server must validate derived keys against its
+// authenticated organization. This method does not detect server support.
 // Retry only with the same request and non-empty key. No automatic retry occurs.
 func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, req *CreateAgentRequest, idempotencyKey string) (*CreateAgentResponse, error) {
 	if req == nil {
 		return nil, NewArgumentError("dnsid: create agent request is required", nil)
 	}
-	normalized := *req
-	if normalized.Environment != "" && normalized.Environment != "production" && normalized.Environment != "sandbox" {
-		return nil, NewArgumentError("dnsid: environment must be \"production\" or \"sandbox\"", nil)
-	}
-	if normalized.Domain != "" && normalized.ZoneID != "" {
-		return nil, NewArgumentError("dnsid: domain and zone_id cannot both be supplied", nil)
-	}
-	if normalized.Domain != "" && normalized.RootDomain != "" {
-		return nil, NewArgumentError("dnsid: domain and root_domain cannot both be supplied", nil)
-	}
-	if normalized.Tier == "live" {
-		return nil, NewArgumentError("dnsid: use CreateLiveAgent for managed Live", nil)
-	}
-	for _, selector := range []*string{&normalized.Domain, &normalized.RootDomain, &normalized.GovernanceDomain} {
-		if *selector != "" {
-			value, err := NormalizeFQDN(*selector)
-			if err != nil {
-				return nil, NewArgumentError("dnsid: invalid registration selector", err)
-			}
-			*selector = value
-		}
-	}
-	normalized.Name = strings.TrimSpace(normalized.Name)
-	if utf8.RuneCountInString(normalized.Name) > 255 {
-		return nil, NewArgumentError("dnsid: name exceeds 255 characters", nil)
-	}
-	if normalized.CapabilitiesURL != "" {
-		if err := validateHTTPSURL(normalized.CapabilitiesURL, "capabilities_url"); err != nil {
-			return nil, err
-		}
+	normalized, err := normalizeRegistrationRequest(req)
+	if err != nil {
+		return nil, err
 	}
 	if req.PublicKey == nil && (normalized.Domain == "" || normalized.Managed || normalized.ZoneID != "") {
 		return nil, NewArgumentError("dnsid: assigned or managed identity requires a public key", nil)
 	}
 	if idempotencyKey != "" {
 		if err := validateRegistryIdempotencyKey(idempotencyKey); err != nil {
-			return nil, err
-		}
-	}
-	if req.PublicKey != nil {
-		if err := rejectPrivateJWK(req.PublicKey); err != nil {
 			return nil, err
 		}
 	}
@@ -768,7 +739,7 @@ func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, 
 		err = NewValidationError(fmt.Sprintf("dnsid: registry returned HTTP %d, want HTTP 201", status), nil)
 	}
 	if err == nil {
-		err = validateRegistrationCreation(&normalized, &response)
+		err = validateRegistrationCreation(normalized, &response)
 	}
 	if err != nil {
 		return &response, &RegistrationError{Request: request, IdempotencyKey: idempotencyKey, Creation: &response, Cause: err}
@@ -879,9 +850,8 @@ func (c *HTTPRegistryClient) GetOrganizationOnboarding(ctx context.Context) (*Or
 }
 
 // GetRegistration returns normalized registry workflow state for fqdn,
-// mapping the registry's managed mode ("self" or "dnsid") to a
-// PublicationAuthority. It returns a *ValidationError for unknown managed
-// modes.
+// mapping managed mode ("self" or "dnsid") to PublicationAuthority.
+// Unknown modes return a *ValidationError.
 func (c *HTTPRegistryClient) GetRegistration(ctx context.Context, fqdn string) (*AgentRegistration, error) {
 	detail, err := c.GetAgentStatus(ctx, fqdn)
 	if err != nil {

@@ -4,12 +4,14 @@
 
 ### Features
 
-- Load strict non-secret deployment files and select linked optional key providers, including existing AWS KMS keys.
-- Read authenticated organization onboarding through the registry client.
+- Add named managed registration with tenant-isolated durable recovery, authenticated account discovery, deterministic permanent replay keys, binding-owned issuance, and independent public readiness checks.
+- Add strict deployment-file loading, account bindings, and configuration-selected optional key-provider factories, including AWS KMS.
+- Compact verified accepted issuance recovery and observe authorized current-key/URL rotation without reissuance.
 
 ### Bug Fixes
 
-- Apply deployment transport settings to managed log verification.
+- Validate persisted issuance outcomes and retain exact preparation bytes before countersigning.
+- Apply deployment transport settings to SDK-managed log verification.
 
 ## [0.38.0] - 2026-10-07
 

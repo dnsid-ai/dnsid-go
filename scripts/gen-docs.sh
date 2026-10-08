@@ -149,6 +149,7 @@ EOF
 
 # page slug | module dir | package dir within module | nav label | description
 PACKAGES=(
+	"registration|.|./registration|Managed registration|Durable managed identity setup, permanent creation replay, and independent public readiness checks."
 	"config|.|./config|Configuration|Load DNSid SDK configuration from DNSID_* environment variables and DNSid CLI directories; loaders parse, constructors default."
 	"jose|.|./jose|Profile: JOSE|DNSid JOSE profile: create and verify DNSid JWTs and compact JWS."
 	"oidc|.|./oidc|Profile: OIDC|Mint and verify DNSid OIDC tokens."
@@ -173,6 +174,7 @@ NAV_ORDER=(
 	dnsid-keys
 	key-aws
 	dnsid-registry
+	registration
 	log
 	log-c2sptlog
 	dnsid-errors

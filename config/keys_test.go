@@ -23,18 +23,18 @@ func TestKeySource_LoadMergeAndFactorySelection(t *testing.T) {
 	})
 	defer func() { keyFactories.Lock(); delete(keyFactories.values, "google-kms"); keyFactories.Unlock() }()
 	path := filepath.Join(t.TempDir(), "deployment.json")
-	if err := os.WriteFile(path, []byte(`{"keySource":{"provider":"google-kms","keyRef":"stable-key","settings":{"project":"test"}}}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"registration":{"organizationId":"org"},"keySource":{"provider":"google-kms","keyRef":"stable-key","settings":{"project":"test"}}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := LoadDeploymentFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.KeySource.Settings["project"] != "test" {
+	if loaded.Registration.OrganizationID != "org" || loaded.KeySource.Settings["project"] != "test" {
 		t.Fatal("file lost bindings")
 	}
-	merged := Merge(loaded, Loaded{KeySource: KeySource{Settings: map[string]string{"project": "next"}}})
-	if merged.KeySource.Provider != "google-kms" || merged.KeySource.KeyRef != "stable-key" || merged.KeySource.Settings["project"] != "next" {
+	merged := Merge(loaded, Loaded{Registration: ManagedRegistrationConfig{OrganizationID: "other"}, KeySource: KeySource{Settings: map[string]string{"project": "next"}}})
+	if merged.Registration.OrganizationID != "other" || merged.KeySource.Provider != "google-kms" || merged.KeySource.KeyRef != "stable-key" || merged.KeySource.Settings["project"] != "next" {
 		t.Fatal("key source merge")
 	}
 	selected, err := OperationalKeyProviderFrom(context.Background(), loaded.KeySource, "agent.example")
@@ -53,14 +53,17 @@ func TestKeySource_LoadMergeAndFactorySelection(t *testing.T) {
 	}
 }
 
-func TestKeySource_InvalidSelections(t *testing.T) {
+func TestKeySource_InvalidSelectionsAndNoGenerationInConstruct(t *testing.T) {
 	for _, source := range []KeySource{
 		{Provider: "aws-kms", KeyRef: "key"},
 		{Provider: "arbitrary/module", KeyRef: "key"},
 		{Provider: "aws-kms", CliDirectory: "/keys"},
-		{KeyRef: "key", CliDirectory: "/keys"},
+		{KeyRef: "key", Generation: &KeyGenerationConfig{Locator: "new", Algorithm: dnsid.JoseAlgES256}},
+		{Generation: &KeyGenerationConfig{Locator: "new", Algorithm: "RS256"}},
 		{Provider: "file", Settings: map[string]string{"secret": "x"}},
 	} {
 		wantArgumentError(t, ValidateKeySource(source))
 	}
+	_, err := OperationalKeyProviderFrom(context.Background(), KeySource{Generation: &KeyGenerationConfig{Locator: "new", Algorithm: dnsid.JoseAlgES256}}, "agent.example")
+	wantArgumentError(t, err)
 }

@@ -30,10 +30,19 @@ import (
 // are their Go zero value; nil slices are absent while empty non-nil slices are
 // present and meaningful (an explicit empty allowlist denies all).
 type Loaded struct {
-	Dnsid     dnsid.Config
-	LogTrust  LogTrust
-	Registry  Registry
-	KeySource KeySource
+	Dnsid        dnsid.Config
+	LogTrust     LogTrust
+	Registry     Registry
+	KeySource    KeySource
+	Registration ManagedRegistrationConfig
+}
+
+// ManagedRegistrationConfig is setup-only accountability and bootstrap configuration.
+// It does not select registration routing or change application acceptance policy.
+type ManagedRegistrationConfig struct {
+	OrganizationID string `json:"organizationId"`
+	GovernanceID   string `json:"governanceId"`
+	EntityKeyURL   string `json:"entityKeyUrl"`
 }
 
 // LogTrust selects the lifecycle-log trust used to build a LogRegistry when
@@ -60,12 +69,14 @@ type Registry struct {
 }
 
 // KeySource selects an operational provider and non-secret settings.
-// Missing Provider selects file. CLI/key-store paths cannot combine with cloud
-// selection or KeyRef. EntityKeyPath independently supplies an entity key.
+// Missing Provider selects file. KeyRef and Generation are exclusive; CLI and
+// key-store paths cannot combine with cloud selection or either variant.
+// EntityKeyPath independently supplies an entity key outside managed setup.
 type KeySource struct {
-	Provider string            `json:"provider,omitempty"`
-	KeyRef   string            `json:"keyRef,omitempty"`
-	Settings map[string]string `json:"settings,omitempty"`
+	Provider   string               `json:"provider,omitempty"`
+	KeyRef     string               `json:"keyRef,omitempty"`
+	Generation *KeyGenerationConfig `json:"generation,omitempty"`
+	Settings   map[string]string    `json:"settings,omitempty"`
 	// CliDirectory is a DNSid CLI identity directory holding private.jwk or
 	// <domain>/private.jwk.
 	CliDirectory string `json:"cliDirectory,omitempty"`
@@ -77,7 +88,7 @@ type KeySource struct {
 }
 
 func (k KeySource) isZero() bool {
-	return k.Provider == "" && k.KeyRef == "" && len(k.Settings) == 0 && k.CliDirectory == "" && k.EntityKeyPath == "" && k.KeyStorePath == ""
+	return k.Provider == "" && k.KeyRef == "" && k.Generation == nil && len(k.Settings) == 0 && k.CliDirectory == "" && k.EntityKeyPath == "" && k.KeyStorePath == ""
 }
 
 // Dependencies are the caller-supplied runtime dependencies for Construct.
@@ -259,7 +270,7 @@ func fileExists(path string) bool {
 //
 // Scalar zero values are absent: overlays cannot clear loaded Identity strings,
 // Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or
-// CABundlePath, Registry.RegistryURL, or KeySource fields.
+// CABundlePath, Registry.RegistryURL, Registration strings, or KeySource paths.
 // Non-nil empty slices remain present. To clear a field, edit the merged
 // config before passing it to the ordinary constructor. No loader sets
 // StatusCheckInterval, so its zero-value limitation affects code overlays only.
@@ -292,11 +303,23 @@ func Merge(base, overlay Loaded) Loaded {
 	if overlay.Registry.RegistryURL != "" {
 		base.Registry.RegistryURL = overlay.Registry.RegistryURL
 	}
+	if overlay.Registration.OrganizationID != "" {
+		base.Registration.OrganizationID = overlay.Registration.OrganizationID
+	}
+	if overlay.Registration.GovernanceID != "" {
+		base.Registration.GovernanceID = overlay.Registration.GovernanceID
+	}
+	if overlay.Registration.EntityKeyURL != "" {
+		base.Registration.EntityKeyURL = overlay.Registration.EntityKeyURL
+	}
 	if overlay.KeySource.Provider != "" {
 		base.KeySource.Provider = overlay.KeySource.Provider
 	}
 	if overlay.KeySource.KeyRef != "" {
 		base.KeySource.KeyRef = overlay.KeySource.KeyRef
+	}
+	if overlay.KeySource.Generation != nil {
+		base.KeySource.Generation = overlay.KeySource.Generation
 	}
 	if overlay.KeySource.Settings != nil {
 		base.KeySource.Settings = overlay.KeySource.Settings
@@ -376,6 +399,9 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	if loaded.Dnsid.Identity != nil && !loaded.KeySource.isZero() && deps.KeyProvider == nil {
 		if err := ValidateKeySource(loaded.KeySource); err != nil {
 			return nil, err
+		}
+		if loaded.KeySource.Generation != nil {
+			return nil, dnsid.NewArgumentError("dnsid: Construct opens existing keys only; generation belongs to managed registration", nil)
 		}
 	}
 	if deps.LogRegistry == nil && !loaded.LogTrust.isZero() {
