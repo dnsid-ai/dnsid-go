@@ -1063,7 +1063,7 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 		return nil, err
 	}
 	if len(rdatas) == 0 {
-		return nil, NewVerificationError(VerificationCodeRecordInvalid, false, fmt.Sprintf("dnsid: _dnsid TXT record not found at %s", name), nil)
+		return nil, NewVerificationError(VerificationCodeRecordInvalid, false, fmt.Sprintf("dnsid: _dnsid TXT record not found at %s", name), ErrIdentityRecordNotFound)
 	}
 	if len(rdatas) > 1 {
 		return nil, NewVerificationError(VerificationCodeRecordInvalid, false, fmt.Sprintf("dnsid: multiple _dnsid TXT records at %s (expected exactly one)", name), nil)

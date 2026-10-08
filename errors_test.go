@@ -1,9 +1,11 @@
 package dnsid
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestParseError_ErrorUnwrap(t *testing.T) {
@@ -397,6 +399,25 @@ func TestPublicValidationAndArgumentErrors(t *testing.T) {
 		var argumentErr *ArgumentError
 		if !errors.As(err, &argumentErr) {
 			t.Fatalf("IdentityConfig.Validate error = %T, want *ArgumentError", err)
+		}
+	}
+}
+
+func TestVerifyDomain_RecordAbsenceIsDistinctFromMalformedRecord(t *testing.T) {
+	for _, test := range []struct {
+		records []TXTRecordRData
+		missing bool
+	}{
+		{nil, true},
+		{[]TXTRecordRData{{Value: "invalid", TTL: time.Minute}}, false},
+	} {
+		verifier, err := NewVerifier(WithDNSResolver(&testDNSResolver{records: map[string][]TXTRecordRData{"_dnsid.agent.example": test.records}}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = verifier.VerifyDomain(context.Background(), "agent.example")
+		if errors.Is(err, ErrIdentityRecordNotFound) != test.missing {
+			t.Fatalf("absence marker = %v, want %v", err, test.missing)
 		}
 	}
 }

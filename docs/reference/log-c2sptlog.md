@@ -47,6 +47,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
 - [func NewDnsidManagedVerificationRegistry\(ctx context.Context, config DnsidManagedVerificationConfig\) \(\*dnsidlog.LogRegistry, error\)](<#NewDnsidManagedVerificationRegistry>)
 - [func NewVerificationRegistry\(ctx context.Context, config VerificationRegistryConfig\) \(\*dnsidlog.LogRegistry, error\)](<#NewVerificationRegistry>)
 - [func Register\(registry \*dnsidlog.LogRegistry, opts ...Option\) error](<#Register>)
+- [func ValidateManagedIssuanceState\(ctx context.Context, client \*Client, issuance \*ManagedIssuanceState, entityKey jwk.Key, provider dnsid.KeyProvider\) error](<#ValidateManagedIssuanceState>)
 - [type Appender](<#Appender>)
 - [type ApplicationSigningController](<#ApplicationSigningController>)
 - [type ApplicationSigningControllerFunc](<#ApplicationSigningControllerFunc>)
@@ -73,7 +74,8 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(c \*Client\) PrepareEvent\(event dnsidlog.LogEvent\) \(\*PreparedEvent, error\)](<#Client.PrepareEvent>)
   - [func \(c \*Client\) PrepareEventWithChain\(event dnsidlog.LogEvent, chain Chain\) \(\*PreparedEvent, error\)](<#Client.PrepareEventWithChain>)
   - [func \(c \*Client\) PreparedEntryBytes\(ctx context.Context, prepared \*PreparedEvent\) \(result \[\]byte, err error\)](<#Client.PreparedEntryBytes>)
-  - [func \(c \*Client\) ReadEvent\(ctx context.Context, ref dnsidlog.LogRef\) \(event dnsidlog.LogEvent, err error\)](<#Client.ReadEvent>)
+  - [func \(c \*Client\) ReadEntry\(ctx context.Context, ref dnsidlog.LogRef\) \(\[\]byte, error\)](<#Client.ReadEntry>)
+  - [func \(c \*Client\) ReadEvent\(ctx context.Context, ref dnsidlog.LogRef\) \(dnsidlog.LogEvent, error\)](<#Client.ReadEvent>)
   - [func \(c \*Client\) RebuildHistory\(ctx context.Context, domain string\) \(\[\]dnsidlog.LogEvent, error\)](<#Client.RebuildHistory>)
   - [func \(c \*Client\) RebuildHistoryThrough\(ctx context.Context, domain string, finalRef dnsidlog.LogRef\) \(result MigrationVerificationResult, err error\)](<#Client.RebuildHistoryThrough>)
   - [func \(c \*Client\) SignPreparedEvent\(ctx context.Context, prepared \*PreparedEvent, role SignerRole, kp dnsid.KeyProvider\) \(\*PreparedEvent, error\)](<#Client.SignPreparedEvent>)
@@ -328,6 +330,15 @@ func Register(registry *dnsidlog.LogRegistry, opts ...Option) error
 ```
 
 Register installs the "c2sp\-tlog" method in registry so that LogRegistry.NewReader builds a Client \(with opts applied\) for every c2sp\-tlog lr value. It returns an error if registry is nil; an lr value that fails to parse yields a reader whose every method returns that parse error.
+
+<a name="ValidateManagedIssuanceState"></a>
+## func [ValidateManagedIssuanceState](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L398>)
+
+```go
+func ValidateManagedIssuanceState(ctx context.Context, client *Client, issuance *ManagedIssuanceState, entityKey jwk.Key, provider dnsid.KeyProvider) error
+```
+
+ValidateManagedIssuanceState checks recovery integrity without preparation, submission, or activation changes. Accepted state uses historical public keys from the saved signed entry, so the original private key is not required.
 
 <a name="Appender"></a>
 ## type [Appender](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L87-L89>)
@@ -606,17 +617,26 @@ func (c *Client) PreparedEntryBytes(ctx context.Context, prepared *PreparedEvent
 
 PreparedEntryBytes returns exact canonical bytes after validating all required signatures. It never appends.
 
+<a name="Client.ReadEntry"></a>
+### func \(\*Client\) [ReadEntry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L861>)
+
+```go
+func (c *Client) ReadEntry(ctx context.Context, ref dnsidlog.LogRef) ([]byte, error)
+```
+
+ReadEntry returns the exact bytes at a final reference after the same inclusion, signature, and lifecycle checks as ReadEvent.
+
 <a name="Client.ReadEvent"></a>
 ### func \(\*Client\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L854>)
 
 ```go
-func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsidlog.LogEvent, err error)
+func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (dnsidlog.LogEvent, error)
 ```
 
 ReadEvent reads and verifies the single event addressed by a final event reference \<lr\>@\<index\>. The entry's inclusion proof must verify, its index must match the reference, and the entry must appear in the domain's verified lifecycle history; otherwise an error is returned.
 
 <a name="Client.RebuildHistory"></a>
-### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L913>)
+### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L925>)
 
 ```go
 func (c *Client) RebuildHistory(ctx context.Context, domain string) ([]dnsidlog.LogEvent, error)
@@ -785,7 +805,7 @@ type GlobalCandidateSource interface {
 ```
 
 <a name="ManagedIssuanceActivationController"></a>
-## type [ManagedIssuanceActivationController](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L47-L49>)
+## type [ManagedIssuanceActivationController](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L48-L50>)
 
 ManagedIssuanceActivationController prevents ACTIVE publication while the bilateral ISSUANCE outcome is unresolved.
 
@@ -796,7 +816,7 @@ type ManagedIssuanceActivationController interface {
 ```
 
 <a name="ManagedIssuanceActivationControllerFunc"></a>
-## type [ManagedIssuanceActivationControllerFunc](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L53>)
+## type [ManagedIssuanceActivationControllerFunc](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L54>)
 
 ManagedIssuanceActivationControllerFunc adapts a function to the activation controller interface.
 
@@ -805,7 +825,7 @@ type ManagedIssuanceActivationControllerFunc func(context.Context, bool) error
 ```
 
 <a name="ManagedIssuanceActivationControllerFunc.SetManagedIssuanceActivationBlocked"></a>
-### func \(ManagedIssuanceActivationControllerFunc\) [SetManagedIssuanceActivationBlocked](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L56>)
+### func \(ManagedIssuanceActivationControllerFunc\) [SetManagedIssuanceActivationBlocked](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L57>)
 
 ```go
 func (f ManagedIssuanceActivationControllerFunc) SetManagedIssuanceActivationBlocked(ctx context.Context, blocked bool) error
@@ -814,7 +834,7 @@ func (f ManagedIssuanceActivationControllerFunc) SetManagedIssuanceActivationBlo
 SetManagedIssuanceActivationBlocked calls f.
 
 <a name="ManagedIssuanceInProgressError"></a>
-## type [ManagedIssuanceInProgressError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L91-L93>)
+## type [ManagedIssuanceInProgressError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L92-L94>)
 
 ManagedIssuanceInProgressError reports that durable state already owns the identity instance, so a fresh ISSUANCE must not be generated.
 
@@ -825,7 +845,7 @@ type ManagedIssuanceInProgressError struct {
 ```
 
 <a name="ManagedIssuanceInProgressError.Error"></a>
-### func \(\*ManagedIssuanceInProgressError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L95>)
+### func \(\*ManagedIssuanceInProgressError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L96>)
 
 ```go
 func (e *ManagedIssuanceInProgressError) Error() string
@@ -834,7 +854,7 @@ func (e *ManagedIssuanceInProgressError) Error() string
 
 
 <a name="ManagedIssuanceOperationError"></a>
-## type [ManagedIssuanceOperationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L102-L108>)
+## type [ManagedIssuanceOperationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L103-L109>)
 
 ManagedIssuanceOperationError reports a preparation or submission failure. State and retry flags are stable management semantics; RetrySameBytes is true only after completed bytes have been fixed and must be replayed unchanged.
 
@@ -849,7 +869,7 @@ type ManagedIssuanceOperationError struct {
 ```
 
 <a name="ManagedIssuanceOperationError.Error"></a>
-### func \(\*ManagedIssuanceOperationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L110>)
+### func \(\*ManagedIssuanceOperationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L111>)
 
 ```go
 func (e *ManagedIssuanceOperationError) Error() string
@@ -858,7 +878,7 @@ func (e *ManagedIssuanceOperationError) Error() string
 
 
 <a name="ManagedIssuanceOperationError.ShouldRetrySameBytes"></a>
-### func \(\*ManagedIssuanceOperationError\) [ShouldRetrySameBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L129>)
+### func \(\*ManagedIssuanceOperationError\) [ShouldRetrySameBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L130>)
 
 ```go
 func (e *ManagedIssuanceOperationError) ShouldRetrySameBytes() bool
@@ -867,7 +887,7 @@ func (e *ManagedIssuanceOperationError) ShouldRetrySameBytes() bool
 ShouldRetrySameBytes reports whether recovery must resubmit the exact persisted bytes with the same idempotency key.
 
 <a name="ManagedIssuanceOperationError.Transient"></a>
-### func \(\*ManagedIssuanceOperationError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L125>)
+### func \(\*ManagedIssuanceOperationError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L126>)
 
 ```go
 func (e *ManagedIssuanceOperationError) Transient() bool
@@ -876,7 +896,7 @@ func (e *ManagedIssuanceOperationError) Transient() bool
 Transient reports whether retrying the operation may succeed.
 
 <a name="ManagedIssuanceOperationError.Unwrap"></a>
-### func \(\*ManagedIssuanceOperationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L117>)
+### func \(\*ManagedIssuanceOperationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L118>)
 
 ```go
 func (e *ManagedIssuanceOperationError) Unwrap() error
@@ -885,7 +905,7 @@ func (e *ManagedIssuanceOperationError) Unwrap() error
 
 
 <a name="ManagedIssuanceOptions"></a>
-## type [ManagedIssuanceOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L64-L74>)
+## type [ManagedIssuanceOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L65-L75>)
 
 ManagedIssuanceOptions configures a new registry\-managed split ISSUANCE.
 
@@ -904,31 +924,32 @@ type ManagedIssuanceOptions struct {
 ```
 
 <a name="ManagedIssuanceState"></a>
-## type [ManagedIssuanceState](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L19-L34>)
+## type [ManagedIssuanceState](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L19-L35>)
 
 ManagedIssuanceState is the durable recovery record for one registry\-managed ISSUANCE. Once EntryBytes is set it is immutable and every retry reuses it with IdempotencyKey.
 
 ```go
 type ManagedIssuanceState struct {
-    Domain                string                  `json:"domain"`
-    GovernanceID          string                  `json:"governance_id"`
-    LogReference          string                  `json:"log_reference"`
-    EntityThumbprint      string                  `json:"entity_thumbprint"`
-    OperationalKid        string                  `json:"operational_kid"`
-    OperationalThumbprint string                  `json:"operational_thumbprint"`
-    EntryBytes            []byte                  `json:"entry_bytes,omitempty"`
-    EntryHash             string                  `json:"entry_hash,omitempty"`
-    IdempotencyKey        string                  `json:"idempotency_key"`
-    Submission            *dnsid.SubmissionResult `json:"submission,omitempty"`
-    LastErrorCode         string                  `json:"last_error_code,omitempty"`
-    TerminalFailure       bool                    `json:"terminal_failure"`
-    Complete              bool                    `json:"complete"`
-    ActivationBlocked     bool                    `json:"activation_blocked"`
+    Domain                string                       `json:"domain"`
+    GovernanceID          string                       `json:"governance_id"`
+    LogReference          string                       `json:"log_reference"`
+    EntityThumbprint      string                       `json:"entity_thumbprint"`
+    OperationalKid        string                       `json:"operational_kid"`
+    OperationalThumbprint string                       `json:"operational_thumbprint"`
+    Prepared              *dnsid.PreparedRegistryEvent `json:"prepared,omitempty"`
+    EntryBytes            []byte                       `json:"entry_bytes,omitempty"`
+    EntryHash             string                       `json:"entry_hash,omitempty"`
+    IdempotencyKey        string                       `json:"idempotency_key"`
+    Submission            *dnsid.SubmissionResult      `json:"submission,omitempty"`
+    LastErrorCode         string                       `json:"last_error_code,omitempty"`
+    TerminalFailure       bool                         `json:"terminal_failure"`
+    Complete              bool                         `json:"complete"`
+    ActivationBlocked     bool                         `json:"activation_blocked"`
 }
 ```
 
 <a name="BeginManagedIssuance"></a>
-### func [BeginManagedIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L135>)
+### func [BeginManagedIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L136>)
 
 ```go
 func BeginManagedIssuance(ctx context.Context, opts ManagedIssuanceOptions) (*ManagedIssuanceState, error)
@@ -937,7 +958,7 @@ func BeginManagedIssuance(ctx context.Context, opts ManagedIssuanceOptions) (*Ma
 BeginManagedIssuance starts one durable split ISSUANCE. Any existing state for the domain blocks preparation, including a completed issuance.
 
 <a name="CompleteManagedIssuance"></a>
-### func [CompleteManagedIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L227>)
+### func [CompleteManagedIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L228>)
 
 ```go
 func CompleteManagedIssuance(ctx context.Context, domain string, store ManagedIssuanceStore, activation ManagedIssuanceActivationController) (*ManagedIssuanceState, error)
@@ -946,7 +967,7 @@ func CompleteManagedIssuance(ctx context.Context, domain string, store ManagedIs
 CompleteManagedIssuance marks publication/setup convergence complete and releases the activation block. It requires an accepted exact\-byte result. Callers invoke it only after externally verifying required DNS, JWKS, and status resources; this log coordinator does not publish those resources.
 
 <a name="ResumeManagedIssuance"></a>
-### func [ResumeManagedIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L181>)
+### func [ResumeManagedIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L182>)
 
 ```go
 func ResumeManagedIssuance(ctx context.Context, opts ResumeManagedIssuanceOptions) (*ManagedIssuanceState, error)
@@ -955,7 +976,7 @@ func ResumeManagedIssuance(ctx context.Context, opts ResumeManagedIssuanceOption
 ResumeManagedIssuance resumes preparation with the same idempotency key when no completed bytes exist, or resubmits the exact persisted bytes otherwise.
 
 <a name="ManagedIssuanceStore"></a>
-## type [ManagedIssuanceStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L39-L43>)
+## type [ManagedIssuanceStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L40-L44>)
 
 ManagedIssuanceStore provides exclusive durable state for one identity instance. CreateManagedIssuance atomically persists initial when no operation exists and returns the existing operation otherwise.
 
@@ -1555,7 +1576,7 @@ func (g ResourceFetchGuarantees) SupportsPublicReads() bool
 SupportsPublicReads reports whether all transport guarantees required for a public c2sp\-tlog policy and standard\-resource scan are present.
 
 <a name="ResumeManagedIssuanceOptions"></a>
-## type [ResumeManagedIssuanceOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L79-L87>)
+## type [ResumeManagedIssuanceOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L80-L88>)
 
 ResumeManagedIssuanceOptions identifies the authoritative persisted operation by Domain. Resume never trusts caller\-supplied recovery state, prepares a different event, or changes the idempotency key.
 

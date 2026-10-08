@@ -10,20 +10,26 @@ import (
 	dnsid "github.com/dnsid-ai/dnsid-go"
 )
 
-func TestLoadDeploymentFile_Configuration(t *testing.T) {
+func TestLoadDeploymentFile_ManagedSetupAndMerge(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deployment.json")
-	if err := os.WriteFile(path, []byte(`{"dnsid":{"verification":{"dnssecMode":"required","trustedEntities":[]},"transport":{"dnsServer":"1.1.1.1:53"}},"logTrust":{"managed":true},"registry":{"registryUrl":"https://registry.example"}}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"dnsid":{"verification":{"dnssecMode":"required","trustedEntities":[]},"transport":{"dnsServer":"1.1.1.1:53"}},"logTrust":{"managed":true},"registry":{"registryUrl":"https://registry.example"},"registration":{"governanceId":"account.example","entityKeyUrl":"https://account.example/entity.json"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := LoadDeploymentFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := Loaded{Dnsid: dnsid.Config{Verification: dnsid.VerificationConfig{DNSSECMode: dnsid.DNSSECModeRequired, TrustedEntities: []dnsid.TrustedEntity{}}, Transport: dnsid.TransportConfig{DNSServer: "1.1.1.1:53"}}, LogTrust: LogTrust{Managed: true}, Registry: Registry{RegistryURL: "https://registry.example"}}
+	expected := Loaded{Dnsid: dnsid.Config{Verification: dnsid.VerificationConfig{DNSSECMode: dnsid.DNSSECModeRequired, TrustedEntities: []dnsid.TrustedEntity{}}, Transport: dnsid.TransportConfig{DNSServer: "1.1.1.1:53"}}, LogTrust: LogTrust{Managed: true}, Registry: Registry{RegistryURL: "https://registry.example"}, Registration: ManagedRegistrationConfig{GovernanceID: "account.example", EntityKeyURL: "https://account.example/entity.json"}}
 	if !reflect.DeepEqual(loaded, expected) {
 		t.Fatalf("loaded = %#v", loaded)
 	}
+	merged := Merge(loaded, Loaded{Registration: ManagedRegistrationConfig{GovernanceID: "other.example"}})
+	if merged.Registration.GovernanceID != "other.example" || merged.Registration.EntityKeyURL != loaded.Registration.EntityKeyURL {
+		t.Fatal("registration merge is not field-wise")
+	}
+	// Ordinary construction neither infers an identity nor validates setup-only fields.
 	loaded.LogTrust = LogTrust{}
+	loaded.Registration.EntityKeyURL = "invalid setup endpoint"
 	manager, err := Construct(context.Background(), loaded, Dependencies{})
 	if err != nil {
 		t.Fatal(err)
@@ -70,8 +76,11 @@ func TestLoadDeploymentFile_RejectsInvalidDocuments(t *testing.T) {
 		`{"registry":{"apiKey":"secret"}}`,
 		`{"keySource":{"privateKey":"secret"}}`,
 		`{"keySource":{"settings":{"region":42}}}`,
-		`{"keySource":{"keyRef":null}}`,
-		`{"registry":{"registryUrl":"one","registryUrl":"two"}}`,
+		`{"keySource":{"generation":{"algorithm":"ES256","secret":"x"}}}`,
+		`{"registration":{"governanceId":1}}`,
+		`{"registration":{"entityKeyUrl":null}}`,
+		`{"registration":{"governanceId":"one.example","governanceId":"two.example"}}`,
+		`{"logTrust":{}}`,
 		`{"logTrust":{"managed":false}}`,
 		`{} {}`,
 		`[]`,

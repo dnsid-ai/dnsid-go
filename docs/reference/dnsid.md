@@ -146,6 +146,12 @@ var (
 )
 ```
 
+<a name="ErrIdentityRecordNotFound"></a>ErrIdentityRecordNotFound distinguishes DNS resource absence from malformed TXT records. Setup may retry absence; ordinary verification still fails closed.
+
+```go
+var ErrIdentityRecordNotFound = errors.New("dnsid: identity TXT record not found")
+```
+
 <a name="ErrKeyStoreDurability"></a>ErrKeyStoreDurability means the new key store is visible on disk, but syncing its directory failed. The mutation is NOT rolled back in memory. Stop the workflow and resolve the storage error before proceeding; see OPERATIONS.md.
 
 ```go
@@ -489,7 +495,7 @@ func NewVerifier(opts ...IdentityManagerOption) (*IdentityManager, error)
 NewVerifier constructs an IdentityManager for verification without local identity configuration or key material. It is shorthand for NewIdentityManager with a zero Config and nil KeyProvider; pass a Config with nil Identity to NewIdentityManager to set verification or transport settings.
 
 <a name="IdentityManager.AwaitRegistryManagedPublication"></a>
-### func \(\*IdentityManager\) [AwaitRegistryManagedPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1701>)
+### func \(\*IdentityManager\) [AwaitRegistryManagedPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1671>)
 
 ```go
 func (m *IdentityManager) AwaitRegistryManagedPublication(ctx context.Context, client RegistryRegistrationReader, opts *WaitForStatusOptions) (*PublishedRecord, error)
@@ -606,7 +612,7 @@ func (m *IdentityManager) OperationalKeyURL() string
 OperationalKeyURL returns the HTTPS URL where the operational \(ku\) JWKS should be served. This is the ku= value that CreateTXTRecord would produce. Draft 01 defines no default path, so an unset KeyURL returns an empty string.
 
 <a name="IdentityManager.PublishClientControlledRecord"></a>
-### func \(\*IdentityManager\) [PublishClientControlledRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1574>)
+### func \(\*IdentityManager\) [PublishClientControlledRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1544>)
 
 ```go
 func (m *IdentityManager) PublishClientControlledRecord(ctx context.Context, client RegistryClientControlledPublisher) (*PublishedRecord, error)

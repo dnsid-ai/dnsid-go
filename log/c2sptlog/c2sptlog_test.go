@@ -1495,6 +1495,17 @@ func TestReadEventRequiresFinalRefIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	entry, err := client.ReadEntry(context.Background(), "c2sp-tlog:testnet:http://dnsid-ledger:8080/log#identity-01@0")
+	if err != nil || string(entry) != issuanceEntry {
+		t.Fatalf("ReadEntry exact verified bytes: %v", err)
+	}
+	entry[0] = 'x'
+	if string(source.entries[0].Entry) != issuanceEntry {
+		t.Fatal("ReadEntry exposed mutable source bytes")
+	}
+	if _, err := client.ReadEntry(context.Background(), "c2sp-tlog:testnet:http://dnsid-ledger:8080/log#identity-01@1"); err == nil {
+		t.Fatal("ReadEntry accepted a different index")
+	}
 	_, err = client.ReadEvent(context.Background(), "c2sp-tlog:testnet:http://dnsid-ledger:8080/log#identity-01@1")
 	if err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("ReadEvent error = %v, want index binding failure", err)
