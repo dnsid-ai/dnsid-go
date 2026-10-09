@@ -1,6 +1,14 @@
 package dnsid
 
-import "github.com/dnsid-ai/dnsid-go/internal/sdkerrors"
+import (
+	"errors"
+
+	"github.com/dnsid-ai/dnsid-go/internal/sdkerrors"
+)
+
+// ErrIdentityRecordNotFound distinguishes DNS resource absence from malformed
+// TXT records. Setup may retry absence; ordinary verification still fails closed.
+var ErrIdentityRecordNotFound = errors.New("dnsid: identity TXT record not found")
 
 // VerificationCode is a machine-readable classifier for *VerificationError.
 // Codes group failures by cause so callers can branch on type without

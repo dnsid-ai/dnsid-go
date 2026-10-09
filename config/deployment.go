@@ -58,13 +58,14 @@ func LoadDeploymentFile(path string) (Loaded, error) {
 		Registry struct {
 			RegistryURL string `json:"registryUrl"`
 		} `json:"registry"`
-		KeySource KeySource `json:"keySource"`
+		Registration ManagedRegistrationConfig `json:"registration"`
+		KeySource    KeySource                 `json:"keySource"`
 	}
 	object, err := decodeDeployment(data, &file)
 	if err != nil {
 		return Loaded{}, err
 	}
-	l := Loaded{KeySource: file.KeySource, Registry: Registry{RegistryURL: file.Registry.RegistryURL}}
+	l := Loaded{Registration: file.Registration, KeySource: file.KeySource, Registry: Registry{RegistryURL: file.Registry.RegistryURL}}
 	dnsidMembers, _ := object["dnsid"].(map[string]any)
 	identityMembers, _ := dnsidMembers["identity"].(map[string]any)
 	if i := file.Dnsid.Identity; i != nil && len(identityMembers) > 0 {

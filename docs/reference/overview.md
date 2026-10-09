@@ -27,6 +27,7 @@ Start with the root package: `IdentityManager` is the facade for verifying domai
 | [Key providers](https://docs.dnsid.ai/reference/go/dnsid-keys) | KeyProvider implementations, key metadata, and log-event signing. |
 | [Key providers: AWS KMS](https://docs.dnsid.ai/reference/go/key-aws) | AWS KMS-backed key provider for DNSid. |
 | [Registry](https://docs.dnsid.ai/reference/go/dnsid-registry) | HTTPRegistryClient, publication workflows, and registry request/response types. |
+| [Managed registration](https://docs.dnsid.ai/reference/go/registration) | Durable managed identity setup, permanent creation replay, and independent public readiness checks. |
 | [Lifecycle log](https://docs.dnsid.ai/reference/go/log) | Agent lifecycle log abstractions for DNSid. |
 | [Transparency log](https://docs.dnsid.ai/reference/go/log-c2sptlog) | C2SP transparency-log (tlog) client support for DNSid lifecycle logs. |
 | [Errors & enums](https://docs.dnsid.ai/reference/go/dnsid-errors) | Typed errors and verification codes returned across the SDK. |

@@ -45,4 +45,6 @@ identity's signer binding before using a different key source; configuration alo
 does not authorize rotation.
 
 These configuration/provider and onboarding APIs work with the existing server.
-Named creation and automatic permanent recovery are separate workflow changes.
+The [managed-registration workflow](../registration/README.md) checks saved signer
+bindings and verified rotation continuity before returning an established identity.
+Named creation and permanent recovery require the server contract documented there.
