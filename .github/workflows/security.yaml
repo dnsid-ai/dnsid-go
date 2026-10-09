@@ -1,0 +1,29 @@
+# Lint, test and security scanning on every pull request, from the shared
+# workflow in dnsid-ai/github-actions. Make "go / Summary" the one required
+# check on main.
+name: Security
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: security-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    uses: dnsid-ai/github-actions/.github/workflows/security-go.yml@cacfffc9456cb52046a30c2f4d060808aca00784 # main, 2026-10-09
+    permissions:
+      contents: read # check out the code
+      security-events: write # required by the called workflow's jobs
+      actions: read # required by the called workflow's jobs
+      pull-requests: write # the Summary job posts a sticky go: summary comment with findings
+    with:
+      # Integration tests may need live infra; -short runs units only.
+      test-flags: -short
+      # Code Security not enabled; findings live in the run summary and artifacts.
+      upload-sarif: false
+      # Warn-only while first findings are triaged; flip to true after.
+      enforce-security: false
