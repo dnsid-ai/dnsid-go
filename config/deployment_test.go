@@ -39,6 +39,38 @@ func TestLoadDeploymentFile_ManagedSetupAndMerge(t *testing.T) {
 	}
 }
 
+func TestLoadDeploymentFile_IdentityPresence(t *testing.T) {
+	for _, test := range []struct {
+		document string
+		present  bool
+	}{
+		{`{}`, false},
+		{`{"dnsid":{"identity":{}}}`, false},
+		{`{"dnsid":{"identity":{"domain":""}}}`, true},
+		{`{"dnsid":{"identity":{"policyFlags":[]}}}`, true},
+	} {
+		t.Run(test.document, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "deployment.json")
+			if err := os.WriteFile(path, []byte(test.document), 0600); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := LoadDeploymentFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (loaded.Dnsid.Identity != nil) != test.present {
+				t.Fatalf("identity presence = %v, want %v", loaded.Dnsid.Identity != nil, test.present)
+			}
+			manager, err := Construct(context.Background(), loaded, Dependencies{})
+			if test.present {
+				wantArgumentError(t, err)
+			} else if err != nil || manager.Domain() != "" {
+				t.Fatalf("verification-only construction: %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadDeploymentFile_RejectsInvalidDocuments(t *testing.T) {
 	for _, document := range []string{
 		`{"registry":{"apiKey":"secret"}}`,
