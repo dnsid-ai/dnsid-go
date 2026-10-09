@@ -42,7 +42,7 @@ Loaders parse; constructors default. Each Load function returns only the fields 
 
 
 <a name="Construct"></a>
-## func [Construct](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L368>)
+## func [Construct](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L358>)
 
 ```go
 func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.IdentityManager, error)
@@ -51,7 +51,7 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 Construct builds an IdentityManager from a merged Loaded and the caller's dependencies. Caller dependencies win: LogRegistry is built from LogTrust only when deps.LogRegistry is nil, and key providers are built from KeySource only when Dnsid.Identity is present and the corresponding provider is nil. loaded.Dnsid is validated first so invalid configuration never triggers a key\-file read or policy fetch; dnsid.NewIdentityManager then applies every default and validation.
 
 <a name="IdentityManagerFromDnsid"></a>
-## func [IdentityManagerFromDnsid](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L485>)
+## func [IdentityManagerFromDnsid](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L475>)
 
 ```go
 func IdentityManagerFromDnsid(ctx context.Context, dir string, overlay dnsid.Config, deps Dependencies) (*dnsid.IdentityManager, error)
@@ -60,7 +60,7 @@ func IdentityManagerFromDnsid(ctx context.Context, dir string, overlay dnsid.Con
 IdentityManagerFromDnsid is Construct\(Merge\(LoadCliDirectory\(dir\), \{Dnsid: overlay\}\), deps\). An empty dir reads \~/.dnsid.
 
 <a name="IdentityManagerFromEnvironment"></a>
-## func [IdentityManagerFromEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L475>)
+## func [IdentityManagerFromEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L465>)
 
 ```go
 func IdentityManagerFromEnvironment(ctx context.Context, getenv func(string) string, overlay dnsid.Config, deps Dependencies) (*dnsid.IdentityManager, error)
@@ -69,7 +69,7 @@ func IdentityManagerFromEnvironment(ctx context.Context, getenv func(string) str
 IdentityManagerFromEnvironment is Construct\(Merge\(LoadEnvironment\(getenv\), \{Dnsid: overlay\}\), deps\). A nil getenv reads the process environment. With no DNSID\_DOMAIN the result is a verification\-only manager; under \`dnsid local run\`, DNSID\_CONFIG\_DIR supplies the key files.
 
 <a name="LogRegistryFromTrust"></a>
-## func [LogRegistryFromTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L427>)
+## func [LogRegistryFromTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L417>)
 
 ```go
 func LogRegistryFromTrust(ctx context.Context, t LogTrust, transport dnsid.TransportConfig) (*dnsidlog.LogRegistry, error)
@@ -96,7 +96,7 @@ func RegisterKeyProviderFactory(name string, factory KeyProviderFactory)
 RegisterKeyProviderFactory links an optional provider package's factory. Packages call this in init; importing the module alone does not link it.
 
 <a name="RegistryClientFromEnvironment"></a>
-## func [RegistryClientFromEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L497>)
+## func [RegistryClientFromEnvironment](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L487>)
 
 ```go
 func RegistryClientFromEnvironment(getenv func(string) string, opts ...dnsid.RegistryClientOption) (*dnsid.HTTPRegistryClient, error)
@@ -224,7 +224,7 @@ func Merge(base, overlay Loaded) Loaded
 
 Merge applies overlay onto base field\-wise: a present overlay field replaces the base field, an absent one leaves base unchanged. Slices replace as a whole \(nil is absent, empty is present\). LogTrust is replaced as a whole section when overlay sets any variant.
 
-Scalar zero values are absent: overlays cannot clear loaded Identity strings, Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or CABundlePath, Registry.RegistryURL, or KeySource fields. Non\-nil empty slices remain present. To clear a field, edit the merged config before passing it to the ordinary constructor. No loader sets StatusCheckInterval, so its zero\-value limitation affects code overlays only.
+Scalar zero values are absent: overlays cannot clear loaded Identity strings, Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or CABundlePath, Registry.RegistryURL, or KeySource.EntityKeyPath. Operational KeySource fields replace as a group; EntityKeyPath merges separately. Non\-nil empty slices and maps remain present. To clear a scalar field, edit the merged config before passing it to the ordinary constructor.
 
 <a name="LogTrust"></a>
 ## type [LogTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/config/config.go#L42-L51>)

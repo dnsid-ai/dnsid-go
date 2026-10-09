@@ -60,11 +60,12 @@ func LoadDeploymentFile(path string) (Loaded, error) {
 		} `json:"registry"`
 		KeySource KeySource `json:"keySource"`
 	}
-	if err := decodeDeployment(data, &file); err != nil {
+	object, err := decodeDeployment(data, &file)
+	if err != nil {
 		return Loaded{}, err
 	}
 	l := Loaded{KeySource: file.KeySource, Registry: Registry{RegistryURL: file.Registry.RegistryURL}}
-	if i := file.Dnsid.Identity; i != nil {
+	if i := file.Dnsid.Identity; i != nil && len(object["dnsid"].(map[string]any)["identity"].(map[string]any)) > 0 {
 		l.Dnsid.Identity = &dnsid.IdentityConfig{Domain: i.Domain, GovernanceID: i.GovernanceID, StatusURL: i.StatusURL, LogRef: i.LogRef, EntityKeyURL: i.EntityKeyURL, KeyURL: i.KeyURL, PublishProfile: i.PublishProfile, CapabilitiesURL: i.CapabilitiesURL, MaxKeyAge: i.MaxKeyAge, PolicyFlags: i.PolicyFlags}
 	}
 	v := file.Dnsid.Verification
@@ -97,20 +98,20 @@ func LoadDeploymentFile(path string) (Loaded, error) {
 }
 
 // decodeDeployment rejects duplicate members, nulls, and case aliases.
-func decodeDeployment(data []byte, value any) error {
+func decodeDeployment(data []byte, value any) (map[string]any, error) {
 	object, err := jsonutil.DecodeObject(data, true)
 	if err == nil {
 		err = deploymentMembers(object, reflect.TypeOf(value).Elem())
 	}
 	if err != nil {
-		return dnsid.NewArgumentError("dnsid: invalid deployment JSON", err)
+		return nil, dnsid.NewArgumentError("dnsid: invalid deployment JSON", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
-		return dnsid.NewArgumentError("dnsid: invalid deployment configuration", err)
+		return nil, dnsid.NewArgumentError("dnsid: invalid deployment configuration", err)
 	}
-	return nil
+	return object, nil
 }
 
 func deploymentMembers(value any, schema reflect.Type) error {

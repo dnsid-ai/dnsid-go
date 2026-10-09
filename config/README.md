@@ -14,8 +14,9 @@ manager, err := config.Construct(ctx, loaded, config.Dependencies{})
 
 File sections are `dnsid`, `logTrust`, `registry`, and `keySource`. Unknown,
 duplicate, null, and mistyped members fail. Durations use Go duration strings.
-Merge is field-wise; lists replace and log trust is atomic. Scalar zero values
-cannot clear a nonzero base value; edit the merged value to clear it.
+Merge is field-wise; lists replace and log trust is atomic. Operational key-source
+fields replace as a group; `entityKeyPath` merges independently. Scalar zero values
+cannot clear other nonzero base values; edit the merged value to clear them.
 
 Missing provider selects file and warns that local keys are unsuitable for
 production. Existing file references use `keyRef` or CLI/key-store paths.
@@ -39,7 +40,9 @@ Use an immutable signing-key ARN, not an alias. AWS credentials come from the
 standard chain (optional `profile` names a credential source); grant
 `kms:GetPublicKey` and `kms:Sign`. Installing without importing does not link a
 factory. Missing providers fail before key/policy access, without file fallback.
-Changing configuration is not authorization to rotate an established identity.
+`Construct` has no persisted identity state. Callers must check an established
+identity's signer binding before using a different key source; configuration alone
+does not authorize rotation.
 
 These configuration/provider and onboarding APIs work with the existing server.
 Named creation and automatic permanent recovery are separate workflow changes.
