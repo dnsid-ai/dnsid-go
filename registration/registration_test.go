@@ -499,7 +499,7 @@ func TestRegisterManagedIdentity_StaticFailureBeforeEffects(t *testing.T) {
 }
 
 func TestRegisterManagedIdentity_BindingsAndCorruptionStopMutations(t *testing.T) {
-	for _, name := range []string{"input", "provider", "missing-key", "corrupt-outcome", "corrupt-bytes", "entity-pin"} {
+	for _, name := range []string{"input", "provider", "key-source", "same-key-source", "missing-key", "corrupt-outcome", "corrupt-bytes", "entity-pin"} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			if _, err := f.run(nil); err != nil {
@@ -513,6 +513,14 @@ func TestRegisterManagedIdentity_BindingsAndCorruptionStopMutations(t *testing.T
 			case "provider":
 				f.options.Dependencies.KeyProvider = dnsid.GenerateEd25519KeyProvider()
 				f.options.ProviderReference = "another-provider"
+			case "key-source":
+				path := filepath.Join(t.TempDir(), "replacement-key.json")
+				if _, err := dnsid.LoadOrCreateLocalKeyProvider(path, dnsid.JoseAlgEdDSA); err != nil {
+					t.Fatal(err)
+				}
+				f.loaded.KeySource = config.KeySource{Provider: "file", KeyRef: path}
+			case "same-key-source":
+				f.loaded.KeySource = config.KeySource{Provider: "file", KeyRef: f.path("operational-key.json")}
 			case "missing-key":
 				if err := os.Remove(f.path("operational-key.json")); err != nil {
 					t.Fatal(err)

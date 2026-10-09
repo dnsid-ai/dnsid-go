@@ -12,6 +12,8 @@
 
 - Validate persisted issuance outcomes and retain exact preparation bytes before countersigning.
 - Apply deployment transport settings to SDK-managed log verification.
+- Replace operational key sources as a group when merging configuration.
+- Keep empty deployment identity sections verification-only.
 
 ## [0.38.0] - 2026-10-07
 

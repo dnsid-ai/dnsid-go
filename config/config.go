@@ -270,10 +270,10 @@ func fileExists(path string) bool {
 //
 // Scalar zero values are absent: overlays cannot clear loaded Identity strings,
 // Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or
-// CABundlePath, Registry.RegistryURL, Registration strings, or KeySource paths.
-// Non-nil empty slices remain present. To clear a field, edit the merged
-// config before passing it to the ordinary constructor. No loader sets
-// StatusCheckInterval, so its zero-value limitation affects code overlays only.
+// CABundlePath, Registry.RegistryURL, Registration strings, or KeySource.EntityKeyPath.
+// Operational KeySource fields replace as a group; EntityKeyPath merges separately.
+// Non-nil empty slices and maps remain present. To clear a scalar field, edit
+// the merged config before passing it to the ordinary constructor.
 func Merge(base, overlay Loaded) Loaded {
 	if overlay.Dnsid.Identity != nil {
 		merged := overlayIdentity(derefIdentity(base.Dnsid.Identity), *overlay.Dnsid.Identity)
@@ -312,26 +312,13 @@ func Merge(base, overlay Loaded) Loaded {
 	if overlay.Registration.EntityKeyURL != "" {
 		base.Registration.EntityKeyURL = overlay.Registration.EntityKeyURL
 	}
-	if overlay.KeySource.Provider != "" {
-		base.KeySource.Provider = overlay.KeySource.Provider
-	}
-	if overlay.KeySource.KeyRef != "" {
-		base.KeySource.KeyRef = overlay.KeySource.KeyRef
-	}
-	if overlay.KeySource.Generation != nil {
-		base.KeySource.Generation = overlay.KeySource.Generation
-	}
-	if overlay.KeySource.Settings != nil {
-		base.KeySource.Settings = overlay.KeySource.Settings
-	}
-	if overlay.KeySource.CliDirectory != "" {
-		base.KeySource.CliDirectory = overlay.KeySource.CliDirectory
+	if overlay.KeySource.Provider != "" || overlay.KeySource.KeyRef != "" || overlay.KeySource.Generation != nil || overlay.KeySource.Settings != nil || overlay.KeySource.CliDirectory != "" || overlay.KeySource.KeyStorePath != "" {
+		entityKeyPath := base.KeySource.EntityKeyPath
+		base.KeySource = overlay.KeySource
+		base.KeySource.EntityKeyPath = entityKeyPath
 	}
 	if overlay.KeySource.EntityKeyPath != "" {
 		base.KeySource.EntityKeyPath = overlay.KeySource.EntityKeyPath
-	}
-	if overlay.KeySource.KeyStorePath != "" {
-		base.KeySource.KeyStorePath = overlay.KeySource.KeyStorePath
 	}
 	return base
 }
