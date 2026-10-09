@@ -38,11 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The pinned linter cannot read Go 1.27 export data; the test matrix still
-      # covers stable Go. Keep this toolchain in sync with the go.mod minimum.
+      # Use the latest security patch supported by the pinned linter, which
+      # cannot read Go 1.27 export data. The test matrix still covers stable Go.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.6"
+          go-version: "1.26.x"
           cache: true
 
       - name: Run static analysis
