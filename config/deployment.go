@@ -66,7 +66,9 @@ func LoadDeploymentFile(path string) (Loaded, error) {
 		return Loaded{}, err
 	}
 	l := Loaded{Registration: file.Registration, KeySource: file.KeySource, Registry: Registry{RegistryURL: file.Registry.RegistryURL}}
-	if i := file.Dnsid.Identity; i != nil && len(object["dnsid"].(map[string]any)["identity"].(map[string]any)) > 0 {
+	dnsidMembers, _ := object["dnsid"].(map[string]any)
+	identityMembers, _ := dnsidMembers["identity"].(map[string]any)
+	if i := file.Dnsid.Identity; i != nil && len(identityMembers) > 0 {
 		l.Dnsid.Identity = &dnsid.IdentityConfig{Domain: i.Domain, GovernanceID: i.GovernanceID, StatusURL: i.StatusURL, LogRef: i.LogRef, EntityKeyURL: i.EntityKeyURL, KeyURL: i.KeyURL, PublishProfile: i.PublishProfile, CapabilitiesURL: i.CapabilitiesURL, MaxKeyAge: i.MaxKeyAge, PolicyFlags: i.PolicyFlags}
 	}
 	v := file.Dnsid.Verification
