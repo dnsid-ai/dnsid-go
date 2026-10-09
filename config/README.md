@@ -46,3 +46,7 @@ does not authorize rotation.
 
 These configuration/provider and onboarding APIs work with the existing server.
 Named creation and automatic permanent recovery are separate workflow changes.
+
+See [the deployment-identity example](../examples/deployment-identity/) for loading
+an existing file or AWS KMS key, checking its published binding, and signing an
+HTTP request without sending it.
