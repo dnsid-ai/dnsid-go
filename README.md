@@ -94,6 +94,7 @@ the Go module release; the two versions are intentionally separate.
 ## Next steps
 
 - **[QUICKSTART.md](QUICKSTART.md)** — sign as an agent, mint a JWT, and sign an HTTP request.
+- **[Managed registration example](examples/managed-registration/)** — register a dev sandbox identity, complete issuance, and verify its published DNSid.
 - **[examples/](examples/)** — runnable programs for domain verification, key rotation, and Web Bot Auth.
 - **[docs.dnsid.ai](https://docs.dnsid.ai)** — protocol docs and account setup.
 
