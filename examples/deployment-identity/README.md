@@ -87,6 +87,12 @@ go run . deployment.file.json
 go test ./...
 ```
 
+The AWS regression check loads the supplied deployment template, calls
+`Construct` through the real AWS SDK against a local fake KMS endpoint, and
+verifies an ES256 signature. It checks ambient credential loading, region and
+key selection, and exactly one `GetPublicKey` and one `Sign` call. It does not
+validate live AWS credentials, IAM/key policies, or published lifecycle evidence.
+
 `LoadDeploymentFile` parses only the chosen document. `Construct` validates
 configuration, builds log trust, and opens the existing key (KMS uses
 `GetPublicKey`). It can perform trust-resource network reads, but this branch
