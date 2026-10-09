@@ -1,5 +1,5 @@
 // Package config loads DNSid SDK configuration from sources other than code
-// (DNSID_* environment variables and a DNSid CLI identity directory), merges
+// (DNSID_* environment variables, a deployment file, and a DNSid CLI identity directory), merges
 // partial results, and constructs an IdentityManager from them.
 //
 // Loaders parse; constructors default. Each Load function returns only the
@@ -59,22 +59,25 @@ type Registry struct {
 	RegistryURL string
 }
 
-// KeySource names where local key material lives. Variants are not
-// exclusive: CliDirectory supplies the operational key when present,
-// otherwise KeyStorePath; EntityKeyPath supplies the entity key whenever set.
+// KeySource selects an operational provider and non-secret settings.
+// Missing Provider selects file. CLI/key-store paths cannot combine with cloud
+// selection or KeyRef. EntityKeyPath independently supplies an entity key.
 type KeySource struct {
+	Provider string            `json:"provider,omitempty"`
+	KeyRef   string            `json:"keyRef,omitempty"`
+	Settings map[string]string `json:"settings,omitempty"`
 	// CliDirectory is a DNSid CLI identity directory holding private.jwk or
 	// <domain>/private.jwk.
-	CliDirectory string
+	CliDirectory string `json:"cliDirectory,omitempty"`
 	// EntityKeyPath is the accountable-entity key file. LoadCliDirectory
 	// resolves config.json entity_key_path against the directory.
-	EntityKeyPath string
+	EntityKeyPath string `json:"entityKeyPath,omitempty"`
 	// KeyStorePath is a local key store file readable by dnsid.NewLocalKeyProvider.
-	KeyStorePath string
+	KeyStorePath string `json:"keyStorePath,omitempty"`
 }
 
 func (k KeySource) isZero() bool {
-	return k.CliDirectory == "" && k.EntityKeyPath == "" && k.KeyStorePath == ""
+	return k.Provider == "" && k.KeyRef == "" && len(k.Settings) == 0 && k.CliDirectory == "" && k.EntityKeyPath == "" && k.KeyStorePath == ""
 }
 
 // Dependencies are the caller-supplied runtime dependencies for Construct.
@@ -256,10 +259,10 @@ func fileExists(path string) bool {
 //
 // Scalar zero values are absent: overlays cannot clear loaded Identity strings,
 // Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or
-// CABundlePath, Registry.RegistryURL, or KeySource paths.
-// Non-nil empty slices remain present. To clear a field, edit the merged
-// config before passing it to the ordinary constructor. No loader sets
-// StatusCheckInterval, so its zero-value limitation affects code overlays only.
+// CABundlePath, Registry.RegistryURL, or KeySource.EntityKeyPath.
+// Operational KeySource fields replace as a group; EntityKeyPath merges separately.
+// Non-nil empty slices and maps remain present. To clear a scalar field, edit
+// the merged config before passing it to the ordinary constructor.
 func Merge(base, overlay Loaded) Loaded {
 	if overlay.Dnsid.Identity != nil {
 		merged := overlayIdentity(derefIdentity(base.Dnsid.Identity), *overlay.Dnsid.Identity)
@@ -289,14 +292,13 @@ func Merge(base, overlay Loaded) Loaded {
 	if overlay.Registry.RegistryURL != "" {
 		base.Registry.RegistryURL = overlay.Registry.RegistryURL
 	}
-	if overlay.KeySource.CliDirectory != "" {
-		base.KeySource.CliDirectory = overlay.KeySource.CliDirectory
+	if overlay.KeySource.Provider != "" || overlay.KeySource.KeyRef != "" || overlay.KeySource.Settings != nil || overlay.KeySource.CliDirectory != "" || overlay.KeySource.KeyStorePath != "" {
+		entityKeyPath := base.KeySource.EntityKeyPath
+		base.KeySource = overlay.KeySource
+		base.KeySource.EntityKeyPath = entityKeyPath
 	}
 	if overlay.KeySource.EntityKeyPath != "" {
 		base.KeySource.EntityKeyPath = overlay.KeySource.EntityKeyPath
-	}
-	if overlay.KeySource.KeyStorePath != "" {
-		base.KeySource.KeyStorePath = overlay.KeySource.KeyStorePath
 	}
 	return base
 }
@@ -361,8 +363,13 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	if deps.HTTPClient != nil && deps.HTTPSFetcher != nil {
 		return nil, dnsid.NewArgumentError("dnsid: HTTPClient and HTTPSFetcher cannot both be supplied", nil)
 	}
+	if loaded.Dnsid.Identity != nil && !loaded.KeySource.isZero() && deps.KeyProvider == nil {
+		if err := ValidateKeySource(loaded.KeySource); err != nil {
+			return nil, err
+		}
+	}
 	if deps.LogRegistry == nil && !loaded.LogTrust.isZero() {
-		registry, err := logRegistryFromTrust(ctx, loaded.LogTrust, loaded.Dnsid.Transport)
+		registry, err := LogRegistryFromTrust(ctx, loaded.LogTrust, loaded.Dnsid.Transport)
 		if err != nil {
 			return nil, err
 		}
@@ -370,7 +377,7 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	}
 	if loaded.Dnsid.Identity != nil && !loaded.KeySource.isZero() {
 		if deps.KeyProvider == nil {
-			kp, err := operationalKeyProvider(loaded.KeySource, loaded.Dnsid.Identity.Domain)
+			kp, err := OperationalKeyProviderFrom(ctx, loaded.KeySource, loaded.Dnsid.Identity.Domain)
 			if err != nil {
 				return nil, err
 			}
@@ -406,7 +413,8 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	return dnsid.NewIdentityManager(loaded.Dnsid, deps.KeyProvider, opts...)
 }
 
-func logRegistryFromTrust(ctx context.Context, t LogTrust, transport dnsid.TransportConfig) (*dnsidlog.LogRegistry, error) {
+// LogRegistryFromTrust builds verification-only log bindings from explicit trust.
+func LogRegistryFromTrust(ctx context.Context, t LogTrust, transport dnsid.TransportConfig) (*dnsidlog.LogRegistry, error) {
 	variants := 0
 	for _, set := range []bool{t.Managed, t.Profile != nil, t.PolicyDocument != nil, t.PolicyURL != ""} {
 		if set {
@@ -417,7 +425,7 @@ func logRegistryFromTrust(ctx context.Context, t LogTrust, transport dnsid.Trans
 		return nil, dnsid.NewArgumentError("dnsid: LogTrust must set exactly one of Managed, Profile, PolicyDocument, or PolicyURL", nil)
 	}
 	if t.Managed {
-		return c2sptlog.NewDnsidManagedVerificationRegistry(ctx, c2sptlog.DnsidManagedVerificationConfig{})
+		return c2sptlog.NewDnsidManagedVerificationRegistry(ctx, c2sptlog.DnsidManagedVerificationConfig{Transport: transport})
 	}
 	return c2sptlog.NewVerificationRegistry(ctx, c2sptlog.VerificationRegistryConfig{
 		TrustProfile:      t.Profile,

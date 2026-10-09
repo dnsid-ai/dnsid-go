@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+- Load strict non-secret deployment files and select linked optional key providers, including existing AWS KMS keys.
+- Read authenticated organization onboarding through the registry client.
+
+### Bug Fixes
+
+- Apply deployment transport settings to managed log verification.
+- Replace operational key sources as a group when merging configuration.
+- Keep empty deployment identity sections verification-only.
+
 ## [0.38.0] - 2026-10-07
 
 ### Features
