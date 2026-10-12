@@ -299,7 +299,7 @@ func LogEventFromEntry(entry []byte) (eventResult dnsidlog.LogEvent, errResult e
 LogEventFromEntry parses stored entry bytes into the shared lifecycle event representation. The entry must be canonical JCS with a complete, well\-formed signature set and valid lifecycle fields; the signatures themselves are not cryptographically verified.
 
 <a name="NewDnsidManagedVerificationRegistry"></a>
-## func [NewDnsidManagedVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L75>)
+## func [NewDnsidManagedVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L78>)
 
 ```go
 func NewDnsidManagedVerificationRegistry(ctx context.Context, config DnsidManagedVerificationConfig) (*dnsidlog.LogRegistry, error)
@@ -752,12 +752,15 @@ type CompleteSource interface {
 ```
 
 <a name="DnsidManagedVerificationConfig"></a>
-## type [DnsidManagedVerificationConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L40-L47>)
+## type [DnsidManagedVerificationConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_verification_registry.go#L40-L50>)
 
 DnsidManagedVerificationConfig configures shared infrastructure for NewDnsidManagedVerificationRegistry. Trust roots, freshness, resource limits, and bundle requirements are fixed by the managed catalog; callers needing different policy use NewVerificationRegistry.
 
 ```go
 type DnsidManagedVerificationConfig struct {
+    // Transport applies deployment controls to SDK-managed public log reads.
+    // An explicit ResourceFetcher remains caller-owned and takes precedence.
+    Transport dnsid.TransportConfig
     // ResourceFetcher is shared by every managed log reader. When nil, the
     // standard safe bounded fetcher is used.
     ResourceFetcher BoundedResourceFetcher

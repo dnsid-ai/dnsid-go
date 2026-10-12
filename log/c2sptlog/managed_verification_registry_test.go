@@ -2,7 +2,10 @@ package c2sptlog
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
+
+	dnsid "github.com/dnsid-ai/dnsid-go"
 )
 
 const (
@@ -134,5 +137,15 @@ func TestDnsidManagedVerificationRegistryValidatesCatalog(t *testing.T) {
 				t.Fatal("managed registry accepted invalid catalog")
 			}
 		})
+	}
+}
+
+func TestDnsidManagedVerificationRegistry_HonorsTransport(t *testing.T) {
+	transport := dnsid.TransportConfig{CABundlePath: filepath.Join(t.TempDir(), "missing.pem")}
+	if _, err := NewDnsidManagedVerificationRegistry(context.Background(), DnsidManagedVerificationConfig{Transport: transport}); err == nil {
+		t.Fatal("deployment transport ignored")
+	}
+	if _, err := NewDnsidManagedVerificationRegistry(context.Background(), DnsidManagedVerificationConfig{Transport: transport, ResourceFetcher: &testBoundedFetcher{}}); err != nil {
+		t.Fatal("explicit fetcher should override SDK transport:", err)
 	}
 }

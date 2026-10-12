@@ -102,6 +102,7 @@ PublicationConfig dnsid-registry
 EventListOptions dnsid-registry
 EventListResponse dnsid-registry
 HTTPRegistryClient dnsid-registry
+OrganizationOnboardingResponse dnsid-registry
 IdentityRecordRequest dnsid-registry
 IdentityRecordResponse dnsid-registry
 KeyRotationPreparationRequest dnsid-registry

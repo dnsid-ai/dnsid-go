@@ -32,26 +32,32 @@ jobs:
         run: |
           go test ./...
           (cd key/aws && go test ./...)
+          (cd examples/deployment-identity && go test ./...)
 
   release-gates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Use the latest security patch supported by the pinned linter, which
+      # cannot read Go 1.27 export data. The test matrix still covers stable Go.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "stable"
+          go-version: "1.26.x"
+          check-latest: true
           cache: true
 
       - name: Run static analysis
         run: |
           go vet ./...
           (cd key/aws && go vet ./...)
+          (cd examples/deployment-identity && go vet ./...)
           go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
           (cd key/aws && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
+          (cd examples/deployment-identity && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
 
-      # Config lives in .golangci.yml at the repo root; the key/aws module is a
-      # separate go.mod and needs its own invocation.
+      # Config lives in .golangci.yml at the repo root; nested modules need
+      # their own invocations.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13.1
@@ -61,15 +67,22 @@ jobs:
           version: v2.13.1
           working-directory: key/aws
 
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.1
+          working-directory: examples/deployment-identity
+
       - name: Run race tests
         run: |
           go test -race ./...
           (cd key/aws && go test -race ./...)
+          (cd examples/deployment-identity && go test -race ./...)
 
       - name: Check module files are tidy
         run: |
           go mod tidy -diff
           (cd key/aws && go mod tidy -diff)
+          (cd examples/deployment-identity && go mod tidy -diff)
 
   docs:
     runs-on: ubuntu-latest

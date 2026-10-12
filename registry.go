@@ -852,6 +852,32 @@ func (c *HTTPRegistryClient) GetAgentStatus(ctx context.Context, fqdn string) (*
 	return registryJSON[AgentDetail](c, ctx, http.MethodGet, "/api/v1/agent/"+url.PathEscape(fqdn)+"/status", nil)
 }
 
+// OrganizationOnboardingResponse contains authenticated account bindings and
+// live proof/delegation readiness, not an entity-key URL or trust root.
+type OrganizationOnboardingResponse struct {
+	OrganizationID   string `json:"org_id"`
+	GovernanceDomain string `json:"governance_domain"`
+	GI               *struct {
+		Domain         string `json:"domain"`
+		State          string `json:"state"`
+		GateAuthorized bool   `json:"gate_authorized"`
+	} `json:"gi"`
+	EK struct {
+		Status string `json:"status"`
+	} `json:"ek"`
+}
+
+// GetOrganizationOnboarding reads the authenticated organization's onboarding
+// state using the client transport and caller deadline. It never falls back to
+// anonymous access or creates an agent.
+func (c *HTTPRegistryClient) GetOrganizationOnboarding(ctx context.Context) (*OrganizationOnboardingResponse, error) {
+	var response OrganizationOnboardingResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/org/onboarding", nil, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 // GetRegistration returns normalized registry workflow state for fqdn,
 // mapping the registry's managed mode ("self" or "dnsid") to a
 // PublicationAuthority. It returns a *ValidationError for unknown managed

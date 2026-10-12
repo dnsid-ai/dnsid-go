@@ -38,6 +38,9 @@ const (
 // and bundle requirements are fixed by the managed catalog; callers needing
 // different policy use NewVerificationRegistry.
 type DnsidManagedVerificationConfig struct {
+	// Transport applies deployment controls to SDK-managed public log reads.
+	// An explicit ResourceFetcher remains caller-owned and takes precedence.
+	Transport dnsid.TransportConfig
 	// ResourceFetcher is shared by every managed log reader. When nil, the
 	// standard safe bounded fetcher is used.
 	ResourceFetcher BoundedResourceFetcher
@@ -83,7 +86,7 @@ func newDnsidManagedVerificationRegistry(ctx context.Context, config DnsidManage
 	fetcher := config.ResourceFetcher
 	if fetcher == nil {
 		var err error
-		fetcher, err = factoryResourceFetcher(VerificationRegistryConfig{})
+		fetcher, err = factoryResourceFetcher(VerificationRegistryConfig{Transport: config.Transport})
 		if err != nil {
 			return nil, err
 		}
