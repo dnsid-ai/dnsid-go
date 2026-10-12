@@ -3,8 +3,8 @@ module github.com/dnsid-ai/dnsid-go/examples/deployment-identity
 go 1.26.6
 
 require (
-	github.com/dnsid-ai/dnsid-go v0.38.0
-	github.com/dnsid-ai/dnsid-go/key/aws v0.38.0
+	github.com/dnsid-ai/dnsid-go v0.39.0
+	github.com/dnsid-ai/dnsid-go/key/aws v0.39.0
 )
 
 require (

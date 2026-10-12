@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.39.0] - 2026-10-12
+
+### Features
+
+- feat: server-compatible SDK registration groundwork ([#61](https://github.com/dnsid-ai/dnsid-go/pull/61))
+
+### Bug Fixes
+
+- fix: update deployment example dependencies in release PRs ([#66](https://github.com/dnsid-ai/dnsid-go/pull/66))
+
+### Documentation
+
+- docs: add trust policy setup example ([#63](https://github.com/dnsid-ai/dnsid-go/pull/63))
+
 ## [Unreleased]
 
 ### Features
