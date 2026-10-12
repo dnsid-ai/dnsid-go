@@ -9,7 +9,7 @@ description: "Typed errors and verification codes returned across the SDK."
 
 Part of the root package `github.com/dnsid-ai/dnsid-go` — see [Core: IdentityManager](https://docs.dnsid.ai/reference/go/dnsid) for the package overview.
 
-## func [MissingRequiredField](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L139>)
+## func [MissingRequiredField](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L141>)
 
 ```go
 func MissingRequiredField(rec *TXTRecord) string
