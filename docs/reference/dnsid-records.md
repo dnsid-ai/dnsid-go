@@ -261,7 +261,7 @@ const (
 ```
 
 <a name="PreparedRegistryEvent"></a>
-## type [TXTRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L103-L115>)
+## type [TXTRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L103-L117>)
 
 TXTRecord represents a parsed \_dnsid TXT record.
 
@@ -278,11 +278,12 @@ type TXTRecord struct {
     KeyAge       string            // ka= — key age policy (empty if absent)
     Capabilities string            // cu= — Agent Card URL (empty if absent)
     UnknownTags  map[string]string // syntactically valid extension tags, preserved but ignored semantically
+    // contains filtered or unexported fields
 }
 ```
 
 <a name="ParseTXTRecord"></a>
-### func [ParseTXTRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L428>)
+### func [ParseTXTRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L435>)
 
 ```go
 func ParseTXTRecord(txt string) (*TXTRecord, error)
@@ -291,7 +292,7 @@ func ParseTXTRecord(txt string) (*TXTRecord, error)
 ParseTXTRecord parses a concatenated TXT record string into a TXTRecord.
 
 <a name="ParseUnsignedCanonical"></a>
-### func [ParseUnsignedCanonical](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L435>)
+### func [ParseUnsignedCanonical](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L442>)
 
 ```go
 func ParseUnsignedCanonical(txt string) (*TXTRecord, error)
@@ -309,7 +310,7 @@ func (r *TXTRecord) Canonical() string
 Canonical returns the canonical string used for TXT\-record signature verification.
 
 <a name="TXTRecord.CanonicalContent"></a>
-### func \(\*TXTRecord\) [CanonicalContent](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L279>)
+### func \(\*TXTRecord\) [CanonicalContent](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L286>)
 
 ```go
 func (r *TXTRecord) CanonicalContent() []byte
@@ -318,7 +319,7 @@ func (r *TXTRecord) CanonicalContent() []byte
 CanonicalContent returns the canonical byte string for signing under the record's declared profile. Values are signed as raw ASCII TXT tag values.
 
 <a name="TXTRecord.KnownTagsCanonical"></a>
-### func \(\*TXTRecord\) [KnownTagsCanonical](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L268>)
+### func \(\*TXTRecord\) [KnownTagsCanonical](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L275>)
 
 ```go
 func (r *TXTRecord) KnownTagsCanonical() []byte
@@ -327,7 +328,7 @@ func (r *TXTRecord) KnownTagsCanonical() []byte
 KnownTagsCanonical returns the canonical byte string for known TXT tags only, excluding sg=. Unknown extension tags are ignored.
 
 <a name="TXTRecord.MarshalTXT"></a>
-### func \(\*TXTRecord\) [MarshalTXT](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L291>)
+### func \(\*TXTRecord\) [MarshalTXT](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L298>)
 
 ```go
 func (r *TXTRecord) MarshalTXT() (string, error)
@@ -345,13 +346,13 @@ func (r *TXTRecord) Serialize() string
 Serialize serializes the record as one \_dnsid TXT value.
 
 <a name="TXTRecord.Tags"></a>
-### func \(\*TXTRecord\) [Tags](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L217>)
+### func \(\*TXTRecord\) [Tags](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L219>)
 
 ```go
 func (r *TXTRecord) Tags() map[string]string
 ```
 
-Tags returns the record's tag\-value pairs as a map, excluding empty optional fields. It always emits the current wire tag names.
+Tags returns the record's tag\-value pairs as a map, preserving parsed empty tags but omitting unset optional fields on SDK\-created records.
 
 <a name="TXTRecord.Validate"></a>
 ### func \(\*TXTRecord\) [Validate](<https://github.com/dnsid-ai/dnsid-go/blob/main/txt_record.go#L31>)
@@ -363,7 +364,7 @@ func (r *TXTRecord) Validate(identityFQDN string) error
 Validate checks record\-level semantics with identity\-domain context.
 
 <a name="TXTRecord.WithSignature"></a>
-### func \(\*TXTRecord\) [WithSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L191>)
+### func \(\*TXTRecord\) [WithSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L193>)
 
 ```go
 func (r *TXTRecord) WithSignature(sig string) *TXTRecord

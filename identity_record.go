@@ -112,6 +112,8 @@ type TXTRecord struct {
 	KeyAge       string            // ka= — key age policy (empty if absent)
 	Capabilities string            // cu= — Agent Card URL (empty if absent)
 	UnknownTags  map[string]string // syntactically valid extension tags, preserved but ignored semantically
+
+	parsedTags map[string]string // immutable parsed tag presence; values come from the current fields
 }
 
 // RegistrantDomain returns the registrant domain for use as gi=.
@@ -203,8 +205,8 @@ func (r *TXTRecord) WithSignature(sig string) *TXTRecord {
 	return &copied
 }
 
-// Tags returns the record's tag-value pairs as a map, excluding empty optional
-// fields. It always emits the current wire tag names.
+// Tags returns the record's tag-value pairs as a map, preserving parsed empty
+// tags but omitting unset optional fields on SDK-created records.
 func Tags(rec *TXTRecord) map[string]string {
 	if rec == nil {
 		return map[string]string{}
@@ -212,12 +214,17 @@ func Tags(rec *TXTRecord) map[string]string {
 	return rec.Tags()
 }
 
-// Tags returns the record's tag-value pairs as a map, excluding empty optional
-// fields. It always emits the current wire tag names.
+// Tags returns the record's tag-value pairs as a map, preserving parsed empty
+// tags but omitting unset optional fields on SDK-created records.
 func (r *TXTRecord) Tags() map[string]string {
 	tags := make(map[string]string)
 	if r == nil {
 		return tags
+	}
+	for name := range r.parsedTags {
+		if name == irTagVersion || isKnownIdentityRecordTag(name) {
+			tags[name] = recordValueForTag(r, name)
+		}
 	}
 	if r.Version != "" {
 		tags[irTagVersion] = r.Version
@@ -540,6 +547,7 @@ func parseUnsignedCanonicalAlpha(txt string) (*TXTRecord, error) {
 		KeyAge:       ka,
 		Capabilities: tags[irTagCapabilities],
 		UnknownTags:  copyStringMap(unknownTags),
+		parsedTags:   tags,
 	}
 
 	if got := string(rec.CanonicalContent()); got != txt {
@@ -648,6 +656,7 @@ func parseTXTRecord(txt string, requireSignature bool) (*TXTRecord, error) {
 		KeyAge:       ka,
 		Capabilities: tags[irTagCapabilities],
 		UnknownTags:  copyStringMap(unknownTags),
+		parsedTags:   tags,
 	}, nil
 }
 

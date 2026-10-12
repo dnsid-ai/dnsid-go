@@ -198,7 +198,7 @@ NormalizeFQDN returns the canonical form of the given DNS name:
 Returns the normalized FQDN or a non\-nil error if input is invalid.
 
 <a name="ParseJWKSet"></a>
-## func [RegistrantDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L122>)
+## func [RegistrantDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L124>)
 
 ```go
 func RegistrantDomain(domain string) string
@@ -218,13 +218,13 @@ func SafeDialerTransport() *http.Transport
 SafeDialerTransport returns an HTTP transport that resolves a hostname once, validates every returned IP address, and dials a concrete validated IP.
 
 <a name="SignLogEventWithKey"></a>
-## func [Tags](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L208>)
+## func [Tags](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L210>)
 
 ```go
 func Tags(rec *TXTRecord) map[string]string
 ```
 
-Tags returns the record's tag\-value pairs as a map, excluding empty optional fields. It always emits the current wire tag names.
+Tags returns the record's tag\-value pairs as a map, preserving parsed empty tags but omitting unset optional fields on SDK\-created records.
 
 <a name="VerificationContext"></a>
 ## func [VerificationContext](<https://github.com/dnsid-ai/dnsid-go/blob/main/verification_context.go#L14>)
