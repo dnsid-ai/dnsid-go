@@ -477,7 +477,9 @@ func TestHTTPRegistryClient_CreateAgentValidatesEnvironment(t *testing.T) {
 		if domain == "" {
 			domain = "assigned.zone.example"
 		}
-		json.NewEncoder(w).Encode(CreateAgentResponse{ID: "id-1", Domain: domain, PublicationConfig: registrationTestConfig()})
+		publication := registrationTestConfig()
+		publication.KeyURL = "https://" + domain + "/keys"
+		json.NewEncoder(w).Encode(CreateAgentResponse{ID: "id-1", Domain: domain, PublicationConfig: publication})
 	}))
 	defer srv.Close()
 

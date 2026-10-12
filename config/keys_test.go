@@ -43,7 +43,7 @@ func TestKeySource_LoadMergeAndFactorySelection(t *testing.T) {
 		t.Fatalf("factory selection: %v", err)
 	}
 	loaded.Dnsid.Identity = &dnsid.IdentityConfig{Domain: "agent.example", GovernanceID: "account.example", EntityKeyURL: "https://account.example/ek", KeyURL: "https://agent.example/keys", StatusURL: "https://agent.example/status", LogRef: "c2sp-tlog:testnet:https://log.example#issuance_AAAAAAAAAAAAAAAAAAAAAA"}
-	manager, err := Construct(context.Background(), loaded, Dependencies{})
+	manager, err := Construct(context.Background(), loaded, publicationDependencies(t, provider, *loaded.Dnsid.Identity))
 	if err != nil || manager.KeyProvider() != provider || calls != 2 {
 		t.Fatalf("Construct did not select linked provider: %v", err)
 	}

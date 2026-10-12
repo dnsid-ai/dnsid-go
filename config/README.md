@@ -40,9 +40,11 @@ Use an immutable signing-key ARN, not an alias. AWS credentials come from the
 standard chain (optional `profile` names a credential source); grant
 `kms:GetPublicKey` and `kms:Sign`. Installing without importing does not link a
 factory. Missing providers fail before key/policy access, without file fallback.
-`Construct` has no persisted identity state. Callers must check an established
-identity's signer binding before using a different key source; configuration alone
-does not authorize rotation.
+Before returning a configuration-selected signer, `Construct` verifies local
+signed publication and matches its operational key ID, algorithm, and thumbprint.
+A changed key source cannot replace an established signer without explicit rotation.
+This requires reachable publication and the appropriate log reader. Injected key
+providers retain precedence and are the responsibility of the caller's workflow.
 
 These configuration/provider and onboarding APIs work with the existing server.
 Named creation and automatic permanent recovery are separate workflow changes.

@@ -852,6 +852,10 @@ func (c *Client) verifyCompleteCheckpoint(history CompleteHistoryResult) (*Verif
 // must match the reference, and the entry must appear in the domain's
 // verified lifecycle history; otherwise an error is returned.
 func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsidlog.LogEvent, err error) {
+	return c.readEvent(ctx, ref, nil)
+}
+
+func (c *Client) readEvent(ctx context.Context, ref dnsidlog.LogRef, expected []byte) (event dnsidlog.LogEvent, err error) {
 	ctx, cancel := dnsid.VerificationContext(ctx)
 	defer cancel()
 	defer func() {
@@ -873,6 +877,9 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 	proven, err := c.source.ReadEvent(ctx, ref)
 	if err != nil {
 		return dnsidlog.LogEvent{}, logVerificationError(err, true)
+	}
+	if expected != nil && string(proven.Entry) != string(expected) {
+		return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: accepted entry does not match saved rotation bytes")
 	}
 	if proven.Index != wantIndex {
 		return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog proof index %d does not match final ref index %d", proven.Index, wantIndex)

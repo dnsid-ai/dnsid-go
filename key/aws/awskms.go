@@ -28,8 +28,11 @@ const rawSignLimit = 4096
 // capture it with [Provider.State] and supply it back through [Config.State]
 // when reconstructing the provider.
 type State struct {
-	// ActiveKeyID identifies the KMS key used by Sign. Required.
+	// ActiveKeyID identifies the KMS key used by Sign. Required unless Inactive.
 	ActiveKeyID string
+
+	// Inactive permits recovery after cross-provider supersession.
+	Inactive bool
 
 	// RetainedKeyIDs identify previously active keys that are still
 	// published for verification.
@@ -40,10 +43,10 @@ type State struct {
 }
 
 // Config configures a [Provider]. The zero value is not usable on its own:
-// State.ActiveKeyID must identify an existing KMS signing key. [Load] applies
+// State.ActiveKeyID must identify an existing KMS signing key unless Inactive. [Load] applies
 // the defaults documented on each field.
 type Config struct {
-	// State is the initial rotation state. State.ActiveKeyID is required.
+	// State is the initial rotation state. ActiveKeyID is required unless Inactive.
 	State State
 
 	// Algorithm is the KMS signing algorithm used for every signing
@@ -225,14 +228,17 @@ type Provider struct {
 // the defaults documented on [Config], then canonicalizes every key ID in
 // cfg.State against KMS, verifying that each key exists, is a SIGN_VERIFY key
 // of the configured key spec, and supports the configured signing algorithm.
-// It returns an error if client is nil, cfg.State.ActiveKeyID is empty, the
+// It returns an error if client is nil, an active state has no ActiveKeyID, the
 // algorithm is unsupported, cfg.KeySpec does not match the algorithm, or any
 // state key fails validation.
 func Load(ctx context.Context, client Client, cfg Config) (*Provider, error) {
 	if client == nil {
 		return nil, fmt.Errorf("dnsid/awskms: nil client")
 	}
-	if cfg.State.ActiveKeyID == "" {
+	if cfg.State.Inactive && cfg.State.ActiveKeyID != "" {
+		return nil, fmt.Errorf("dnsid/awskms: inactive state cannot have an active key ID")
+	}
+	if cfg.State.ActiveKeyID == "" && !cfg.State.Inactive {
 		return nil, fmt.Errorf("dnsid/awskms: active key ID is required")
 	}
 	if cfg.Algorithm == "" {
@@ -293,7 +299,7 @@ func (p *Provider) JWKWithError(kidOpt ...string) (jwk.Key, error) {
 	if len(kidOpt) > 0 {
 		kid = kidOpt[0]
 	}
-	if kid != p.state.ActiveKeyID && !contains(p.state.RetainedKeyIDs, kid) && !contains(p.state.PendingKeyIDs, kid) {
+	if kid == "" || (kid != p.state.ActiveKeyID && !contains(p.state.RetainedKeyIDs, kid) && !contains(p.state.PendingKeyIDs, kid)) {
 		p.mu.RUnlock()
 		return nil, nil
 	}
@@ -313,7 +319,11 @@ func (p *Provider) JWKWithError(kidOpt ...string) (jwk.Key, error) {
 func (p *Provider) ListKeyIds() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return append([]string{p.state.ActiveKeyID}, p.state.RetainedKeyIDs...)
+	ids := append([]string(nil), p.state.RetainedKeyIDs...)
+	if p.state.ActiveKeyID != "" {
+		ids = append([]string{p.state.ActiveKeyID}, ids...)
+	}
+	return ids
 }
 
 // Sign signs payload with the active key using the configured algorithm,
@@ -327,6 +337,9 @@ func (p *Provider) Sign(payload []byte) (*dnsid.KeySignature, error) {
 	p.mu.RLock()
 	kid := p.state.ActiveKeyID
 	p.mu.RUnlock()
+	if kid == "" {
+		return nil, dnsid.NewArgumentError("dnsid/awskms: no active signing key", nil)
+	}
 	return p.signKey(kid, payload)
 }
 
@@ -443,29 +456,26 @@ func (p *Provider) Activate(kid string) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if canonical == p.state.ActiveKeyID {
+		return nil
+	}
 	idx := indexOf(p.state.PendingKeyIDs, canonical)
 	if idx < 0 {
 		return fmt.Errorf("dnsid/awskms: no pending key %q", kid)
 	}
 	p.state.PendingKeyIDs = append(p.state.PendingKeyIDs[:idx], p.state.PendingKeyIDs[idx+1:]...)
-	p.state.RetainedKeyIDs = append(p.state.RetainedKeyIDs, p.state.ActiveKeyID)
+	if p.state.ActiveKeyID != "" {
+		p.state.RetainedKeyIDs = append(p.state.RetainedKeyIDs, p.state.ActiveKeyID)
+	}
 	p.state.ActiveKeyID = canonical
+	p.state.Inactive = false
 	return nil
 }
 
-// Supersede removes a retained key after a completed rotation, implementing
-// [dnsid.KeyProvider]. The kid must be the canonical form reported by
-// [Provider.State] or [Provider.ListKeyIds]; if it does not name a retained
-// key, Supersede returns an argument error. Removal follows the rules
-// documented on [Provider.Purge].
+// Supersede removes the previous active or retained key after rotation.
+// Removing the active key makes this provider inactive for cross-provider recovery.
 func (p *Provider) Supersede(kid string) error {
-	p.mu.RLock()
-	retained := contains(p.state.RetainedKeyIDs, kid)
-	p.mu.RUnlock()
-	if !retained {
-		return dnsid.NewArgumentError(fmt.Sprintf("dnsid/awskms: no retained key %q", kid), nil)
-	}
-	return p.Purge(kid)
+	return p.purge(kid, true)
 }
 
 // Purge removes a pending or retained key, implementing [dnsid.KeyProvider].
@@ -475,14 +485,23 @@ func (p *Provider) Supersede(kid string) error {
 // Config.DeletionWindowInDays days; if scheduling fails, the key is restored
 // to its previous list and the error is returned.
 func (p *Provider) Purge(kid string) error {
+	return p.purge(kid, false)
+}
+
+func (p *Provider) purge(kid string, supersede bool) error {
 	p.mu.Lock()
+	if supersede && kid != "" && kid == p.state.ActiveKeyID {
+		p.state.ActiveKeyID = ""
+		p.state.Inactive = true
+		p.state.RetainedKeyIDs = append(p.state.RetainedKeyIDs, kid)
+	}
 	if kid == p.state.ActiveKeyID {
 		p.mu.Unlock()
 		return fmt.Errorf("dnsid/awskms: cannot purge active key")
 	}
 	retainedIdx := indexOf(p.state.RetainedKeyIDs, kid)
 	pendingIdx := indexOf(p.state.PendingKeyIDs, kid)
-	if retainedIdx < 0 && pendingIdx < 0 {
+	if (retainedIdx < 0 && pendingIdx < 0) || (supersede && retainedIdx < 0) {
 		p.mu.Unlock()
 		return fmt.Errorf("dnsid/awskms: no pending or retained key %q", kid)
 	}
@@ -517,11 +536,13 @@ func (p *Provider) Purge(kid string) error {
 }
 
 func (p *Provider) canonicalizeState(ctx context.Context) error {
-	active, err := p.canonicalKid(ctx, p.state.ActiveKeyID)
-	if err != nil {
-		return err
+	var err error
+	if p.state.ActiveKeyID != "" {
+		p.state.ActiveKeyID, err = p.canonicalKid(ctx, p.state.ActiveKeyID)
+		if err != nil {
+			return err
+		}
 	}
-	p.state.ActiveKeyID = active
 	for i, kid := range p.state.RetainedKeyIDs {
 		p.state.RetainedKeyIDs[i], err = p.canonicalKid(ctx, kid)
 		if err != nil {

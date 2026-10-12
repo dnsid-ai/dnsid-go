@@ -28,14 +28,23 @@ func TestOIDC_StrictCompactAndDateBoundaries(t *testing.T) {
 			t.Fatalf("fraction/zero lost: %v", v)
 		}
 	}
-	now := float64(time.Now().UnixNano()) / 1e9
+	// Float64 epoch seconds can round a wall-clock sample into the future.
+	at := time.Unix(1700000000, 125000000)
+	now := float64(at.Unix()) + .125
 	for _, claims := range []map[string]any{{"iat": now - 1, "exp": now}, {"iat": now + .1, "exp": now + 60}, {"iat": now - 1, "exp": now + 60, "nbf": now + .1}} {
-		if err := validateTimes(claims, 0); err == nil {
+		if err := validateTimesAt(claims, 0, at); err == nil {
 			t.Fatalf("accepted invalid time %v", claims)
 		}
 	}
-	if err := validateTimes(map[string]any{"iat": now - 1, "exp": now}, time.Hour); err == nil {
+	if err := validateTimesAt(map[string]any{"iat": now - 1, "exp": now}, time.Hour, at); err == nil {
 		t.Fatal("skew extended expiry")
+	}
+	claims := map[string]any{"iat": now - 1, "exp": now}
+	for _, offset := range []time.Duration{-time.Nanosecond, 0, time.Nanosecond} {
+		err := validateTimesAt(claims, time.Hour, at.Add(offset))
+		if (err == nil) != (offset < 0) {
+			t.Fatalf("expiry boundary %s: %v", offset, err)
+		}
 	}
 	for _, cfg := range []Config{{ClockSkew: -1}, {AssertionLifetime: -1}, {MaxAssertionLifetime: -1}, Config{}.WithAssertionLifetime(0), Config{}.WithMaxAssertionLifetime(0)} {
 		if _, err := New(nil, "example.com", dnsid.GenerateES256KeyProvider(), cfg).CreateOIDCAssertion(OIDCAssertionOptions{Issuer: "https://issuer.example"}); err == nil {

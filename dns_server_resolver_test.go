@@ -13,14 +13,16 @@ import (
 
 func TestNetDNSResolverUsesWireTTL(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		ttl      uint32
-		aliasTTL uint32
-		want     time.Duration
+		name        string
+		ttl         uint32
+		aliasTTL    uint32
+		want        time.Duration
+		unavailable bool
 	}{
-		{"ordinary", 17, 0, 17 * time.Second},
-		{"alias", 90, 4, 4 * time.Second},
-		{"zero", 0, 0, 0},
+		{"ordinary", 17, 0, 17 * time.Second, false},
+		{"alias", 90, 4, 4 * time.Second, false},
+		{"zero", 0, 0, 0, false},
+		{"unavailable", 60, 0, 0, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -53,7 +55,11 @@ func TestNetDNSResolverUsesWireTTL(t *testing.T) {
 					if tc.aliasTTL > 0 {
 						msg.Answers = append(msg.Answers, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: q.Name, Class: dnsmessage.ClassINET, TTL: tc.aliasTTL}, Body: &dnsmessage.CNAMEResource{CNAME: dnsmessage.MustNewName("target.example.com.")}})
 					}
-					msg.Answers = append(msg.Answers, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: q.Name, Class: dnsmessage.ClassINET, TTL: tc.ttl}, Body: &dnsmessage.TXTResource{TXT: []string{"first", "second"}}})
+					class := dnsmessage.ClassINET
+					if tc.unavailable {
+						class = dnsmessage.ClassCHAOS
+					}
+					msg.Answers = append(msg.Answers, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: q.Name, Class: class, TTL: tc.ttl}, Body: &dnsmessage.TXTResource{TXT: []string{"first", "second"}}})
 					answer, err := msg.Pack()
 					if err == nil {
 						server.WriteTo(answer, addr)

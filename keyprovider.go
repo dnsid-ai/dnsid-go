@@ -45,7 +45,8 @@ type KeyProvider interface {
 	// Activate promotes kid to active and retains the previous active key.
 	Activate(kid string) error
 
-	// Supersede removes a retained key after a completed rotation.
+	// Supersede removes the previous key after rotation, including an active
+	// key when application signing has moved to a different provider.
 	Supersede(kid string) error
 
 	// Purge removes a pending or retained key.
@@ -115,8 +116,10 @@ func NewLocalKeyProvider(path string) (*LocalKeyProvider, error) {
 	kp := &LocalKeyProvider{keys: make(map[string]*localKeyEntry), path: path}
 	var store localKeyStoreFile
 	if err := json.Unmarshal(data, &store); err == nil && len(store.Active) != 0 {
-		if err := kp.addKeyJSON(store.Active, localKeyActive); err != nil {
-			return nil, NewParseError("dnsid: parsing active key", err)
+		if string(store.Active) != "null" {
+			if err := kp.addKeyJSON(store.Active, localKeyActive); err != nil {
+				return nil, NewParseError("dnsid: parsing active key", err)
+			}
 		}
 		for _, raw := range store.Retained {
 			if err := kp.addKeyJSON(raw, localKeyRetained); err != nil {
@@ -688,30 +691,32 @@ func (p *LocalKeyProvider) Activate(kid string) error {
 	return nil
 }
 
-// Supersede removes a retained key after a completed rotation. It returns an
-// *ArgumentError when kid does not name a retained key.
+// Supersede removes the previous active or retained key after rotation.
+// Removing an active key leaves this provider without an application signer.
 func (p *LocalKeyProvider) Supersede(kid string) error {
-	p.mu.RLock()
-	entry := p.keys[kid]
-	p.mu.RUnlock()
-	if entry == nil || entry.state != localKeyRetained {
-		return NewArgumentError(fmt.Sprintf("dnsid: no retained key %q", kid), nil)
-	}
-	return p.Purge(kid)
+	return p.purge(kid, true)
 }
 
 // Purge removes a pending or retained key and persists the change. Purging
 // the active key or an unknown kid returns an *ArgumentError. On
 // ErrKeyStoreDurability the removal is not rolled back.
 func (p *LocalKeyProvider) Purge(kid string) error {
+	return p.purge(kid, false)
+}
+
+func (p *LocalKeyProvider) purge(kid string, supersede bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	entry := p.keys[kid]
 	if entry == nil {
 		return NewArgumentError(fmt.Sprintf("dnsid: unknown kid %q", kid), nil)
 	}
-	if entry.state == localKeyActive {
-		return NewArgumentError(fmt.Sprintf("dnsid: cannot purge active key %q", kid), nil)
+	if (entry.state == localKeyActive && !supersede) || (entry.state == localKeyPending && supersede) {
+		return NewArgumentError(fmt.Sprintf("dnsid: cannot remove key %q in state %q", kid, entry.state), nil)
+	}
+	oldActiveKid := p.activeKid
+	if p.activeKid == kid {
+		p.activeKid = ""
 	}
 	oldOrder := append([]string(nil), p.order...)
 	delete(p.keys, kid)
@@ -727,6 +732,7 @@ func (p *LocalKeyProvider) Purge(kid string) error {
 		}
 		p.keys[kid] = entry
 		p.order = oldOrder
+		p.activeKid = oldActiveKid
 		return err
 	}
 	return nil

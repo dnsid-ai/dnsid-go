@@ -38,7 +38,7 @@ func validateRegistrationCreation(req *CreateAgentRequest, response *CreateAgent
 	if gi != p.GovernanceID || (req.GovernanceDomain != "" && gi != req.GovernanceDomain) {
 		return NewValidationError("dnsid: registry returned mismatched governance identifier", nil)
 	}
-	return (IdentityConfig{Domain: domain, GovernanceID: p.GovernanceID, PublishProfile: p.PublishProfile, KeyURL: p.KeyURL, EntityKeyURL: p.EntityKeyURL, LogRef: p.LogRef, StatusURL: p.StatusURL, CapabilitiesURL: p.CapabilitiesURL, MaxKeyAge: KeyAge(p.MaxKeyAge)}).Validate()
+	return (&TXTRecord{Version: p.PublishProfile, GovernanceID: p.GovernanceID, KeyURI: p.KeyURL, EntityKeyURI: p.EntityKeyURL, LogRef: p.LogRef, StatusURI: p.StatusURL, Capabilities: p.CapabilitiesURL, KeyAge: p.MaxKeyAge}).validateUnsigned(domain)
 }
 
 // RegisterAgent creates an identity and reads publication authority from

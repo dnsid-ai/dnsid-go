@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
@@ -19,6 +20,10 @@ import (
 type ManagedKeyRotationState struct {
 	Domain                   string                  `json:"domain"`
 	LogReference             string                  `json:"log_reference"`
+	PreviousProviderRef      string                  `json:"previous_provider_ref"`
+	NewProviderRef           string                  `json:"new_provider_ref"`
+	PreviousAlgorithm        dnsid.JoseAlg           `json:"previous_algorithm"`
+	NewAlgorithm             dnsid.JoseAlg           `json:"new_algorithm"`
 	PreviousKid              string                  `json:"previous_kid"`
 	PreviousThumbprint       string                  `json:"previous_thumbprint"`
 	NewKid                   string                  `json:"new_kid"`
@@ -64,24 +69,45 @@ func (f ApplicationSigningControllerFunc) SetApplicationSigningPaused(ctx contex
 }
 
 // ManagedKeyRotationOptions configures a new managed operational-key rotation.
-// Store and ApplicationSigning are mandatory durability and safety boundaries.
+// Store, ApplicationSigning, PublicationVerifier and WireSigner are mandatory.
+// Provider references identify durable provider state, never credentials.
 type ManagedKeyRotationOptions struct {
-	Domain             string
-	Client             *Client
-	KeyProvider        dnsid.KeyProvider
-	RegistryClient     dnsid.RegistryPreparedEventClient
-	IdempotencyKey     string
-	Store              ManagedKeyRotationStore
-	ApplicationSigning ApplicationSigningController
+	Domain         string
+	Client         *Client
+	KeyProvider    dnsid.KeyProvider
+	TargetProvider dnsid.KeyProvider
+	// TargetAlgorithm defaults to the previous operational key's algorithm.
+	TargetAlgorithm     dnsid.JoseAlg
+	PreviousProviderRef string
+	NewProviderRef      string
+	PublicationVerifier LocalPublicationVerifier
+	WireSigner          func(context.Context, dnsid.KeyProvider) error
+	RegistryClient      dnsid.RegistryPreparedEventClient
+	IdempotencyKey      string
+	Store               ManagedKeyRotationStore
+	ApplicationSigning  ApplicationSigningController
 }
 
 // ResumeManagedKeyRotationOptions resumes a previously persisted rotation.
+// ResolveProvider must open saved provider state rather than deployment selections.
+// WireSigner installs the resolved active provider at the application boundary.
 type ResumeManagedKeyRotationOptions struct {
-	KeyProvider        dnsid.KeyProvider
-	RegistryClient     dnsid.RegistryPreparedEventClient
-	Rotation           *ManagedKeyRotationState
-	Store              ManagedKeyRotationStore
-	ApplicationSigning ApplicationSigningController
+	ResolveProvider     func(context.Context, string) (dnsid.KeyProvider, error)
+	Client              *Client
+	PublicationVerifier LocalPublicationVerifier
+	WireSigner          func(context.Context, dnsid.KeyProvider) error
+	RegistryClient      dnsid.RegistryPreparedEventClient
+	Rotation            *ManagedKeyRotationState
+	Store               ManagedKeyRotationStore
+	ApplicationSigning  ApplicationSigningController
+}
+
+// LocalPublicationVerifier verifies signed local publication and key continuity.
+// IdentityManager implements this interface.
+type LocalPublicationVerifier interface {
+	Domain() string
+	LogReference() string
+	VerifyLocalOperationalKey(context.Context, dnsid.KeyProvider, string) (*dnsid.VerifiedDomain, error)
 }
 
 // ManagedKeyRotationSubmissionError reports a submission or persistence
@@ -146,32 +172,60 @@ func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOpt
 	if err := validateManagedRotationDependencies(opts.KeyProvider, opts.RegistryClient, opts.Store, opts.ApplicationSigning); err != nil {
 		return nil, err
 	}
-	if opts.Client == nil {
-		return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog client is required", nil)
+	if opts.Client == nil || opts.PublicationVerifier == nil || opts.WireSigner == nil || strings.TrimSpace(opts.PreviousProviderRef) == "" {
+		return nil, dnsid.NewArgumentError("dnsid: rotation client, publication verifier, signer wiring and saved provider references are required", nil)
+	}
+	target := opts.TargetProvider
+	if target == nil {
+		target = opts.KeyProvider
+		if opts.NewProviderRef == "" {
+			opts.NewProviderRef = opts.PreviousProviderRef
+		} else if opts.NewProviderRef != opts.PreviousProviderRef {
+			return nil, dnsid.NewArgumentError("dnsid: a different provider reference requires an explicit target provider", nil)
+		}
+	}
+	if strings.TrimSpace(opts.NewProviderRef) == "" {
+		return nil, dnsid.NewArgumentError("dnsid: target provider reference is required", nil)
 	}
 	domain, err := dnsid.NormalizeFQDN(opts.Domain)
 	if err != nil {
 		return nil, err
 	}
+	if opts.PublicationVerifier.Domain() != domain || opts.PublicationVerifier.LogReference() != opts.Client.ref.String() {
+		return nil, dnsid.NewArgumentError("dnsid: publication verifier belongs to another identity", nil)
+	}
+	if opts.TargetProvider != nil && opts.PreviousProviderRef == opts.NewProviderRef {
+		return nil, dnsid.NewArgumentError("dnsid: explicit target requires a distinct stable provider reference", nil)
+	}
 	if err := validateManagedIdempotencyKey(opts.IdempotencyKey); err != nil {
 		return nil, err
+	}
+	if opts.TargetAlgorithm != "" && !opts.TargetAlgorithm.Valid() {
+		return nil, dnsid.NewArgumentError("dnsid: unsupported target signing algorithm", nil)
 	}
 	previousKey := opts.KeyProvider.JWK()
 	previousKid, previousThumb, algorithm, err := managedRotationKey(previousKey)
 	if err != nil {
 		return nil, err
 	}
-	newKid, err := opts.KeyProvider.GenerateKey(algorithm)
+	if _, err := opts.PublicationVerifier.VerifyLocalOperationalKey(ctx, opts.KeyProvider, previousKid); err != nil {
+		return nil, err
+	}
+	targetAlgorithm := opts.TargetAlgorithm
+	if targetAlgorithm == "" {
+		targetAlgorithm = algorithm
+	}
+	newKid, err := target.GenerateKey(targetAlgorithm)
 	if err != nil {
 		return nil, err
 	}
-	newKey := opts.KeyProvider.JWK(newKid)
-	providerNewKid, newThumb, _, err := managedRotationKey(newKey)
+	newKey := target.JWK(newKid)
+	providerNewKid, newThumb, newAlgorithm, err := managedRotationKey(newKey)
 	if err != nil {
 		return nil, err
 	}
-	if providerNewKid != newKid {
-		return nil, dnsid.NewValidationError("dnsid: generated pending key kid does not match the KeyProvider result", nil)
+	if providerNewKid != newKid || newAlgorithm != targetAlgorithm {
+		return nil, dnsid.NewValidationError("dnsid: generated pending key does not match the requested kid and algorithm", nil)
 	}
 	if newThumb == previousThumb {
 		return nil, dnsid.NewValidationError("dnsid: managed KEY_ROTATION requires a distinct pending operational key", nil)
@@ -195,7 +249,7 @@ func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOpt
 	if err != nil {
 		return nil, err
 	}
-	prepared, err = opts.Client.SignPreparedEventWithKey(ctx, prepared, SignerNewOperational, opts.KeyProvider, newKid)
+	prepared, err = opts.Client.SignPreparedEventWithKey(ctx, prepared, SignerNewOperational, target, newKid)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +261,10 @@ func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOpt
 	rotation := &ManagedKeyRotationState{
 		Domain:                   domain,
 		LogReference:             opts.Client.ref.String(),
+		PreviousProviderRef:      opts.PreviousProviderRef,
+		NewProviderRef:           opts.NewProviderRef,
+		PreviousAlgorithm:        algorithm,
+		NewAlgorithm:             newAlgorithm,
 		PreviousKid:              previousKid,
 		PreviousThumbprint:       previousThumb,
 		NewKid:                   newKid,
@@ -217,20 +275,20 @@ func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOpt
 		ApplicationSigningPaused: true,
 	}
 	if err := persistManagedRotation(ctx, opts.Store, rotation); err != nil {
-		return rotation, err
+		return rotation, &ManagedKeyRotationSubmissionError{Rotation: cloneManagedRotation(rotation), State: dnsid.SubmissionStatePrepared, TransientFailure: true, RetrySameBytes: true, Err: err}
 	}
 	if err := opts.ApplicationSigning.SetApplicationSigningPaused(ctx, true); err != nil {
 		return rotation, &ManagedKeyRotationSubmissionError{Rotation: cloneManagedRotation(rotation), State: dnsid.SubmissionStatePrepared, TransientFailure: true, RetrySameBytes: true, Err: err}
 	}
-	return submitManagedRotation(ctx, opts.KeyProvider, opts.RegistryClient, rotation, opts.Store, opts.ApplicationSigning)
+	return submitManagedRotation(ctx, opts.KeyProvider, target, opts.Client, opts.PublicationVerifier, opts.WireSigner, opts.RegistryClient, rotation, opts.Store, opts.ApplicationSigning)
 }
 
 // ResumeManagedOperationalKeyRotation retries only a persisted rotation's
 // exact completed bytes and idempotency key, or finishes local reconciliation
 // after an accepted submission.
 func ResumeManagedOperationalKeyRotation(ctx context.Context, opts ResumeManagedKeyRotationOptions) (*ManagedKeyRotationState, error) {
-	if err := validateManagedRotationDependencies(opts.KeyProvider, opts.RegistryClient, opts.Store, opts.ApplicationSigning); err != nil {
-		return nil, err
+	if opts.ResolveProvider == nil || opts.Client == nil || opts.PublicationVerifier == nil || opts.WireSigner == nil || opts.Store == nil || opts.ApplicationSigning == nil || opts.RegistryClient == nil {
+		return nil, dnsid.NewArgumentError("dnsid: recovery requires saved-provider resolver, client, publication verifier and signer wiring", nil)
 	}
 	rotation := cloneManagedRotation(opts.Rotation)
 	if rotation == nil || rotation.Domain == "" || rotation.LogReference == "" || len(rotation.EntryBytes) == 0 || validateManagedIdempotencyKey(rotation.IdempotencyKey) != nil || rotation.PreviousKid == "" || rotation.PreviousThumbprint == "" || rotation.NewKid == "" || rotation.NewThumbprint == "" {
@@ -239,33 +297,41 @@ func ResumeManagedOperationalKeyRotation(ctx context.Context, opts ResumeManaged
 	if err := validatePersistedManagedRotation(rotation); err != nil {
 		return nil, dnsid.NewValidationError("dnsid: persisted managed key rotation state failed integrity validation", err)
 	}
-	if rotation.Activated {
-		if !rotation.ApplicationSigningPaused {
-			return rotation, nil
-		}
-		if err := opts.ApplicationSigning.SetApplicationSigningPaused(ctx, false); err != nil {
-			return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: err}
-		}
-		rotation.ApplicationSigningPaused = false
-		if err := persistManagedRotation(ctx, opts.Store, rotation); err != nil {
-			return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: err}
-		}
-		return rotation, nil
-	}
 	if rotation.Submission != nil && rotation.Submission.State == dnsid.SubmissionStateRejected {
 		return rotation, &ManagedKeyRotationSubmissionError{Rotation: cloneManagedRotation(rotation), State: dnsid.SubmissionStateRejected, RetrySameBytes: false, Err: fmt.Errorf("registry rejected the prepared KEY_ROTATION: %s", rotation.Submission.ErrorCode)}
 	}
 	if err := opts.ApplicationSigning.SetApplicationSigningPaused(ctx, true); err != nil {
-		state := dnsid.SubmissionStatePrepared
-		if rotation.Submission != nil {
-			state = rotation.Submission.State
-		}
-		return rotation, &ManagedKeyRotationSubmissionError{Rotation: cloneManagedRotation(rotation), State: state, TransientFailure: true, RetrySameBytes: true, Err: err}
+		return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: err}
 	}
-	return submitManagedRotation(ctx, opts.KeyProvider, opts.RegistryClient, rotation, opts.Store, opts.ApplicationSigning)
+	rotation.ApplicationSigningPaused = true
+	if opts.Client.ref.String() != rotation.LogReference {
+		return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: dnsid.NewValidationError("dnsid: recovery client mismatches saved log", nil)}
+	}
+	previous, err := opts.ResolveProvider(ctx, rotation.PreviousProviderRef)
+	if err != nil {
+		return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: err}
+	}
+	target := previous
+	if rotation.NewProviderRef != rotation.PreviousProviderRef {
+		target, err = opts.ResolveProvider(ctx, rotation.NewProviderRef)
+		if err != nil {
+			return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: err}
+		}
+	}
+	if previous == nil || target == nil {
+		return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: dnsid.NewValidationError("dnsid: saved rotation provider unavailable", nil)}
+	}
+	if err := validateManagedProviderBindings(previous, target, rotation); err != nil {
+		return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: err}
+	}
+
+	if rotation.Submission != nil && rotation.Submission.State == dnsid.SubmissionStateAccepted {
+		return activateManagedRotation(ctx, previous, target, opts.Client, opts.PublicationVerifier, opts.WireSigner, rotation, opts.Store, opts.ApplicationSigning)
+	}
+	return submitManagedRotation(ctx, previous, target, opts.Client, opts.PublicationVerifier, opts.WireSigner, opts.RegistryClient, rotation, opts.Store, opts.ApplicationSigning)
 }
 
-func submitManagedRotation(ctx context.Context, provider dnsid.KeyProvider, registry dnsid.RegistryPreparedEventClient, rotation *ManagedKeyRotationState, store ManagedKeyRotationStore, signing ApplicationSigningController) (*ManagedKeyRotationState, error) {
+func submitManagedRotation(ctx context.Context, previous, target dnsid.KeyProvider, client *Client, verifier LocalPublicationVerifier, wire func(context.Context, dnsid.KeyProvider) error, registry dnsid.RegistryPreparedEventClient, rotation *ManagedKeyRotationState, store ManagedKeyRotationStore, signing ApplicationSigningController) (*ManagedKeyRotationState, error) {
 	result, err := registry.SubmitPreparedEvent(ctx, rotation.Domain, append([]byte(nil), rotation.EntryBytes...), rotation.IdempotencyKey)
 	if err != nil {
 		state, transient, retry := managedSubmissionFailure(err)
@@ -291,8 +357,15 @@ func submitManagedRotation(ctx context.Context, provider dnsid.KeyProvider, regi
 		return next, nil
 	}
 
+	return activateManagedRotation(ctx, previous, target, client, verifier, wire, next, store, signing)
+}
+
+func activateManagedRotation(ctx context.Context, previous, target dnsid.KeyProvider, client *Client, verifier LocalPublicationVerifier, wire func(context.Context, dnsid.KeyProvider) error, next *ManagedKeyRotationState, store ManagedKeyRotationStore, signing ApplicationSigningController) (*ManagedKeyRotationState, error) {
 	recoverable := next
-	if err := reconcileManagedRotation(provider, next); err != nil {
+	if err := verifyManagedRotationPublication(ctx, client, verifier, target, next); err != nil {
+		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
+	}
+	if err := reconcileManagedRotation(previous, target, next); err != nil {
 		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
 	}
 	activated := cloneManagedRotation(next)
@@ -301,6 +374,9 @@ func submitManagedRotation(ctx context.Context, provider dnsid.KeyProvider, regi
 		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
 	}
 	recoverable = activated
+	if err := wire(ctx, target); err != nil {
+		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
+	}
 	if err := signing.SetApplicationSigningPaused(ctx, false); err != nil {
 		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
 	}
@@ -335,6 +411,17 @@ func validateManagedIdempotencyKey(key string) error {
 }
 
 func validatePersistedManagedRotation(rotation *ManagedKeyRotationState) error {
+	if rotation.Activated && (rotation.Submission == nil || rotation.Submission.State != dnsid.SubmissionStateAccepted) {
+		return fmt.Errorf("activated rotation is missing saved acceptance")
+	}
+	if rotation.Submission != nil {
+		if err := validateManagedSubmission(rotation, rotation.Submission); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(rotation.PreviousProviderRef) == "" || strings.TrimSpace(rotation.NewProviderRef) == "" || !rotation.PreviousAlgorithm.Valid() || !rotation.NewAlgorithm.Valid() {
+		return fmt.Errorf("persisted provider references and algorithms are required")
+	}
 	domain, err := dnsid.NormalizeFQDN(rotation.Domain)
 	if err != nil {
 		return fmt.Errorf("invalid persisted domain: %w", err)
@@ -357,21 +444,21 @@ func validatePersistedManagedRotation(rotation *ManagedKeyRotationState) error {
 	if err != nil {
 		return err
 	}
-	if bound, _ := payload["lr"].(string); bound != "" && bound != rotation.LogReference {
+	if bound, _ := payload["lr"].(string); bound != rotation.LogReference {
 		return fmt.Errorf("persisted entry belongs to a different log reference")
 	}
 	event, err := LogEventFromEntry(rotation.EntryBytes)
 	if err != nil {
 		return err
 	}
-	if event.Type != dnsidlog.LogEventKeyRotation || event.Domain != domain || event.PreviousOperationalThumbprint != rotation.PreviousThumbprint || event.NewOperationalThumbprint != rotation.NewThumbprint {
+	if event.Type != dnsidlog.LogEventKeyRotation || event.Domain != domain || event.PreviousOperationalKid != rotation.PreviousKid || event.PreviousOperationalThumbprint != rotation.PreviousThumbprint || event.NewOperationalThumbprint != rotation.NewThumbprint || event.PreviousOperationalSignature == "" || event.NewOperationalSignature == "" || rotation.NewThumbprint == rotation.PreviousThumbprint {
 		return fmt.Errorf("persisted rotation metadata does not match entry bytes")
 	}
-	newKid, newThumb, _, err := managedRotationKey(event.NewOperationalPublicKey)
+	newKid, newThumb, newAlg, err := managedRotationKey(event.NewOperationalPublicKey)
 	if err != nil {
 		return err
 	}
-	if newKid != rotation.NewKid || newThumb != rotation.NewThumbprint {
+	if newKid != rotation.NewKid || newThumb != rotation.NewThumbprint || newAlg != rotation.NewAlgorithm {
 		return fmt.Errorf("persisted new key does not match entry bytes")
 	}
 	return nil
@@ -457,43 +544,72 @@ func validateManagedSubmission(rotation *ManagedKeyRotationState, result *dnsid.
 	return nil
 }
 
-func reconcileManagedRotation(provider dnsid.KeyProvider, rotation *ManagedKeyRotationState) error {
-	active := provider.JWK()
-	if active == nil {
-		return dnsid.NewValidationError("dnsid: managed key rotation provider has no active key", nil)
+func verifyManagedRotationPublication(ctx context.Context, client *Client, verifier LocalPublicationVerifier, target dnsid.KeyProvider, rotation *ManagedKeyRotationState) error {
+	if rotation.Submission == nil || rotation.Submission.State != dnsid.SubmissionStateAccepted {
+		return dnsid.NewValidationError("dnsid: activation requires saved acceptance", nil)
 	}
-	activeKid, ok := active.KeyID()
-	if !ok || activeKid == "" {
-		return dnsid.NewValidationError("dnsid: managed key rotation provider has no active key", nil)
-	}
-	activeThumb, err := thumbprint(active)
-	if err != nil {
+	if err := validateManagedSubmission(rotation, rotation.Submission); err != nil {
 		return err
 	}
-	if activeKid == rotation.PreviousKid {
-		if activeThumb != rotation.PreviousThumbprint {
-			return dnsid.NewValidationError("dnsid: active key does not match the persisted previous key", nil)
-		}
-		pending := provider.JWK(rotation.NewKid)
-		if pending == nil {
-			return dnsid.NewValidationError("dnsid: pending key for the persisted managed rotation is unavailable", nil)
-		}
-		pendingThumb, err := thumbprint(pending)
-		if err != nil || pendingThumb != rotation.NewThumbprint {
-			return dnsid.NewValidationError("dnsid: pending key does not match the persisted managed rotation", err)
-		}
-		if err := provider.Activate(rotation.NewKid); err != nil {
-			return err
-		}
-	} else if activeKid != rotation.NewKid {
-		return dnsid.NewValidationError(fmt.Sprintf("dnsid: unexpected active key %q while reconciling managed key rotation", activeKid), nil)
-	} else if activeThumb != rotation.NewThumbprint {
-		return dnsid.NewValidationError("dnsid: active key does not match the persisted new key", nil)
+	if verifier.Domain() != rotation.Domain || verifier.LogReference() != rotation.LogReference {
+		return dnsid.NewValidationError("dnsid: publication verifier belongs to another identity", nil)
 	}
-	for _, kid := range provider.ListKeyIds() {
-		if kid == rotation.PreviousKid {
-			return provider.Supersede(rotation.PreviousKid)
+	if _, err := client.readEvent(ctx, dnsidlog.LogRef(rotation.Submission.LogRef), rotation.EntryBytes); err != nil {
+		return err
+	}
+	_, err := verifier.VerifyLocalOperationalKey(ctx, target, rotation.NewKid)
+	return err
+}
+
+func validateManagedProviderBindings(previous, target dnsid.KeyProvider, rotation *ManagedKeyRotationState) error {
+	pending := target.JWK(rotation.NewKid)
+	kid, thumb, alg, err := managedRotationKey(pending)
+	if err != nil || kid != rotation.NewKid || thumb != rotation.NewThumbprint || alg != rotation.NewAlgorithm {
+		return dnsid.NewValidationError("dnsid: saved target key binding is unavailable or changed", err)
+	}
+	// Supersession may already have removed the previous key after a crash.
+	old := previous.JWK(rotation.PreviousKid)
+	if rotation.PreviousProviderRef != rotation.NewProviderRef {
+		if active := previous.JWK(); active != nil {
+			kid, thumb, alg, err := managedRotationKey(active)
+			if err != nil || old == nil || kid != rotation.PreviousKid || thumb != rotation.PreviousThumbprint || alg != rotation.PreviousAlgorithm {
+				return dnsid.NewValidationError("dnsid: saved previous provider has an unexpected active key", err)
+			}
 		}
+	}
+	if old != nil {
+		kid, thumb, alg, err := managedRotationKey(old)
+		if err != nil || kid != rotation.PreviousKid || thumb != rotation.PreviousThumbprint || alg != rotation.PreviousAlgorithm {
+			return dnsid.NewValidationError("dnsid: saved previous key binding changed", err)
+		}
+	} else {
+		if slices.Contains(previous.ListKeyIds(), rotation.PreviousKid) {
+			return dnsid.NewValidationError("dnsid: saved previous key is listed but unavailable", nil)
+		}
+		if rotation.Submission == nil || rotation.Submission.State != dnsid.SubmissionStateAccepted {
+			return dnsid.NewValidationError("dnsid: previous key unavailable before saved acceptance", nil)
+		}
+		activeKid, activeThumb, activeAlg, err := managedRotationKey(target.JWK())
+		if err != nil || activeKid != rotation.NewKid || activeThumb != rotation.NewThumbprint || activeAlg != rotation.NewAlgorithm {
+			return dnsid.NewValidationError("dnsid: previous key missing before target activation", err)
+		}
+	}
+	return nil
+}
+
+func reconcileManagedRotation(previous, target dnsid.KeyProvider, rotation *ManagedKeyRotationState) error {
+	if err := validateManagedProviderBindings(previous, target, rotation); err != nil {
+		return err
+	}
+	if err := target.Activate(rotation.NewKid); err != nil {
+		return err
+	}
+	activeKid, activeThumb, activeAlg, err := managedRotationKey(target.JWK())
+	if err != nil || activeKid != rotation.NewKid || activeThumb != rotation.NewThumbprint || activeAlg != rotation.NewAlgorithm {
+		return dnsid.NewValidationError("dnsid: activated signer does not match saved target binding", err)
+	}
+	if previous.JWK(rotation.PreviousKid) != nil {
+		return previous.Supersede(rotation.PreviousKid)
 	}
 	return nil
 }

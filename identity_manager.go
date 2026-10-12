@@ -345,10 +345,7 @@ func (r netDNSResolver) FetchTXT(ctx context.Context, name string) ([]TXTRecordR
 	capture.mu.Lock()
 	defer capture.mu.Unlock()
 	for _, v := range values {
-		ttl, ok := capture.ttls[v]
-		if !ok {
-			return nil, DNSSECStateUnknown, fmt.Errorf("dnsid: DNS TXT TTL unavailable for %s", name)
-		}
+		ttl := capture.ttls[v] // Unavailable TTL is single-use evidence, never cached.
 		out = append(out, TXTRecordRData{Value: v, TTL: ttl})
 	}
 	// Always DNSSECStateUnknown: net.Resolver does not expose validation state.
@@ -734,14 +731,8 @@ func (m *IdentityManager) applyTransportDefaults() error {
 	if err := cfg.validate(); err != nil {
 		return err
 	}
-	if cfg.DNSServer != "" && m.dnsInjected && m.httpsInjected {
-		return NewArgumentError("dnsid: Config.Transport.DNSServer has no SDK-managed consumer: both DNSResolver and HTTPSFetcher are injected", nil)
-	}
-	if cfg.CABundlePath != "" && m.httpsInjected {
-		return NewArgumentError("dnsid: Config.Transport.CABundlePath has no SDK-managed consumer: HTTPSFetcher is injected", nil)
-	}
-	if len(cfg.PrivateAddressHosts) > 0 && m.httpsInjected {
-		return NewArgumentError("dnsid: Config.Transport.PrivateAddressHosts has no SDK-managed consumer: HTTPSFetcher is injected", nil)
+	if err := cfg.ValidateInjectedTransports(m.dnsInjected, m.httpsInjected); err != nil {
+		return err
 	}
 	if !m.dnsInjected {
 		if cfg.DNSServer != "" {
@@ -756,6 +747,20 @@ func (m *IdentityManager) applyTransportDefaults() error {
 			return err
 		}
 		m.https = defaultHTTPSFetcher{client: client}
+	}
+	return nil
+}
+
+// ValidateInjectedTransports rejects settings with no SDK-managed consumer.
+func (cfg TransportConfig) ValidateInjectedTransports(dnsInjected, httpsInjected bool) error {
+	if cfg.DNSServer != "" && dnsInjected && httpsInjected {
+		return NewArgumentError("dnsid: Config.Transport.DNSServer has no SDK-managed consumer: both DNSResolver and HTTPSFetcher are injected", nil)
+	}
+	if cfg.CABundlePath != "" && httpsInjected {
+		return NewArgumentError("dnsid: Config.Transport.CABundlePath has no SDK-managed consumer: HTTPSFetcher is injected", nil)
+	}
+	if len(cfg.PrivateAddressHosts) > 0 && httpsInjected {
+		return NewArgumentError("dnsid: Config.Transport.PrivateAddressHosts has no SDK-managed consumer: HTTPSFetcher is injected", nil)
 	}
 	return nil
 }

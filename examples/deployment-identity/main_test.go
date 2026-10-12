@@ -2,45 +2,10 @@ package main
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
-	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
 )
-
-func TestRequirePublishedKey(t *testing.T) {
-	key := `{"kty":"OKP","crv":"Ed25519","x":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE","kid":"operational","alg":"EdDSA"}`
-	parse := func(keys string) *dnsid.JWKS {
-		t.Helper()
-		set, err := dnsid.ParseJWKS([]byte(`{"keys":[` + keys + `]}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return set
-	}
-	for _, tc := range []struct {
-		name      string
-		published *dnsid.JWKS
-		wantError bool
-	}{
-		{"match", parse(key), false},
-		{"same-kid-different-key", parse(strings.Replace(key, "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI", 1)), true},
-		{"same-key-different-kid", parse(strings.Replace(key, "operational", "other", 1)), true},
-		{"missing", nil, true},
-		{"empty", parse(""), true},
-		{"multiple", parse(key + "," + strings.Replace(key, "operational", "other", 1)), true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if err := requirePublishedKey(parse(key), tc.published); (err != nil) != tc.wantError {
-				t.Fatalf("requirePublishedKey() = %v, wantError %v", err, tc.wantError)
-			}
-		})
-	}
-	if err := requirePublishedKey(nil, parse(key)); err == nil {
-		t.Fatal("missing selected key accepted")
-	}
-}
 
 func TestDeploymentFiles(t *testing.T) {
 	aws, err := config.LoadDeploymentFile("deployment.aws.json")

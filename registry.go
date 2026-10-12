@@ -870,9 +870,19 @@ type OrganizationOnboardingResponse struct {
 // GetOrganizationOnboarding reads the authenticated organization's onboarding
 // state using the client transport and caller deadline. It never falls back to
 // anonymous access or creates an agent.
-func (c *HTTPRegistryClient) GetOrganizationOnboarding(ctx context.Context) (*OrganizationOnboardingResponse, error) {
+func (c *HTTPRegistryClient) GetOrganizationOnboarding(ctx context.Context, expected ...OrganizationBinding) (*OrganizationOnboardingResponse, error) {
+	if len(expected) > 1 {
+		return nil, NewArgumentError("dnsid: at most one expected organization binding is allowed", nil)
+	}
 	var response OrganizationOnboardingResponse
 	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/org/onboarding", nil, &response); err != nil {
+		return nil, err
+	}
+	var binding OrganizationBinding
+	if len(expected) == 1 {
+		binding = expected[0]
+	}
+	if err := response.ValidateBinding(binding); err != nil {
 		return nil, err
 	}
 	return &response, nil

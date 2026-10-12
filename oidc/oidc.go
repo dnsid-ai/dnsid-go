@@ -781,7 +781,10 @@ func onlyKeyOp(ops jwk.KeyOperationList, want jwk.KeyOperation) bool {
 }
 
 func validateTimes(claims map[string]any, skew time.Duration) error {
-	now := time.Now()
+	return validateTimesAt(claims, skew, time.Now())
+}
+
+func validateTimesAt(claims map[string]any, skew time.Duration, now time.Time) error {
 	exp, ok := unixTime(claims["exp"])
 	if !ok {
 		return verr(dnsid.VerificationCodeInvalidClaims, "dnsid: OIDC token missing or invalid exp", nil)

@@ -88,18 +88,18 @@ go test ./...
 ```
 
 The AWS regression check loads the supplied deployment template, calls
-`Construct` through the real AWS SDK against a local fake KMS endpoint, and
+the provider factory through the real AWS SDK against a local fake KMS endpoint,
+injects that provider into `Construct` to isolate provider behavior, and
 verifies an ES256 signature. It checks ambient credential loading, region and
 key selection, and exactly one `GetPublicKey` and one `Sign` call. It does not
 validate live AWS credentials, IAM/key policies, or published lifecycle evidence.
 
 `LoadDeploymentFile` parses only the chosen document. `Construct` validates
 configuration, builds log trust, and opens the existing key (KMS uses
-`GetPublicKey`). It can perform trust-resource network reads, but this branch
-does **not** automatically verify the identity's publication or its signer binding.
-The example explicitly calls `VerifyDomain` on its own domain, then compares the
-selected key's RFC 7638 thumbprint, key ID, and algorithm with the verified current
-operational (`ku`) key, not the entity (`ek`) key. A mismatch stops signing.
+`GetPublicKey`). Before returning a configuration-selected signer, it verifies
+signed local publication and lifecycle continuity, then compares the selected
+key's RFC 7638 thumbprint, key ID, and algorithm with the current operational
+(`ku`) key, not the entity (`ek`) key. A mismatch stops construction and signing.
 
 Nothing is published or changed. This example has no registration, key generation,
 rotation, deletion, or automatic recovery. Changing `keyRef` does not authorize

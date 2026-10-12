@@ -26,6 +26,8 @@ func SDKConformance() SDKConformanceMetadata {
 		LogBindings: map[string]string{
 			"c2sp-tlog": c2spTLogBinding,
 		},
+		// Publication bindings, configured signers, managed recovery, onboarding,
+		// construction ordering, and unavailable DNS TTLs follow the design contracts.
 		KnownDeviations: []string{},
 	}
 }

@@ -98,7 +98,7 @@ func TestRegistration_InvalidInputDoesNotSend(t *testing.T) {
 }
 
 func TestRegistration_ResponseAndRecovery(t *testing.T) {
-	for _, scenario := range []string{"success", "detail failure", "unknown authority", "wrong instance", "wrong root", "wrong GI", "missing config", "unknown profile", "invalid URL", "invalid key age", "partial JSON", "wrong status", "AMBIGUOUS_ROOT", "GOVERNANCE_NOT_AUTHORIZED", "SERVICE_UNAVAILABLE", "MANAGED_GOVERNANCE_UNAVAILABLE", "IDEMPOTENCY_MISMATCH"} {
+	for _, scenario := range []string{"success", "detail failure", "unknown authority", "wrong instance", "wrong root", "wrong GI", "missing config", "unknown profile", "invalid URL", "wrong ku host", "wrong ek host", "ek lookalike", "invalid key age", "partial JSON", "wrong status", "AMBIGUOUS_ROOT", "GOVERNANCE_NOT_AUTHORIZED", "SERVICE_UNAVAILABLE", "MANAGED_GOVERNANCE_UNAVAILABLE", "IDEMPOTENCY_MISMATCH"} {
 		t.Run(scenario, func(t *testing.T) {
 			calls := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,6 +140,12 @@ func TestRegistration_ResponseAndRecovery(t *testing.T) {
 					response.PublicationConfig.PublishProfile = "dnsid-draft-99"
 				case "invalid URL":
 					response.PublicationConfig.EntityKeyURL = "http://example.test"
+				case "wrong ku host":
+					response.PublicationConfig.KeyURL = "https://other.example.test/keys"
+				case "wrong ek host":
+					response.PublicationConfig.EntityKeyURL = "https://other.test/keys"
+				case "ek lookalike":
+					response.PublicationConfig.EntityKeyURL = "https://notexample.test/keys"
 				case "invalid key age":
 					response.PublicationConfig.MaxKeyAge = "1d"
 				}
@@ -177,6 +183,10 @@ func TestRegistration_ResponseAndRecovery(t *testing.T) {
 			if scenario == "detail failure" || scenario == "unknown authority" || scenario == "wrong instance" {
 				if calls != 2 || recovery.Creation.ID != "id-1" || recovery.Creation.OIDCIssuerURL == "" {
 					t.Fatalf("lost creation: %+v", recovery)
+				}
+			} else if scenario == "wrong ku host" || scenario == "wrong ek host" || scenario == "ek lookalike" {
+				if calls != 1 || recovery.Creation == nil || recovery.Creation.ID != "id-1" || recovery.Creation.Domain != "agent.example.test" || recovery.Creation.OIDCIssuerURL == "" {
+					t.Fatalf("invalid snapshot lost known creation facts: %+v", recovery)
 				}
 			} else if calls != 1 {
 				t.Fatalf("fallback request: %d", calls)

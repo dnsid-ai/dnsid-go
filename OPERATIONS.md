@@ -95,6 +95,26 @@ Operational-key rotation behavior:
 5. Keep the old key retained until all JWTs and signed requests that could have been created with it have expired and verifier caches have had time to refresh.
 6. Remove the old retained key with `Supersede` after the overlap window, or `Purge` a pending/retained key that should not remain.
 
+For registry-managed C2SP rotation, use `RotateManagedOperationalKey` with a
+`Store`, `ApplicationSigning`, `PublicationVerifier`, and `WireSigner`. An explicit
+`TargetProvider` permits cross-provider rotation without private-key transfer.
+Set `TargetAlgorithm` explicitly to change algorithms (for example, EdDSA to ES256);
+when omitted it preserves the previous key's algorithm. The generated key must
+match the selected algorithm before registry preparation.
+Provider references must resolve stable provider state, including pending keys;
+store references and provider state without credentials. Use distinct references
+for distinct providers. AWS provider state remains application-persisted.
+
+`ResumeManagedOperationalKeyRotation` resolves providers from the saved references,
+validates both key bindings, and verifies signed publication and the exact accepted
+log occurrence before activation. Accepted recovery does not resubmit. Signer wiring
+runs only after activation is durably saved, and runs again after restart before
+unpausing. On any failure, keep signing paused and retain the returned recovery state.
+Superseding an old active provider leaves it without an application signer.
+Recovery permits an absent old key only when acceptance is saved and the exact
+saved target key is already active. A distinct source must have no active signer;
+a listed but unavailable old key is a recovery error, not proof of supersession.
+
 Important overlap rules:
 
 - `GetKeySet` and `GetEntityKeySet` publish only the current active key for draft 01 live endpoints. Retained keys are local verification/signing history in the key provider; they are not automatically exposed in live `ku=` JWKS.

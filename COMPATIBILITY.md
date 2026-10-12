@@ -49,6 +49,24 @@ failed attempts from `RegistrationError` with the same request and key; a failur
 does not establish that no agent exists. Publication configuration is not trust
 policy. Managed Live remains the separate HTTP 202 operation.
 
+### Signer binding and managed rotation recovery
+
+Configuration-selected signers now require verified local publication before
+`config.Construct` returns. Inject a provider explicitly for initial provisioning.
+Onboarding reads reject pending proofs and accept an optional `OrganizationBinding`
+for comparison with configured or saved organization/GI identifiers.
+
+Managed rotation now requires stable previous/new provider references, a local
+publication verifier (normally `IdentityManager`), and a `WireSigner` callback.
+Recovery uses `ResolveProvider` with saved references, not current configuration.
+`TargetAlgorithm` permits an explicit algorithm change; omission preserves the
+previous algorithm. Recovery rejects unrelated active source providers and listed
+but unavailable old keys, while permitting recovery after completed supersession.
+Older recovery records without provider references and algorithms fail validation;
+reconcile them explicitly before upgrading. Custom providers must permit
+`Supersede` of the old active key after a cross-provider rotation and idempotent
+`Activate` of the saved active key. `Purge` still refuses active keys.
+
 ### Since v0.36.0: breaking C2SP logical-identity correction
 
 This SDK targets DNSid C2SP method revision

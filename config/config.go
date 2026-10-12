@@ -363,7 +363,11 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	if deps.HTTPClient != nil && deps.HTTPSFetcher != nil {
 		return nil, dnsid.NewArgumentError("dnsid: HTTPClient and HTTPSFetcher cannot both be supplied", nil)
 	}
-	if loaded.Dnsid.Identity != nil && !loaded.KeySource.isZero() && deps.KeyProvider == nil {
+	if err := loaded.Dnsid.Transport.ValidateInjectedTransports(deps.DNSResolver != nil, deps.HTTPSFetcher != nil || deps.HTTPClient != nil); err != nil {
+		return nil, err
+	}
+	configuredSigner := loaded.Dnsid.Identity != nil && !loaded.KeySource.isZero() && deps.KeyProvider == nil
+	if configuredSigner {
 		if err := ValidateKeySource(loaded.KeySource); err != nil {
 			return nil, err
 		}
@@ -410,7 +414,16 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	if deps.EntityKeyProvider != nil {
 		opts = append(opts, dnsid.WithEntityKeyProvider(deps.EntityKeyProvider))
 	}
-	return dnsid.NewIdentityManager(loaded.Dnsid, deps.KeyProvider, opts...)
+	manager, err := dnsid.NewIdentityManager(loaded.Dnsid, deps.KeyProvider, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if configuredSigner {
+		if _, err := manager.VerifyLocalOperationalKey(ctx, deps.KeyProvider, ""); err != nil {
+			return nil, err
+		}
+	}
+	return manager, nil
 }
 
 // LogRegistryFromTrust builds verification-only log bindings from explicit trust.

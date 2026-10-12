@@ -109,8 +109,12 @@ func TestAWSDeployment_ConstructAndSign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Isolate provider loading from log/publication verification in this test.
-	manager, err := config.Construct(context.Background(), loaded, config.Dependencies{LogRegistry: dnsidlog.NewLogRegistry()})
+	// Isolate AWS factory/signing behavior; configured-publication binding has SDK tests.
+	provider, err := config.OperationalKeyProviderFrom(context.Background(), loaded.KeySource, loaded.Dnsid.Identity.Domain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := config.Construct(context.Background(), loaded, config.Dependencies{KeyProvider: provider, LogRegistry: dnsidlog.NewLogRegistry()})
 	if err != nil {
 		t.Fatal(err)
 	}
