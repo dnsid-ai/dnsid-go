@@ -95,9 +95,11 @@ func TestProfile_SignatureAgentCustomURLUsesExplicitType(t *testing.T) {
 func TestProfile_WebBotAuthRejectsOutOfBoundsConfiguration(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
 	for name, cfg := range map[string]Config{
-		"request ttl":   {SignatureTTL: 5*time.Minute + time.Second},
-		"directory ttl": {DirectorySignatureTTL: 5*time.Minute + time.Second},
-		"clock skew":    {ClockSkew: -time.Second},
+		"request ttl":             {SignatureTTL: 5*time.Minute + time.Second},
+		"directory ttl":           {DirectorySignatureTTL: 5*time.Minute + time.Second},
+		"clock skew":              {ClockSkew: -time.Second},
+		"subsecond request ttl":   {SignatureTTL: time.Millisecond},
+		"subsecond directory ttl": {DirectorySignatureTTL: time.Millisecond},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), cfg)
