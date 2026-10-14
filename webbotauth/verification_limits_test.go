@@ -158,6 +158,72 @@ func TestWBA_DirectoryDiscoveryDiscardsEmptyQuery(t *testing.T) {
 	}
 }
 
+func TestWBA_KeyedContentDigestRequiresSuppliedContent(t *testing.T) {
+	for _, mode := range []string{"missing", "explicit-empty", "keyed-empty-mismatch", "keyed-only-with-body"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newWBAFixture(t, false, false)
+			f.request.Body = nil
+			f.request.ContentLength = 0
+			if mode != "keyed-empty-mismatch" {
+				f.request.Header.Set("Content-Digest", "sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:")
+			}
+			inputs, _ := httpsig.ParseSignatureInput(f.request.Header.Get("Signature-Input"))
+			params := inputs["sig1"]
+			for i := range params.Components {
+				if params.Components[i].Name == "content-digest" {
+					params.Components[i].Params = map[string]any{"key": "sha-256"}
+				}
+			}
+			if err := httpsig.SignHTTPMessage(f.request, params, f.signer.keys); err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "explicit-empty", "keyed-empty-mismatch":
+				f.request.Body = http.NoBody
+			case "keyed-only-with-body":
+				f.request.Body = io.NopCloser(strings.NewReader(""))
+			}
+			_, err := f.checker.VerifyWebBotAuthSignedRequest(context.Background(), f.request, f.opts)
+			if mode == "explicit-empty" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil {
+				t.Fatal("keyed digest accepted without supplied content or exact digest coverage")
+			}
+		})
+	}
+}
+
+func TestWBA_DirectoryPreservesStatusAndRequestContext(t *testing.T) {
+	for _, invalidStatusSignature := range []bool{false, true} {
+		f := newWBAFixture(t, false, false)
+		f.checker.client = &http.Client{Transport: wbaRoundTrip(func(req *http.Request) (*http.Response, error) {
+			res, err := f.signer.ServeHttpMessageSignaturesDirectory(req)
+			if err != nil {
+				return nil, err
+			}
+			inputs, _ := httpsig.ParseSignatureInput(res.Header.Get("Signature-Input"))
+			params := inputs["sig1"]
+			params.Components = append(params.Components,
+				httpsig.ComponentIdentifier{Name: "@status"},
+				httpsig.ComponentIdentifier{Name: "@path", Params: map[string]any{"req": true}},
+			)
+			if invalidStatusSignature {
+				res.StatusCode = http.StatusCreated
+			}
+			err = httpsig.SignHTTPMessage(res, params, f.signer.keys)
+			res.StatusCode = http.StatusOK
+			res.Request = nil
+			return res, err
+		})}
+		_, err := f.checker.VerifyWebBotAuthSignedRequest(context.Background(), f.request, f.opts)
+		if (err != nil) != invalidStatusSignature {
+			t.Fatalf("invalidStatusSignature=%v: %v", invalidStatusSignature, err)
+		}
+	}
+}
+
 func TestWBA_SuppliedEmptyContentAndAuthorization(t *testing.T) {
 	f := newWBAFixture(t, false, false)
 	req, _ := http.NewRequest(http.MethodPost, "https://target.example/", nil)

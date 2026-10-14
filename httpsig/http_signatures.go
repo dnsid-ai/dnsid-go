@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -973,7 +974,7 @@ func requireHTTPComponents(req *http.Request, components []ComponentIdentifier) 
 	if hasBody && !containsComponent(components, ComponentIdentifier{Name: "content-digest"}) {
 		return dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: request body is present but content-digest is not covered", nil)
 	}
-	if containsComponent(components, ComponentIdentifier{Name: "content-digest"}) {
+	if slices.ContainsFunc(components, func(c ComponentIdentifier) bool { return c.Name == "content-digest" }) {
 		if req.Body == nil {
 			return dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: content-digest covered but request has no body", nil)
 		}

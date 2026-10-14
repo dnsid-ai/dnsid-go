@@ -1,7 +1,6 @@
 package webbotauth
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/tls"
@@ -12,6 +11,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -186,7 +186,6 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 		}
 		return nil, directoryFetchError(err)
 	}
-	res.Body = io.NopCloser(bytes.NewReader(body))
 	key, err := directoryKey(body, params.KeyID)
 	if err != nil {
 		return nil, err
@@ -206,8 +205,8 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 			return nil, wbaError("missing directory coverage")
 		}
 	}
-	if err := verifyContent(ctx, res.Header, &res.Body, dirParams, 1<<20); err != nil {
-		return nil, err
+	if err := digest.VerifyContentDigestBytes(body, strings.Join(res.Header.Values("Content-Digest"), ", "), []string{"sha-256"}); err != nil {
+		return nil, wbaError("content-digest mismatch")
 	}
 	if err := verifyMessage(res, dirParams, dirSignature, key); err != nil {
 		return nil, err
@@ -369,8 +368,8 @@ func boundedContent(ctx context.Context, body io.ReadCloser, maximum int64) ([]b
 
 func verifyContent(ctx context.Context, header http.Header, body *io.ReadCloser, params httpsig.SignatureParams, maximum int64) error {
 	hasBody := *body != nil && *body != http.NoBody
-	covered := covers(params, "content-digest", nil)
-	if hasBody && !covered {
+	covered := slices.ContainsFunc(params.Components, func(c httpsig.ComponentIdentifier) bool { return c.Name == "content-digest" })
+	if hasBody && !covers(params, "content-digest", nil) {
 		return wbaError("content-digest is not covered")
 	}
 	if !covered {
