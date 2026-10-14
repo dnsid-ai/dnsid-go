@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.40.0] - 2026-10-14
+
+### Features
+
+- feat: verify DNSid Web Bot Auth requests and directories ([#69](https://github.com/dnsid-ai/dnsid-go/pull/69))
+
+### Bug Fixes
+
+- fix: preserve parsed empty TXT tags ([#67](https://github.com/dnsid-ai/dnsid-go/pull/67))
+
 ## [0.39.0] - 2026-10-12
 
 ### Features
