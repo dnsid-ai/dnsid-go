@@ -205,7 +205,7 @@ func New(domain string, kp dnsid.KeyProvider, cfg Config) *Profile
 New constructs a Web Bot Auth profile that signs as domain using kp. The domain is normalized to a FQDN when possible. Signing fails unless kp's active key is Ed25519.
 
 <a name="NewFromIdentityManager"></a>
-### func [NewFromIdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L150>)
+### func [NewFromIdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L154>)
 
 ```go
 func NewFromIdentityManager(manager identityManager, cfg Config) *Profile
@@ -223,7 +223,7 @@ func NewVerifier(resolver dnsid.IdentityResolver, cfg Config) *Profile
 NewVerifier constructs a verification\-only profile with public\-address\-only, Web\-PKI HTTPS discovery. Redirects are rejected. No local key is required.
 
 <a name="Profile.CreateWebBotAuthSignedRequest"></a>
-### func \(\*Profile\) [CreateWebBotAuthSignedRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L167>)
+### func \(\*Profile\) [CreateWebBotAuthSignedRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L171>)
 
 ```go
 func (p *Profile) CreateWebBotAuthSignedRequest(req *http.Request, opts SigningOptions) (*http.Request, error)
@@ -232,7 +232,7 @@ func (p *Profile) CreateWebBotAuthSignedRequest(req *http.Request, opts SigningO
 CreateWebBotAuthSignedRequest returns a signed clone of req carrying Signature\-Input and Signature headers tagged "web\-bot\-auth", plus a Signature\-Agent header unless disabled by configuration. Requests with a body also gain a covered Content\-Digest header. The profile's active key must be Ed25519.
 
 <a name="Profile.ServeHttpMessageSignaturesDirectory"></a>
-### func \(\*Profile\) [ServeHttpMessageSignaturesDirectory](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L252>)
+### func \(\*Profile\) [ServeHttpMessageSignaturesDirectory](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L256>)
 
 ```go
 func (p *Profile) ServeHttpMessageSignaturesDirectory(req *http.Request) (*http.Response, error)

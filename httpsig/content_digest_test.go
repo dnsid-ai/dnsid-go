@@ -8,6 +8,18 @@ import (
 	"testing"
 )
 
+func TestBuildSignatureInput_KeyedContentDigest(t *testing.T) {
+	req, _ := http.NewRequest(http.MethodGet, "https://api.example.com/", nil)
+	req.Header.Set("Content-Digest", "sha-256=:YWJj:, sha-512=:ZGVm:")
+	base, err := BuildSignatureInput(req, SignatureParams{Components: []ComponentIdentifier{{Name: "content-digest", Params: map[string]any{"key": "sha-256"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(base, "\"content-digest\";key=\"sha-256\": :YWJj:\n") {
+		t.Fatalf("keyed digest base includes more than the selected member: %s", base)
+	}
+}
+
 func TestProfile_KeyedContentDigestRequiresSuppliedContent(t *testing.T) {
 	issuer, kp, verifier := testManagers(t)
 	signer := NewFromIdentityManager(issuer, kp, Config{})

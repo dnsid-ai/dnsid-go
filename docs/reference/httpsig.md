@@ -110,7 +110,7 @@ signature present: true
 
 
 <a name="AppendComponent"></a>
-## func [AppendComponent](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1216>)
+## func [AppendComponent](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1210>)
 
 ```go
 func AppendComponent(components *[]ComponentIdentifier, component ComponentIdentifier) error
@@ -128,7 +128,7 @@ func BuildSignatureInput(msg any, params SignatureParams) (string, error)
 BuildSignatureInput builds the RFC 9421 signature base for requests or responses.
 
 <a name="JoseAlgToHTTPSigAlg"></a>
-## func [JoseAlgToHTTPSigAlg](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1185>)
+## func [JoseAlgToHTTPSigAlg](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1179>)
 
 ```go
 func JoseAlgToHTTPSigAlg(alg dnsid.JoseAlg) (string, error)
@@ -137,7 +137,7 @@ func JoseAlgToHTTPSigAlg(alg dnsid.JoseAlg) (string, error)
 JoseAlgToHTTPSigAlg maps SDK JOSE algorithms to RFC 9421 algorithm names.
 
 <a name="ParseSignature"></a>
-## func [ParseSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1139>)
+## func [ParseSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1133>)
 
 ```go
 func ParseSignature(input string) (map[string][]byte, error)
@@ -146,7 +146,7 @@ func ParseSignature(input string) (map[string][]byte, error)
 ParseSignature parses a Signature dictionary into bytes by label.
 
 <a name="ParseSignatureInput"></a>
-## func [ParseSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L831>)
+## func [ParseSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L825>)
 
 ```go
 func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error)

@@ -141,6 +141,10 @@ func New(domain string, kp dnsid.KeyProvider, cfg Config) *Profile {
 	if d, err := dnsid.NormalizeFQDN(domain); err == nil {
 		domain = d
 	}
+	if cfg.IncludeSignatureAgent != nil {
+		include := *cfg.IncludeSignatureAgent
+		cfg.IncludeSignatureAgent = &include
+	}
 	return &Profile{domain: domain, keys: kp, cfg: cfg}
 }
 

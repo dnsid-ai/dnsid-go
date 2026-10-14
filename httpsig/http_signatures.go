@@ -655,12 +655,6 @@ func httpSignatureComponentValue(msg any, component ComponentIdentifier) (string
 		if res != nil {
 			return fmt.Sprintf("%d", res.StatusCode), nil
 		}
-	case "content-digest":
-		value, ok := headerFieldValue(headers, "Content-Digest")
-		if !ok {
-			return "", dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: missing HTTP signature field content-digest", nil)
-		}
-		return value, nil
 	default:
 		if strings.HasPrefix(component.Name, "@") {
 			return "", dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: unsupported HTTP signature derived component "+component.Name, nil)

@@ -13,6 +13,22 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
+func TestProfile_SnapshotsSignatureAgentFlag(t *testing.T) {
+	for _, initial := range []bool{false, true} {
+		flag := initial
+		p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{IncludeSignatureAgent: &flag})
+		flag = !initial
+		req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
+		signed, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (signed.Header.Get("Signature-Agent") != "") != initial {
+			t.Fatalf("caller mutation changed the profile: initial=%v", initial)
+		}
+	}
+}
+
 func TestProfile_CreateWebBotAuthSignedRequest(t *testing.T) {
 	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{})
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
