@@ -18,16 +18,27 @@ import (
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 )
 
-type wbaDNS struct{ record *dnsid.TXTRecord }
-
-func (d wbaDNS) FetchTXT(context.Context, string) ([]dnsid.TXTRecordRData, dnsid.DNSSECState, error) {
-	return []dnsid.TXTRecordRData{{Value: d.record.Serialize(), TTL: time.Minute}}, dnsid.DNSSECStateUnsigned, nil
+type wbaDNS struct {
+	record *dnsid.TXTRecord
+	ttl    time.Duration
+	calls  int
 }
 
-type wbaHTTPS map[string]json.RawMessage
+func (d *wbaDNS) FetchTXT(context.Context, string) ([]dnsid.TXTRecordRData, dnsid.DNSSECState, error) {
+	d.calls++
+	if d.record == nil {
+		return nil, dnsid.DNSSECStateUnsigned, nil
+	}
+	return []dnsid.TXTRecordRData{{Value: d.record.Serialize(), TTL: d.ttl}}, dnsid.DNSSECStateUnsigned, nil
+}
 
-func (h wbaHTTPS) FetchJSON(_ context.Context, uri string, _ dnsid.FetchOptions) (json.RawMessage, *tls.Certificate, error) {
-	return h[uri], nil, nil
+type wbaHTTPS struct {
+	documents map[string]json.RawMessage
+	certs     map[string]*tls.Certificate
+}
+
+func (h *wbaHTTPS) FetchJSON(_ context.Context, uri string, _ dnsid.FetchOptions) (json.RawMessage, *tls.Certificate, error) {
+	return h.documents[uri], h.certs[uri], nil
 }
 
 type wbaLog struct{}
@@ -59,12 +70,19 @@ type wbaFixture struct {
 	request *http.Request
 	manager *dnsid.IdentityManager
 	opts    VerificationOptions
+	dns     *wbaDNS
+	https   *wbaHTTPS
 }
 
 func newWBAFixture(t *testing.T, denied, mtls bool) *wbaFixture {
 	t.Helper()
-	kp, ek := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
-	identity := &dnsid.IdentityConfig{Domain: "bot.example.com", GovernanceID: "example.com", LogRef: "test:agent", KeyURL: "https://bot.example.com/ku", EntityKeyURL: "https://example.com/ek", StatusURL: "https://bot.example.com/status"}
+	return newWBAFixtureWithKey(t, denied, mtls, "bot.example.com", dnsid.GenerateEd25519KeyProvider())
+}
+
+func newWBAFixtureWithKey(t *testing.T, denied, mtls bool, domain string, kp dnsid.KeyProvider) *wbaFixture {
+	t.Helper()
+	ek := dnsid.GenerateEd25519KeyProvider()
+	identity := &dnsid.IdentityConfig{Domain: domain, GovernanceID: "example.com", LogRef: "test:agent", KeyURL: "https://" + domain + "/ku", EntityKeyURL: "https://example.com/ek", StatusURL: "https://" + domain + "/status"}
 	if mtls {
 		identity.PolicyFlags = []dnsid.PolicyFlag{dnsid.PolicyFlagMTLS}
 	}
@@ -86,9 +104,11 @@ func newWBAFixture(t *testing.T, denied, mtls bool) *wbaFixture {
 	if denied {
 		cfg.Verification.TrustedEntities = []dnsid.TrustedEntity{}
 	}
-	manager, err := dnsid.NewIdentityManager(cfg, nil, dnsid.WithDNSResolver(wbaDNS{record}), dnsid.WithHTTPSFetcher(wbaHTTPS{
+	dns := &wbaDNS{record: record, ttl: time.Minute}
+	https := &wbaHTTPS{documents: map[string]json.RawMessage{
 		record.KeyURI: ku, record.EntityKeyURI: entity, record.StatusURI: json.RawMessage(`{"state":"ACTIVE","lastTransitionAt":"` + time.Now().UTC().Format(time.RFC3339Nano) + `"}`),
-	}), dnsid.WithLogRegistry(registry))
+	}, certs: map[string]*tls.Certificate{}}
+	manager, err := dnsid.NewIdentityManager(cfg, nil, dnsid.WithDNSResolver(dns), dnsid.WithHTTPSFetcher(https), dnsid.WithLogRegistry(registry))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +122,8 @@ func newWBAFixture(t *testing.T, denied, mtls bool) *wbaFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &wbaFixture{signer, checker, signed, manager, VerificationOptions{SignerDomain: "bot.example.com"}}
+	return &wbaFixture{signer: signer, checker: checker, request: signed, manager: manager,
+		opts: VerificationOptions{SignerDomain: domain}, dns: dns, https: https}
 }
 
 func TestProfile_VerifyWebBotAuthSignedRequest(t *testing.T) {

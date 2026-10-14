@@ -1016,6 +1016,15 @@ func (v *VerifiedDomain) CachedState() string
 
 CachedState reports how this result was produced: "fresh" for a full verification, "cached" for a cache hit, and "refreshed" for a cache hit whose status was re\-fetched. It returns an empty string on a nil receiver.
 
+<a name="VerifiedDomain.CheckFreshness"></a>
+### func \(\*VerifiedDomain\) [CheckFreshness](<https://github.com/dnsid-ai/dnsid-go/blob/main/verification_context.go#L58>)
+
+```go
+func (v *VerifiedDomain) CheckFreshness(acquiredAfter time.Time) error
+```
+
+CheckFreshness checks DNS, key\-age, and identity TLS evidence at the current time. acquiredAfter is the start of this invocation's identity resolution: zero\-TTL evidence is usable only if freshly verified within that invocation. It does not repeat acceptance, current\-peer, or operational\-key checks.
+
 <a name="VerifiedDomain.DNSSECState"></a>
 ### func \(\*VerifiedDomain\) [DNSSECState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L168>)
 
@@ -1050,7 +1059,7 @@ Domain returns the verified identity domain in normalized FQDN form. It returns 
 func (v *VerifiedDomain) Expiry() time.Time
 ```
 
-Expiry returns the earliest instant at which this verification result should no longer be trusted: the minimum of the DNS TTL, the ka= key\-age deadline, and the runtime and record\-signing TLS certificate expiries. It returns the zero time when no bound applies or on a nil receiver.
+Expiry returns the cache\-reuse deadline: the minimum of the DNS TTL, the ka= key\-age deadline, and identity TLS certificate expiries. Fresh zero\-TTL evidence may still be used by its acquiring operation; use CheckFreshness to check operation validity. The zero time means no bound or a nil receiver.
 
 <a name="VerifiedDomain.JWKSCertificate"></a>
 ### func \(\*VerifiedDomain\) [JWKSCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L205>)

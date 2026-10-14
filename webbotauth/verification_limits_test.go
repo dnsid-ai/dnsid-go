@@ -72,8 +72,8 @@ func TestWBAContent_LimitsAndCancellation(t *testing.T) {
 	defer cancel()
 	reader, writer := io.Pipe()
 	defer writer.Close()
-	if _, err := boundedContent(ctx, reader, 4); err == nil {
-		t.Fatal("blocked read ignored deadline")
+	if _, err := boundedContent(ctx, reader, 4); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("blocked read did not preserve deadline error: %v", err)
 	}
 	f := newWBAFixture(t, false, false)
 	f.request.Body = io.NopCloser(strings.NewReader(strings.Repeat("x", (8<<20)+1)))
@@ -93,7 +93,7 @@ func TestWBAContent_LimitsAndCancellation(t *testing.T) {
 
 func TestWBA_RechecksExpiryAfterVerificationWork(t *testing.T) {
 	f := newWBAFixture(t, false, false)
-	f.checker.cfg.ClockSkew = time.Nanosecond
+	f.checker.cfg = Config{}.WithClockSkew(0)
 	inputs, _ := httpsig.ParseSignatureInput(f.request.Header.Get("Signature-Input"))
 	params := inputs["sig1"]
 	params.Parameters = nil
@@ -146,6 +146,15 @@ func TestWBA_DiscoveryRejectsInvalidPolicy(t *testing.T) {
 		if _, _, err := discovery(h, params, VerificationOptions{SignerDomain: "bot.example.com"}); err == nil {
 			t.Fatalf("accepted %q", agent)
 		}
+	}
+}
+
+func TestWBA_DirectoryDiscoveryDiscardsEmptyQuery(t *testing.T) {
+	params := httpsig.SignatureParams{Components: []httpsig.ComponentIdentifier{{Name: "signature-agent", Params: map[string]any{"key": "sig1"}}}}
+	header := http.Header{"Signature-Agent": {`sig1="https://bot.example.com/custom?";type=directory`}}
+	_, endpoint, err := discovery(header, params, VerificationOptions{SignerDomain: "bot.example.com"})
+	if err != nil || endpoint != "https://bot.example.com"+DirectoryPath {
+		t.Fatalf("endpoint=%q: %v", endpoint, err)
 	}
 }
 

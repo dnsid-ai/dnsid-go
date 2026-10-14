@@ -81,7 +81,7 @@ func TestProfile_WebBotAuthValidatesAdditionalComponents(t *testing.T) {
 }
 
 func TestProfile_SignatureAgentCustomURLUsesExplicitType(t *testing.T) {
-	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{DirectoryURL: "https://keys.example/custom.json"})
+	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{DirectoryURL: "https://keys.example/custom.json", SignatureAgentType: "jwks_uri"})
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
 	signed, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{})
 	if err != nil {

@@ -170,8 +170,10 @@ This verifies the signed directory, current DNSid `ku` binding, and configured e
 acceptance. Discovery requires public HTTPS and rejects redirects. Set `Replay` for
 one-time request semantics; expiry alone does not prevent reuse. For `fl=mtls`, pass
 the current application's authenticated peer chains through `Peer` or `req.TLS`.
-The default coverage requires authority, not method or path; select additional
-components when the application needs them. This targets the WBA protocol and
+The default coverage requires authority, not method or path. Sign extra components
+with `AdditionalComponentIDs` and require them at the recipient with
+`VerificationOptions.RequiredComponents`. Directories must not use `Content-Encoding`.
+For a custom discovery endpoint, explicitly set `SignatureAgentType: "jwks_uri"`. This targets the WBA protocol and
 directory drafts at revision `00`, not general WBA interoperability.
 
 Runnable signing version: [`examples/webbotauth`](examples/webbotauth).

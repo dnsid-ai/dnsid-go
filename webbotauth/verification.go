@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -16,8 +18,10 @@ import (
 	wbahttpsig "github.com/WebDecoy/web-bot-auth/httpsig"
 	"github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/httpsig"
+	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	"github.com/dnsid-ai/dnsid-go/internal/joseutil"
 	"github.com/dnsid-ai/dnsid-go/internal/jsonutil"
+	"github.com/dnsid-ai/dnsid-go/internal/netguard"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/digest"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/sfv"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -38,6 +42,10 @@ type VerificationOptions struct {
 	// identify the signer when SignerDomain is absent. Default is false.
 	AllowSignatureAgentDomain bool
 	Peer                      dnsid.VerifyDomainOpts
+	// RequiredComponents requires exact coverage, including parameter values,
+	// beyond the profile minimum. Nil adds no requirements. Policy is validated
+	// before content reads or discovery; request-only components are required.
+	RequiredComponents []httpsig.ComponentIdentifier
 	// Replay is optional. Without it, valid requests can be reused until expiry.
 	Replay ReplayPolicy
 }
@@ -47,8 +55,27 @@ type VerificationOptions struct {
 func NewVerifier(resolver dnsid.IdentityResolver, cfg Config) *Profile {
 	client, _ := dnsid.CreateDnsidHTTPClient(dnsid.TransportConfig{})
 	// Discovery must not inherit disabled Web PKI or application client keys.
-	client.Transport.(*http.Transport).TLSClientConfig = nil
+	transport := client.Transport.(*http.Transport)
+	transport.TLSClientConfig = nil
+	transport.DisableCompression = true
 	return &Profile{resolver: resolver, client: client, cfg: cfg}
+}
+
+func directoryFetchError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return err
+	}
+	var certificateErr *tls.CertificateVerificationError
+	var unsafeErr *netguard.UnsafeDestinationError
+	var recordErr tls.RecordHeaderError
+	var alertErr tls.AlertError
+	if errors.As(err, &certificateErr) || errors.As(err, &recordErr) || errors.As(err, &alertErr) || strings.Contains(err.Error(), "tls:") {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeTLSError, false, "dnsid: Web Bot Auth directory TLS failure", err)
+	}
+	if errors.As(err, &unsafeErr) {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: Web Bot Auth unsafe discovery destination", err)
+	}
+	return dnsid.NewVerificationError(dnsid.VerificationCodeJWKSUnavailable, true, "dnsid: Web Bot Auth directory unavailable", err)
 }
 
 func wbaError(message string) error {
@@ -59,8 +86,8 @@ func wbaError(message string) error {
 // current DNSid ku binding and acceptance. It does not grant permissions.
 // The operation has the shared verification deadline, 1 MiB request metadata,
 // 8 MiB request content, 1 MiB directory, 64 directory keys, and 64 JSON nesting
-// levels. Directories
-// are not cached; DNSid acceptance and current key binding run on every call.
+// levels. Directories are not cached; DNSid acceptance and current key binding
+// run on every call.
 // Supplied body readers must unblock on Close; resolver and replay callbacks
 // must honor ctx. Signature fields use the shared parser's 64 KiB and 128-label
 // limits, with at most 128 components per signature.
@@ -70,6 +97,18 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	}
 	if err := p.validateConfig(); err != nil {
 		return nil, err
+	}
+	if len(opts.RequiredComponents) > 128 {
+		return nil, dnsid.NewArgumentError("dnsid: too many required WBA components", nil)
+	}
+	var required []httpsig.ComponentIdentifier
+	for _, c := range opts.RequiredComponents {
+		if err := httpsig.AppendComponent(&required, c); err != nil {
+			return nil, err
+		}
+		if required[len(required)-1].Name == "@status" || c.Params["req"] == true {
+			return nil, dnsid.NewArgumentError("dnsid: WBA coverage policy requires request components", nil)
+		}
 	}
 	ctx, cancel := dnsid.VerificationContext(ctx)
 	defer cancel()
@@ -100,6 +139,11 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	if !covers(params, "@authority", nil) {
 		return nil, wbaError("requires exact @authority coverage")
 	}
+	for _, c := range required {
+		if !covers(params, c.Name, c.Params) {
+			return nil, wbaError("missing required request coverage")
+		}
+	}
 	if err := verifyContent(ctx, req.Header, &req.Body, params, 8<<20); err != nil {
 		return nil, err
 	}
@@ -111,19 +155,30 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	if err != nil {
 		return nil, err
 	}
+	directoryReq.Header.Set("Accept-Encoding", "identity")
 	res, err := p.client.Do(directoryReq)
 	if err != nil {
-		return nil, err
+		return nil, directoryFetchError(err)
 	}
 	defer res.Body.Close()
 	res.Request = directoryReq
+	if res.StatusCode == http.StatusRequestTimeout || res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= 500 {
+		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeJWKSUnavailable, true, "dnsid: Web Bot Auth directory temporarily unavailable", nil)
+	}
+	if _, coded := res.Header["Content-Encoding"]; coded || res.Uncompressed {
+		return nil, wbaError("coded directories are unsupported")
+	}
 	mediaType, _, err := mime.ParseMediaType(res.Header.Get("Content-Type"))
 	if err != nil || res.StatusCode != http.StatusOK || mediaType != DirectoryContentType {
 		return nil, wbaError("invalid directory status or media type")
 	}
 	body, err := boundedContent(ctx, res.Body, 1<<20)
 	if err != nil {
-		return nil, err
+		var verificationErr *dnsid.VerificationError
+		if errors.As(err, &verificationErr) {
+			return nil, err
+		}
+		return nil, directoryFetchError(err)
 	}
 	res.Body = io.NopCloser(bytes.NewReader(body))
 	key, err := directoryKey(body, params.KeyID)
@@ -163,6 +218,7 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 			peer.VerifiedPeerCertificateChains = req.TLS.VerifiedChains
 		}
 	}
+	identityStartedAt := time.Now()
 	vd, err := dnsid.VerifyIdentity(ctx, p.resolver, domain, peer)
 	if err != nil {
 		return nil, err
@@ -184,8 +240,8 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	if err := p.validTime(dirParams); err != nil {
 		return nil, err
 	}
-	if expiry := vd.Expiry(); !expiry.IsZero() && !time.Now().Before(expiry) {
-		return nil, wbaError("DNSid evidence expired")
+	if err := vd.CheckFreshness(identityStartedAt); err != nil {
+		return nil, err
 	}
 	if opts.Replay != nil {
 		if params.Nonce == "" {
@@ -204,8 +260,8 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	if err := p.validTime(dirParams); err != nil {
 		return nil, err
 	}
-	if expiry := vd.Expiry(); !expiry.IsZero() && !time.Now().Before(expiry) {
-		return nil, wbaError("DNSid evidence expired")
+	if err := vd.CheckFreshness(identityStartedAt); err != nil {
+		return nil, err
 	}
 	return vd, nil
 }
@@ -228,7 +284,7 @@ func selectSignature(header http.Header, tag, keyID string) (httpsig.SignaturePa
 		}
 		sig, ok := signatures[label]
 		if !ok {
-			return selected, nil, wbaError("incomplete tagged signature")
+			continue
 		}
 		selected, signature = params, sig
 		count++
@@ -239,8 +295,15 @@ func selectSignature(header http.Header, tag, keyID string) (httpsig.SignaturePa
 	return selected, signature, nil
 }
 
+func (p *Profile) currentTime() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
+}
+
 func (p *Profile) clockSkew() time.Duration {
-	if p.cfg.ClockSkew == 0 {
+	if p.cfg.ClockSkew == 0 && !p.cfg.clockSkewSet {
 		return 5 * time.Second
 	}
 	return p.cfg.ClockSkew
@@ -256,7 +319,7 @@ func (p *Profile) validTime(params httpsig.SignatureParams) error {
 	if err != nil || len(thumb) != 32 || base64.RawURLEncoding.EncodeToString(thumb) != params.KeyID || params.Alg != "ed25519" {
 		return wbaError("invalid thumbprint or algorithm")
 	}
-	now := time.Now()
+	now := p.currentTime()
 	if !created || !expires || params.Created > params.Expires || params.Expires-params.Created > 300 ||
 		time.Unix(params.Created, 0).After(now.Add(p.clockSkew())) || !now.Before(time.Unix(params.Expires, 0).Add(p.clockSkew())) {
 		return wbaError("signature outside validity window")
@@ -286,10 +349,10 @@ func boundedContent(ctx context.Context, body io.ReadCloser, maximum int64) ([]b
 	stop := context.AfterFunc(ctx, func() { _ = body.Close() })
 	defer stop()
 	data, err := io.ReadAll(io.LimitReader(body, maximum+1))
-	if err != nil {
-		return nil, err
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
 	}
-	if err := ctx.Err(); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	if int64(len(data)) > maximum {
@@ -314,10 +377,7 @@ func verifyContent(ctx context.Context, header http.Header, body *io.ReadCloser,
 	if err != nil {
 		return err
 	}
-	*body = struct {
-		io.Reader
-		io.Closer
-	}{bytes.NewReader(data), *body}
+	*body = httputil.ReplayBody(data, *body)
 	if err := digest.VerifyContentDigestBytes(data, strings.Join(header.Values("Content-Digest"), ", "), []string{"sha-256"}); err != nil {
 		return wbaError("content-digest mismatch")
 	}
@@ -363,8 +423,30 @@ func directoryKey(body []byte, keyID string) (jwk.Key, error) {
 		if !ok || err != nil || len(xBytes) != 32 || base64.RawURLEncoding.EncodeToString(xBytes) != x {
 			return nil, wbaError("invalid Ed25519 public material")
 		}
-		// Strip WBA algorithm metadata before using the JOSE JWK parser.
-		public, _ := json.Marshal(map[string]any{"kty": "OKP", "crv": "Ed25519", "x": x})
+		if raw, present := m["key_ops"]; present {
+			ops, ok := raw.([]any)
+			seenOps, verify := map[string]bool{}, false
+			if !ok {
+				return nil, wbaError("invalid directory key operations")
+			}
+			for _, value := range ops {
+				op, ok := value.(string)
+				if !ok || (op != "sign" && op != "verify") || seenOps[op] {
+					return nil, wbaError("invalid directory key operations")
+				}
+				seenOps[op] = true
+				verify = verify || op == "verify"
+			}
+			if !verify {
+				return nil, wbaError("directory key excludes verification")
+			}
+		}
+		// Translate the WBA algorithm without discarding JWK restrictions.
+		m["alg"] = string(dnsid.JoseAlgEdDSA)
+		public, err := json.Marshal(m)
+		if err != nil {
+			return nil, err
+		}
 		key, err := jwk.ParseKey(public)
 		if err != nil {
 			return nil, err
@@ -473,6 +555,7 @@ func discovery(header http.Header, params httpsig.SignatureParams, opts Verifica
 	}
 	if kind == "directory" {
 		u.Path, u.RawPath, u.RawQuery, u.Fragment = DirectoryPath, "", "", ""
+		u.ForceQuery = false
 	}
 	if u.Fragment != "" {
 		return "", "", wbaError("discovery endpoint contains fragment")
