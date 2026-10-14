@@ -166,6 +166,41 @@ func TestWBA_SuppliedEmptyContentAndAuthorization(t *testing.T) {
 	}
 }
 
+type closeTrackingBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func TestWBA_VerificationPreservesBodyClose(t *testing.T) {
+	for _, invalid := range []bool{false, true} {
+		f := newWBAFixture(t, false, false)
+		content := "hello"
+		if invalid {
+			content = "changed"
+		}
+		original := &closeTrackingBody{Reader: strings.NewReader(content)}
+		f.request.Body = original
+		_, err := f.checker.VerifyWebBotAuthSignedRequest(context.Background(), f.request, f.opts)
+		if (err != nil) != invalid {
+			t.Fatalf("invalid=%v: %v", invalid, err)
+		}
+		if original.closed {
+			t.Fatal("verification closed caller-owned body")
+		}
+		if err := f.request.Body.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if !original.closed {
+			t.Fatal("closing request body did not close original reader")
+		}
+	}
+}
+
 func TestWBA_NoAcceptanceFallbackOnResolverError(t *testing.T) {
 	f := newWBAFixture(t, false, false)
 	expected := errors.New("acceptance backend unavailable")

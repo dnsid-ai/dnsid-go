@@ -280,6 +280,29 @@ func (f wbaResolverFunc) VerifyDomain(ctx context.Context, domain string) (*dnsi
 	return f(ctx, domain)
 }
 
+func TestProfile_WBAVerifiesServerRequestsWithExplicitDefaultPort(t *testing.T) {
+	f := newWBAFixture(t, false, false)
+	f.signer.cfg.DirectoryURL = "https://bot.example.com:443"
+	f.checker.client = &http.Client{Transport: wbaRoundTrip(func(req *http.Request) (*http.Response, error) {
+		serverReq := req.Clone(req.Context())
+		serverReq.URL.Scheme, serverReq.URL.Host = "", ""
+		serverReq.RequestURI = req.URL.RequestURI()
+		serverReq.TLS = &tls.ConnectionState{}
+		return f.signer.ServeHttpMessageSignaturesDirectory(serverReq)
+	})}
+	req, _ := http.NewRequest(http.MethodPost, "https://target.example:443/path", strings.NewReader("hello"))
+	signed, err := f.signer.CreateWebBotAuthSignedRequest(req, SigningOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed.URL.Scheme, signed.URL.Host = "", ""
+	signed.RequestURI = "/path"
+	signed.TLS = &tls.ConnectionState{}
+	if _, err := f.checker.VerifyWebBotAuthSignedRequest(context.Background(), signed, f.opts); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProfile_WBAAcceptanceAndReplayFailClosed(t *testing.T) {
 	f := newWBAFixture(t, true, false)
 	if _, err := f.checker.VerifyWebBotAuthSignedRequest(context.Background(), f.request, f.opts); !errors.Is(err, dnsid.ErrCounterpartyNotAccepted) {

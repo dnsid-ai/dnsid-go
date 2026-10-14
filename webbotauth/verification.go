@@ -314,7 +314,10 @@ func verifyContent(ctx context.Context, header http.Header, body *io.ReadCloser,
 	if err != nil {
 		return err
 	}
-	*body = io.NopCloser(bytes.NewReader(data))
+	*body = struct {
+		io.Reader
+		io.Closer
+	}{bytes.NewReader(data), *body}
 	if err := digest.VerifyContentDigestBytes(data, strings.Join(header.Values("Content-Digest"), ", "), []string{"sha-256"}); err != nil {
 		return wbaError("content-digest mismatch")
 	}

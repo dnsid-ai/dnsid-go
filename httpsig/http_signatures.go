@@ -719,7 +719,8 @@ func httpAuthority(req *http.Request) string {
 	if host == "" && req.URL != nil {
 		host = req.URL.Host
 	}
-	return normalizeHTTPAuthority(host, req.URL)
+	scheme, _ := httpScheme(req)
+	return normalizeHTTPAuthority(host, &url.URL{Scheme: scheme})
 }
 
 func normalizeHTTPAuthority(host string, u *url.URL) string {
