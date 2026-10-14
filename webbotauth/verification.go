@@ -64,7 +64,9 @@ func NewVerifier(resolver dnsid.IdentityResolver, cfg Config) *Profile {
 			return http.ErrUseLastResponse
 		},
 	}
-	return &Profile{resolver: resolver, client: client, cfg: cfg}
+	p := New("", nil, cfg)
+	p.resolver, p.client = resolver, client
+	return p
 }
 
 func directoryFetchError(err error) error {

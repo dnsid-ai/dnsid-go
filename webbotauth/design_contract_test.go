@@ -59,7 +59,7 @@ func TestDirectoryKey_ValidatesMetadata(t *testing.T) {
 }
 
 func TestWBA_RequiredComponents(t *testing.T) {
-	for _, mode := range []string{"default", "missing", "covered", "wrong-parameter", "malformed", "duplicate", "response", "too-many"} {
+	for _, mode := range []string{"default", "missing", "covered", "wrong-parameter", "malformed", "unknown", "duplicate", "response", "too-many"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newWBAFixture(t, false, false)
 			f.request.Method, f.request.URL.Path = http.MethodDelete, "/other"
@@ -79,6 +79,9 @@ func TestWBA_RequiredComponents(t *testing.T) {
 				f.opts.RequiredComponents = []httpsig.ComponentIdentifier{{Name: "signature-agent", Params: map[string]any{"key": "other"}}}
 			case "malformed":
 				f.opts.RequiredComponents = []httpsig.ComponentIdentifier{{Name: "@query-param"}}
+				argumentError = true
+			case "unknown":
+				f.opts.RequiredComponents = []httpsig.ComponentIdentifier{{Name: "@unknown"}}
 				argumentError = true
 			case "duplicate":
 				f.opts.RequiredComponents = []httpsig.ComponentIdentifier{{Name: "@method"}, {Name: "@method"}}

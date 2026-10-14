@@ -16,8 +16,15 @@ import (
 func TestProfile_SnapshotsSignatureAgentFlag(t *testing.T) {
 	for _, initial := range []bool{false, true} {
 		flag := initial
-		p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{IncludeSignatureAgent: &flag})
+		cfg := Config{IncludeSignatureAgent: &flag}
+		p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), cfg)
+		profiles := []*Profile{p, NewVerifier(nil, cfg), NewFromIdentityManager(nil, cfg)}
 		flag = !initial
+		for _, profile := range profiles {
+			if *profile.cfg.IncludeSignatureAgent != initial || profile.cfg.IncludeSignatureAgent == &flag {
+				t.Fatal("constructor retained caller-owned configuration")
+			}
+		}
 		req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
 		signed, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{})
 		if err != nil {
