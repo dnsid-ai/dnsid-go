@@ -53,11 +53,17 @@ type VerificationOptions struct {
 // NewVerifier constructs a verification-only profile with public-address-only,
 // Web-PKI HTTPS discovery. Redirects are rejected. No local key is required.
 func NewVerifier(resolver dnsid.IdentityResolver, cfg Config) *Profile {
-	client, _ := dnsid.CreateDnsidHTTPClient(dnsid.TransportConfig{})
+	transport := dnsid.SafeDialerTransport()
 	// Discovery must not inherit disabled Web PKI or application client keys.
-	transport := client.Transport.(*http.Transport)
 	transport.TLSClientConfig = nil
 	transport.DisableCompression = true
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   dnsid.DefaultVerificationTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	return &Profile{resolver: resolver, client: client, cfg: cfg}
 }
 

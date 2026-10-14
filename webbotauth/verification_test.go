@@ -390,6 +390,9 @@ func (r *wbaPeerResolver) VerifyDomainWithOptions(ctx context.Context, domain st
 
 func TestProfile_WBARejectsPrivateDiscoveryAndRedirects(t *testing.T) {
 	p := NewVerifier(nil, Config{})
+	if p.client.Timeout != dnsid.DefaultVerificationTimeout {
+		t.Fatal("discovery timeout differs from the verification budget")
+	}
 	if p.client.Transport.(*http.Transport).TLSClientConfig != nil {
 		t.Fatal("discovery inherited application TLS settings")
 	}
@@ -399,7 +402,7 @@ func TestProfile_WBARejectsPrivateDiscoveryAndRedirects(t *testing.T) {
 			t.Fatalf("unsafe URI accepted: %s", uri)
 		}
 	}
-	if err := p.client.CheckRedirect(&http.Request{}, nil); err != http.ErrUseLastResponse {
+	if err := p.client.CheckRedirect(&http.Request{}, nil); !errors.Is(err, http.ErrUseLastResponse) {
 		t.Fatal("redirects not disabled")
 	}
 }

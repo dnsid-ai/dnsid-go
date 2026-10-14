@@ -241,7 +241,7 @@ func (p *Profile) ServeHttpMessageSignaturesDirectory(req *http.Request) (*http.
 ServeHttpMessageSignaturesDirectory builds the signed key directory response containing the profile's active public key. req is recorded as the response's originating request so the signature can cover @authority.
 
 <a name="Profile.VerifyWebBotAuthSignedRequest"></a>
-### func \(\*Profile\) [VerifyWebBotAuthSignedRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/verification.go#L94>)
+### func \(\*Profile\) [VerifyWebBotAuthSignedRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/verification.go#L100>)
 
 ```go
 func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.Request, opts VerificationOptions) (*dnsid.VerifiedDomain, error)
