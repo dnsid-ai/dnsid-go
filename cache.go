@@ -261,10 +261,10 @@ func (v *VerifiedDomain) LogReader() dnsidlog.LogReader {
 	return v.logReader
 }
 
-// Expiry returns the earliest instant at which this verification result
-// should no longer be trusted: the minimum of the DNS TTL, the ka= key-age
-// deadline, and the runtime and record-signing TLS certificate expiries. It
-// returns the zero time when no bound applies or on a nil receiver.
+// Expiry returns the cache-reuse deadline: the minimum of the DNS TTL, the
+// ka= key-age deadline, and identity TLS certificate expiries. Fresh zero-TTL
+// evidence may still be used by its acquiring operation; use CheckFreshness
+// to check operation validity. The zero time means no bound or a nil receiver.
 func (v *VerifiedDomain) Expiry() time.Time {
 	if v == nil {
 		return time.Time{}

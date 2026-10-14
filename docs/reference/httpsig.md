@@ -110,7 +110,7 @@ signature present: true
 
 
 <a name="AppendComponent"></a>
-## func [AppendComponent](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1213>)
+## func [AppendComponent](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1210>)
 
 ```go
 func AppendComponent(components *[]ComponentIdentifier, component ComponentIdentifier) error
@@ -119,7 +119,7 @@ func AppendComponent(components *[]ComponentIdentifier, component ComponentIdent
 AppendComponent validates and appends one component.
 
 <a name="BuildSignatureInput"></a>
-## func [BuildSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L494>)
+## func [BuildSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L496>)
 
 ```go
 func BuildSignatureInput(msg any, params SignatureParams) (string, error)
@@ -128,7 +128,7 @@ func BuildSignatureInput(msg any, params SignatureParams) (string, error)
 BuildSignatureInput builds the RFC 9421 signature base for requests or responses.
 
 <a name="JoseAlgToHTTPSigAlg"></a>
-## func [JoseAlgToHTTPSigAlg](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1182>)
+## func [JoseAlgToHTTPSigAlg](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1179>)
 
 ```go
 func JoseAlgToHTTPSigAlg(alg dnsid.JoseAlg) (string, error)
@@ -137,7 +137,7 @@ func JoseAlgToHTTPSigAlg(alg dnsid.JoseAlg) (string, error)
 JoseAlgToHTTPSigAlg maps SDK JOSE algorithms to RFC 9421 algorithm names.
 
 <a name="ParseSignature"></a>
-## func [ParseSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1136>)
+## func [ParseSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1133>)
 
 ```go
 func ParseSignature(input string) (map[string][]byte, error)
@@ -146,7 +146,7 @@ func ParseSignature(input string) (map[string][]byte, error)
 ParseSignature parses a Signature dictionary into bytes by label.
 
 <a name="ParseSignatureInput"></a>
-## func [ParseSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L828>)
+## func [ParseSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L825>)
 
 ```go
 func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error)
@@ -155,7 +155,7 @@ func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error)
 ParseSignatureInput parses a Signature\-Input dictionary.
 
 <a name="SignHTTPMessage"></a>
-## func [SignHTTPMessage](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L535>)
+## func [SignHTTPMessage](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L537>)
 
 ```go
 func SignHTTPMessage(msg any, params SignatureParams, kp dnsid.KeyProvider) error
@@ -164,7 +164,7 @@ func SignHTTPMessage(msg any, params SignatureParams, kp dnsid.KeyProvider) erro
 SignHTTPMessage signs a request or response and sets Signature\-Input/Signature.
 
 <a name="ComponentIdentifier"></a>
-## type [ComponentIdentifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L54-L71>)
+## type [ComponentIdentifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L55-L72>)
 
 ComponentIdentifier identifies an RFC 9421 covered component.
 
@@ -190,7 +190,7 @@ type ComponentIdentifier struct {
 ```
 
 <a name="ParseComponentIdentifier"></a>
-### func [ParseComponentIdentifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L449>)
+### func [ParseComponentIdentifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L451>)
 
 ```go
 func ParseComponentIdentifier(s string) ComponentIdentifier
@@ -199,7 +199,7 @@ func ParseComponentIdentifier(s string) ComponentIdentifier
 ParseComponentIdentifier parses the subset of component identifiers this SDK emits.
 
 <a name="ComponentIdentifier.String"></a>
-### func \(ComponentIdentifier\) [String](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L405>)
+### func \(ComponentIdentifier\) [String](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L407>)
 
 ```go
 func (c ComponentIdentifier) String() string
@@ -208,7 +208,7 @@ func (c ComponentIdentifier) String() string
 String serializes a component identifier as it appears in Signature\-Input.
 
 <a name="Config"></a>
-## type [Config](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L29-L42>)
+## type [Config](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L30-L43>)
 
 Config contains HTTP Message Signatures profile policy. The zero value applies the profile defaults.
 
@@ -229,7 +229,7 @@ type Config struct {
 ```
 
 <a name="Config.WithClockSkew"></a>
-### func \(Config\) [WithClockSkew](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L47>)
+### func \(Config\) [WithClockSkew](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L48>)
 
 ```go
 func (c Config) WithClockSkew(skew time.Duration) Config
@@ -238,7 +238,7 @@ func (c Config) WithClockSkew(skew time.Duration) Config
 WithClockSkew returns a copy configured with skew, including an explicit zero value. This distinguishes strict zero\-skew verification from Config's zero\-value default of 5 seconds.
 
 <a name="Profile"></a>
-## type [Profile](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L143-L148>)
+## type [Profile](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L144-L149>)
 
 Profile implements the DNSid HTTP Message Signatures profile.
 
@@ -249,7 +249,7 @@ type Profile struct {
 ```
 
 <a name="New"></a>
-### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L161>)
+### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L162>)
 
 ```go
 func New(resolver dnsid.IdentityResolver, localDomain string, kp dnsid.KeyProvider, cfg Config) *Profile
@@ -258,7 +258,7 @@ func New(resolver dnsid.IdentityResolver, localDomain string, kp dnsid.KeyProvid
 New constructs an HTTP Message Signatures profile.
 
 <a name="NewFromIdentityManager"></a>
-### func [NewFromIdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L171>)
+### func [NewFromIdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L172>)
 
 ```go
 func NewFromIdentityManager(manager identityManager, kp dnsid.KeyProvider, cfg Config) *Profile
@@ -267,7 +267,7 @@ func NewFromIdentityManager(manager identityManager, kp dnsid.KeyProvider, cfg C
 NewFromIdentityManager constructs a profile from an IdentityManager\-like core manager.
 
 <a name="NewFromIdentityManagerKeyProvider"></a>
-### func [NewFromIdentityManagerKeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L180>)
+### func [NewFromIdentityManagerKeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L181>)
 
 ```go
 func NewFromIdentityManagerKeyProvider(manager identityManagerWithKeyProvider, cfg Config) *Profile
@@ -276,7 +276,7 @@ func NewFromIdentityManagerKeyProvider(manager identityManagerWithKeyProvider, c
 NewFromIdentityManagerKeyProvider constructs a profile from a manager that exposes its KeyProvider.
 
 <a name="Profile.CreateSignedHTTPClient"></a>
-### func \(\*Profile\) [CreateSignedHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L275>)
+### func \(\*Profile\) [CreateSignedHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L277>)
 
 ```go
 func (p *Profile) CreateSignedHTTPClient(base *http.Client, opts SigningOptions) *http.Client
@@ -285,7 +285,7 @@ func (p *Profile) CreateSignedHTTPClient(base *http.Client, opts SigningOptions)
 CreateSignedHTTPClient wraps base so outbound requests are signed before dispatch.
 
 <a name="Profile.CreateSignedHTTPRequest"></a>
-### func \(\*Profile\) [CreateSignedHTTPRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L188>)
+### func \(\*Profile\) [CreateSignedHTTPRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L189>)
 
 ```go
 func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions) (*http.Request, error)
@@ -294,7 +294,7 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 CreateSignedHTTPRequest signs req using the DNSid HTTP Message Signatures profile.
 
 <a name="Profile.VerifyHTTPRequest"></a>
-### func \(\*Profile\) [VerifyHTTPRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L296>)
+### func \(\*Profile\) [VerifyHTTPRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L298>)
 
 ```go
 func (p *Profile) VerifyHTTPRequest(ctx context.Context, req *http.Request) (*dnsid.VerifiedDomain, error)
@@ -303,7 +303,7 @@ func (p *Profile) VerifyHTTPRequest(ctx context.Context, req *http.Request) (*dn
 VerifyHTTPRequest verifies a DNSid HTTP Message Signature and returns the verified signer domain. At most two eligible signatures may be supplied; applications should also rate\-limit inbound requests.
 
 <a name="SignatureParameter"></a>
-## type [SignatureParameter](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L76-L79>)
+## type [SignatureParameter](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L77-L80>)
 
 SignatureParameter is one ordered RFC 8941 parameter on a Signature\-Input inner list. Value is an RFC 8941 bare item: bool, int64, string, \[\]byte, or sfv.Token.
 
@@ -315,7 +315,7 @@ type SignatureParameter struct {
 ```
 
 <a name="SignatureParams"></a>
-## type [SignatureParams](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L82-L120>)
+## type [SignatureParams](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L83-L121>)
 
 SignatureParams contains one RFC 9421 Signature\-Input member.
 
@@ -362,7 +362,7 @@ type SignatureParams struct {
 ```
 
 <a name="SigningOptions"></a>
-## type [SigningOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L123-L140>)
+## type [SigningOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L124-L141>)
 
 SigningOptions configures HTTP request signing.
 

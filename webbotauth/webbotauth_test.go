@@ -13,6 +13,29 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
+func TestProfile_SnapshotsSignatureAgentFlag(t *testing.T) {
+	for _, initial := range []bool{false, true} {
+		flag := initial
+		cfg := Config{IncludeSignatureAgent: &flag}
+		p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), cfg)
+		profiles := []*Profile{p, NewVerifier(nil, cfg), NewFromIdentityManager(nil, cfg)}
+		flag = !initial
+		for _, profile := range profiles {
+			if *profile.cfg.IncludeSignatureAgent != initial || profile.cfg.IncludeSignatureAgent == &flag {
+				t.Fatal("constructor retained caller-owned configuration")
+			}
+		}
+		req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
+		signed, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (signed.Header.Get("Signature-Agent") != "") != initial {
+			t.Fatalf("caller mutation changed the profile: initial=%v", initial)
+		}
+	}
+}
+
 func TestProfile_CreateWebBotAuthSignedRequest(t *testing.T) {
 	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{})
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
@@ -81,7 +104,7 @@ func TestProfile_WebBotAuthValidatesAdditionalComponents(t *testing.T) {
 }
 
 func TestProfile_SignatureAgentCustomURLUsesExplicitType(t *testing.T) {
-	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{DirectoryURL: "https://keys.example/custom.json"})
+	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{DirectoryURL: "https://keys.example/custom.json", SignatureAgentType: "jwks_uri"})
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
 	signed, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{})
 	if err != nil {
@@ -95,9 +118,11 @@ func TestProfile_SignatureAgentCustomURLUsesExplicitType(t *testing.T) {
 func TestProfile_WebBotAuthRejectsOutOfBoundsConfiguration(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
 	for name, cfg := range map[string]Config{
-		"request ttl":   {SignatureTTL: 5*time.Minute + time.Second},
-		"directory ttl": {DirectorySignatureTTL: 5*time.Minute + time.Second},
-		"clock skew":    {ClockSkew: -time.Second},
+		"request ttl":             {SignatureTTL: 5*time.Minute + time.Second},
+		"directory ttl":           {DirectorySignatureTTL: 5*time.Minute + time.Second},
+		"clock skew":              {ClockSkew: -time.Second},
+		"subsecond request ttl":   {SignatureTTL: time.Millisecond},
+		"subsecond directory ttl": {DirectorySignatureTTL: time.Millisecond},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), cfg)
