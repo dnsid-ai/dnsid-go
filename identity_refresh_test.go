@@ -113,6 +113,65 @@ func TestRefreshDomain_OlderLookupCannotOverwriteRefresh(t *testing.T) {
 	}
 }
 
+func TestRefreshDomain_NonActiveStatusInvalidatesEvidence(t *testing.T) {
+	const domain = "agent.example.com"
+	for _, mode := range []string{"cached", "older-lookup", "older-status-refresh", "key-failure"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newCoalescingFixture(t, []string{domain}, nil)
+			f.manager.verification.StatusCheckInterval = time.Hour
+			if _, err := f.manager.VerifyDomain(context.Background(), domain); err != nil {
+				t.Fatal(err)
+			}
+			uri := f.records[domain].StatusURI
+			var olderResult chan error
+			if strings.HasPrefix(mode, "older-") {
+				if mode == "older-lookup" {
+					f.manager.EvictDomain(domain)
+				} else {
+					cached := f.manager.cachedDomain(domain)
+					cached.lastStatusCheckAt = time.Time{}
+					f.manager.cache.put(cached, f.manager)
+				}
+				f.https.calls[uri] = 0
+				f.https.blockURL, f.https.entered, f.https.release = uri, make(chan struct{}), make(chan struct{}, 1)
+				defer close(f.https.release)
+				olderResult = make(chan error, 1)
+				go func() {
+					_, err := f.manager.VerifyDomain(context.Background(), domain)
+					olderResult <- err
+				}()
+				<-f.https.entered
+			}
+			f.https.mu.Lock()
+			f.https.responses[uri] = json.RawMessage(`{"state":"REVOKED","revocationReason":"keyCompromise","lastTransitionAt":"` + time.Now().UTC().Format(time.RFC3339Nano) + `"}`)
+			if mode == "key-failure" {
+				f.https.failures = map[string]error{f.records[domain].KeyURI: errors.New("unavailable")}
+			}
+			f.https.mu.Unlock()
+			vd, err := f.manager.RefreshDomain(context.Background(), domain, VerifyDomainOpts{})
+			var verificationErr *VerificationError
+			if vd != nil || !errors.As(err, &verificationErr) || mode != "key-failure" && verificationErr.AgentState() != AgentStateRevoked {
+				t.Fatalf("refresh did not reject revoked identity: %v", err)
+			}
+			if f.manager.cachedDomain(domain) != nil {
+				t.Fatal("known revocation left cached ACTIVE evidence")
+			}
+			if olderResult != nil {
+				f.https.release <- struct{}{}
+				if err := <-olderResult; !errors.As(err, &verificationErr) || verificationErr.AgentState() != AgentStateRevoked {
+					t.Fatalf("older worker did not reject revoked identity: %v", err)
+				}
+				if f.manager.cachedDomain(domain) != nil {
+					t.Fatal("older worker restored cached ACTIVE evidence")
+				}
+			}
+			if vd, err := f.manager.VerifyDomain(context.Background(), domain); err == nil || vd != nil {
+				t.Fatalf("subsequent verification accepted revoked identity: %v", err)
+			}
+		})
+	}
+}
+
 func TestDefaultHTTPSFetcher_Revalidates(t *testing.T) {
 	fetcher := defaultHTTPSFetcher{client: &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		if req.Header.Get("Cache-Control") != "no-cache" || req.Header.Get("If-None-Match") != "" {

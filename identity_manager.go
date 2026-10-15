@@ -588,13 +588,14 @@ type verificationWorkKey struct {
 }
 
 type inFlightVerification struct {
-	startedAt  time.Time
-	superseded bool
-	done       chan struct{}
-	cancel     context.CancelFunc
-	waiters    int
-	result     *VerifiedDomain
-	err        error
+	startedAt   time.Time
+	superseded  bool
+	invalidated error
+	done        chan struct{}
+	cancel      context.CancelFunc
+	waiters     int
+	result      *VerifiedDomain
+	err         error
 }
 
 // IdentityManagerOption configures IdentityManager.
@@ -982,7 +983,8 @@ var _ RefreshingIdentityResolver = (*IdentityManager)(nil)
 // RefreshDomain performs complete verification with new identity evidence,
 // bypassing the identity cache and revalidating HTTP resources. Concurrent
 // refreshes share acquisition, but not per-caller peer or acceptance checks.
-// Failure never returns cached evidence. DNS propagation can still delay rotation.
+// Failure never returns cached evidence. Observed non-ACTIVE status invalidates
+// cached and in-flight evidence. DNS propagation can still delay rotation.
 func (m *IdentityManager) RefreshDomain(ctx context.Context, domain string, opts VerifyDomainOpts) (*VerifiedDomain, error) {
 	return m.verifyDomain(ctx, domain, opts, true, true)
 }
@@ -1207,6 +1209,7 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 			}
 		case statusCheck = <-statusResults:
 			statusResults = nil
+			m.invalidateNonActiveDomain(normalized, statusCheck.err)
 			if statusCheck.err != nil {
 				cancel()
 			}
@@ -1265,6 +1268,9 @@ func (m *IdentityManager) coalesceVerification(ctx context.Context, domain strin
 			cancel()
 
 			m.inFlightMu.Lock()
+			if err == nil && call.invalidated != nil {
+				result, err = nil, call.invalidated
+			}
 			if err == nil && !call.superseded {
 				if kind != statusRefresh {
 					for otherKey, other := range calls {
@@ -1502,6 +1508,22 @@ func fetchErrorTransient(err error) bool {
 	return true
 }
 
+func (m *IdentityManager) invalidateNonActiveDomain(domain string, err error) {
+	var verificationErr *VerificationError
+	if !errors.As(err, &verificationErr) || verificationErr.Code() != VerificationCodeStatusNotActive {
+		return
+	}
+	m.inFlightMu.Lock()
+	defer m.inFlightMu.Unlock()
+	// Eviction and worker invalidation must be atomic with cache insertion.
+	m.cache.evict(domain, m)
+	for key, call := range m.verifying {
+		if key.domain == domain {
+			call.superseded, call.invalidated = true, err
+		}
+	}
+}
+
 func (m *IdentityManager) refreshCachedStatusIfNeeded(ctx context.Context, vd *VerifiedDomain) (*VerifiedDomain, error) {
 	if !m.cachedStatusNeedsRefresh(vd) {
 		return vd, nil
@@ -1520,10 +1542,7 @@ func (m *IdentityManager) refreshCachedStatusIfNeeded(ctx context.Context, vd *V
 		}
 		status, statusCert, err := m.fetchAgentStatus(sharedCtx, base.record.StatusURI)
 		if err != nil {
-			var verificationErr *VerificationError
-			if errors.As(err, &verificationErr) && verificationErr.Code() == VerificationCodeStatusNotActive {
-				m.cache.evict(domain, m)
-			}
+			m.invalidateNonActiveDomain(domain, err)
 			return nil, err
 		}
 		now := time.Now()
