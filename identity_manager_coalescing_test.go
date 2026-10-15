@@ -233,7 +233,7 @@ func TestCoalesceVerification_PreservesInitiatingContextValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = manager.coalesceVerification(ctx, "agent.example.com", false, func(sharedCtx context.Context) (*VerifiedDomain, error) {
+	_, err = manager.coalesceVerification(ctx, "agent.example.com", identityLookup, func(sharedCtx context.Context) (*VerifiedDomain, error) {
 		if sharedCtx.Value(contextKey{}) != "value" {
 			return nil, errors.New("shared context lost initiating value")
 		}
@@ -255,7 +255,7 @@ func TestCoalesceVerification_CoalescesDifferentContextValues(t *testing.T) {
 	results := make(chan *VerifiedDomain, 2)
 	errs := make(chan error, 2)
 	go func() {
-		vd, err := manager.coalesceVerification(context.WithValue(context.Background(), contextKey{}, "first"), "agent.example.com", false, func(sharedCtx context.Context) (*VerifiedDomain, error) {
+		vd, err := manager.coalesceVerification(context.WithValue(context.Background(), contextKey{}, "first"), "agent.example.com", identityLookup, func(sharedCtx context.Context) (*VerifiedDomain, error) {
 			close(started)
 			<-release
 			return &VerifiedDomain{domain: sharedCtx.Value(contextKey{}).(string)}, nil
@@ -265,7 +265,7 @@ func TestCoalesceVerification_CoalescesDifferentContextValues(t *testing.T) {
 	}()
 	<-started
 	go func() {
-		vd, err := manager.coalesceVerification(context.WithValue(context.Background(), contextKey{}, "second"), "agent.example.com", false, func(context.Context) (*VerifiedDomain, error) {
+		vd, err := manager.coalesceVerification(context.WithValue(context.Background(), contextKey{}, "second"), "agent.example.com", identityLookup, func(context.Context) (*VerifiedDomain, error) {
 			return nil, errors.New("duplicate work")
 		})
 		results <- vd

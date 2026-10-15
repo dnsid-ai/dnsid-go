@@ -1752,7 +1752,7 @@ published:
 	// Publication confirmation is control-plane: full protocol verification
 	// without counterparty acceptance. Public VerifyDomain(localDomain) still
 	// enforces the configured policy.
-	verified, err := m.verifyDomain(ctx, m.identity.Domain, VerifyDomainOpts{}, false)
+	verified, err := m.verifyDomain(ctx, m.identity.Domain, VerifyDomainOpts{}, false, false)
 	if err != nil {
 		return nil, err
 	}

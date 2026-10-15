@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/dnsid-ai/dnsid-go"
@@ -117,14 +118,17 @@ func (o SigningOptions) WithTTL(ttl time.Duration) SigningOptions {
 
 // Profile signs and verifies DNSid Web Bot Auth requests and serves signed
 // key directories. The signing key must be Ed25519. Verification requires an
-// IdentityResolver, supplied through NewVerifier or NewFromIdentityManager.
+// RefreshingIdentityResolver, supplied through NewVerifier or NewFromIdentityManager.
 type Profile struct {
 	domain   string
 	keys     dnsid.KeyProvider
 	cfg      Config
-	resolver dnsid.IdentityResolver
+	resolver dnsid.RefreshingIdentityResolver
 	client   *http.Client
 	now      func() time.Time
+	kuURL    string
+	retryMu  sync.Mutex
+	retryAt  map[string]time.Time
 }
 
 type identityManager interface {
@@ -158,9 +162,12 @@ func NewFromIdentityManager(manager identityManager, cfg Config) *Profile {
 		return New("", nil, cfg)
 	}
 	p := New(manager.Domain(), manager.KeyProvider(), cfg)
-	if resolver, ok := manager.(dnsid.IdentityResolver); ok {
-		p.resolver = resolver
-		p.client = NewVerifier(resolver, cfg).client
+	if local, ok := manager.(interface{ OperationalKeyURL() string }); ok {
+		p.kuURL = local.OperationalKeyURL()
+	}
+	if resolver, ok := manager.(dnsid.RefreshingIdentityResolver); ok {
+		verifier, _ := NewVerifier(resolver, cfg)
+		p.resolver, p.client = resolver, verifier.client
 	}
 	return p
 }
@@ -290,18 +297,22 @@ func (p *Profile) ServeHttpMessageSignaturesDirectory(req *http.Request) (*http.
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
+	now := p.currentTime().Unix()
+	lifetime := int64(ttl / time.Second)
+	created := now - min(5, lifetime-1)
+	expires := created + lifetime
 	res := &http.Response{
 		StatusCode: http.StatusOK,
 		Header: http.Header{
+			"Date":           {time.Unix(now, 0).UTC().Format(http.TimeFormat)},
 			"Content-Type":   {DirectoryContentType},
-			"Cache-Control":  {"max-age=" + strconv.Itoa(int(ttl/time.Second))},
+			"Cache-Control":  {"max-age=" + strconv.FormatInt(expires-now, 10) + ", must-revalidate"},
 			"Content-Digest": {contentDigest(body)},
 		},
 		Body:          io.NopCloser(bytes.NewReader(body)),
 		ContentLength: int64(len(body)),
 		Request:       req,
 	}
-	now := p.currentTime().Unix()
 	nonce, err := randomNonce()
 	if err != nil {
 		return nil, err
@@ -316,13 +327,16 @@ func (p *Profile) ServeHttpMessageSignaturesDirectory(req *http.Request) (*http.
 		},
 		KeyID:             thumbID,
 		Alg:               httpAlg,
-		Created:           now,
-		Expires:           now + int64(ttl/time.Second),
+		Created:           created,
+		Expires:           expires,
 		Nonce:             nonce,
 		Tag:               "http-message-signatures-directory",
 		ExpectedSignerKid: kid,
 		ExpectedSignerAlg: alg,
 	}, p.keys)
+	if err == nil && p.currentTime().Unix() >= expires {
+		err = wbaError("directory expired during signing")
+	}
 	return res, err
 }
 
@@ -380,6 +394,9 @@ func (p *Profile) signatureAgentValue() (string, error) {
 	}
 	if discoveryType == "directory" && raw != "https://"+u.Host {
 		return "", dnsid.NewArgumentError("dnsid: Web Bot Auth directory Signature-Agent must be an origin URI", nil)
+	}
+	if discoveryType == "jwks_uri" && p.kuURL != "" && normalizedIdentifier(raw) == normalizedIdentifier(p.kuURL) {
+		return "", dnsid.NewArgumentError("dnsid: WBA discovery must not identify local ku", nil)
 	}
 	item := sfv.Item{Value: raw, Parameters: []sfv.Parameter{{Key: "type", Value: sfv.Token{Value: discoveryType}}}}
 	return sfv.SerializeDictionary(&sfv.Dictionary{Keys: []string{"sig1"}, Values: map[string]interface{}{"sig1": item}})

@@ -26,15 +26,22 @@
 // ServeHttpMessageSignaturesDirectory produces the signed key directory
 // response that origins fetch from DirectoryPath to obtain the agent's
 // public key. Request signing preserves existing Authorization fields.
-// Only the current DNSid operational key is accepted. There is no rotation
-// overlap or automatic refresh on key mismatch; cached DNSid evidence can delay
-// acceptance of a new key, and refreshed evidence rejects the superseded key.
+// Directories are backdated by min(5, TTL-1) seconds without extending their
+// lifetime, and emit bounded max-age with must-revalidate. Disable CDN stale
+// serving, stale-while-revalidate, and stale-if-error for this endpoint.
+// Only the current DNSid operational key is accepted, without rotation overlap.
+// After both signatures pass, a key mismatch permits one DNSid refresh per
+// domain per five seconds. Failed attempts consume the allowance. Suppressed,
+// failed, or still-mismatched refreshes reject; caches can still delay rotation.
 //
 // VerifyWebBotAuthSignedRequest authenticates both signatures and binds the
-// directory key to the current DNSid ku key through an IdentityResolver,
+// directory key to the current DNSid ku key through a RefreshingIdentityResolver,
 // including its configured accountable-entity acceptance. NewVerifier requires
 // no local identity. Discovery uses public-address-only, Web-PKI HTTPS with no
-// redirects, content coding, or directory caching. Discovery availability
+// redirects, content coding, or directory caching. Each invocation sends an
+// unconditional no-cache GET; fresh directory key misses are not retried.
+// Discovery must not identify authenticated ku, including query/fragment variants.
+// Discovery availability
 // failures are transient; invalid evidence and unsafe destinations are not.
 // Supply a trusted SignerDomain or explicitly
 // permit the signed discovery host to identify it; cross-host delegation is
@@ -47,6 +54,15 @@
 // alone does not bind the method or path. Signers can cover additional
 // components; recipients require them through VerificationOptions.RequiredComponents.
 // Extra signing coverage does not make a recipient require it.
+//
+// WBA reuses ku, which also authorizes KEY_ROTATION. Unrestricted signing-node
+// key access therefore permits identity rotation, not just forged requests;
+// keeping ek off the fleet does not remove rotation authority. Use the shared
+// managed rotation/recovery flow, pause request and directory signing during
+// recovery, and revoke/reissue suspected compromised keys rather than rotate.
+// Without fl=mtls, validated HTTPS retrieval of ku supplies agent-domain TLS
+// evidence; the crawler itself need not accept inbound connections. With fl=mtls,
+// hosted resource certificates do not replace current application-peer evidence.
 //
 // See https://docs.dnsid.ai for protocol guides and account setup.
 package webbotauth

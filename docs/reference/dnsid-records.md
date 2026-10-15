@@ -243,7 +243,7 @@ func (a JoseAlg) Valid() bool
 Valid reports whether a is in the DNSid JOSE algorithm allowlist.
 
 <a name="KeyAge"></a>
-## type [PolicyFlag](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L26>)
+## type [PolicyFlag](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L27>)
 
 PolicyFlag is a DNSid TXT\-record policy flag.
 
@@ -373,7 +373,7 @@ func (r *TXTRecord) WithSignature(sig string) *TXTRecord
 WithSignature returns a copy of the record with Signature set to sig.
 
 <a name="TXTRecordRData"></a>
-## type [TXTRecordRData](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L302-L305>)
+## type [TXTRecordRData](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L310-L313>)
 
 TXTRecordRData is one concatenated TXT RDATA value plus resolver metadata.
 

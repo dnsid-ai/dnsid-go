@@ -169,7 +169,7 @@ func TestWBA_CreationTimeSkew(t *testing.T) {
 func TestWBA_DiscoveryRejectsRedirects(t *testing.T) {
 	for _, status := range []int{301, 302, 303, 307, 308} {
 		f := newWBAFixture(t, false, false)
-		f.checker.client = NewVerifier(f.manager, Config{}).client
+		f.checker.client = newWBAVerifier(t, f.manager, Config{}).client
 		calls := 0
 		f.checker.client.Transport = wbaRoundTrip(func(req *http.Request) (*http.Response, error) {
 			calls++
@@ -345,7 +345,7 @@ func TestWBA_DirectoryAvailabilityClassification(t *testing.T) {
 
 func TestWBA_DirectoryRejectsContentCoding(t *testing.T) {
 	f := newWBAFixture(t, false, false)
-	if !NewVerifier(f.manager, Config{}).client.Transport.(*http.Transport).DisableCompression {
+	if !newWBAVerifier(t, f.manager, Config{}).client.Transport.(*http.Transport).DisableCompression {
 		t.Fatal("transparent decompression enabled")
 	}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

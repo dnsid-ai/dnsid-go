@@ -370,7 +370,7 @@ func (f ApplicationSigningControllerFunc) SetApplicationSigningPaused(ctx contex
 SetApplicationSigningPaused calls f to update application\-signing state.
 
 <a name="BoundedResourceFetcher"></a>
-## type [BoundedResourceFetcher](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L38-L41>)
+## type [BoundedResourceFetcher](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L39-L42>)
 
 BoundedResourceFetcher fetches one resource while enforcing maxBytes during the read. Implementations must honor ctx cancellation and accurately report their transport properties through SecurityGuarantees. A supplied fetcher is trusted caller infrastructure; the SDK still checks the returned length.
 
@@ -1460,7 +1460,7 @@ func (r Reference) Validate() (err error)
 Validate checks that the reference is well formed and canonical: a known scope, an absolute lowercase http\(s\) LogPrefix with no userinfo, query, fragment, dot segments, trailing slash, default port, or non\-canonical percent\-encodings, and a non\-empty StreamID. Public scopes require https. It returns a \*dnsid.ValidationError describing the first violation.
 
 <a name="ResourceFetchError"></a>
-## type [ResourceFetchError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L66-L73>)
+## type [ResourceFetchError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L67-L74>)
 
 ResourceFetchError is returned when a policy or standard C2SP resource cannot be fetched safely. Unsafe destinations, redirects, malformed URLs, and response\-limit failures are permanent; network availability failures and retryable HTTP statuses are transient.
 
@@ -1476,7 +1476,7 @@ type ResourceFetchError struct {
 ```
 
 <a name="ResourceFetchError.Error"></a>
-### func \(\*ResourceFetchError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L75>)
+### func \(\*ResourceFetchError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L76>)
 
 ```go
 func (e *ResourceFetchError) Error() string
@@ -1485,7 +1485,7 @@ func (e *ResourceFetchError) Error() string
 
 
 <a name="ResourceFetchError.Transient"></a>
-### func \(\*ResourceFetchError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L111>)
+### func \(\*ResourceFetchError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L112>)
 
 ```go
 func (e *ResourceFetchError) Transient() bool
@@ -1494,7 +1494,7 @@ func (e *ResourceFetchError) Transient() bool
 Transient reports whether retrying an unchanged fetch may succeed.
 
 <a name="ResourceFetchError.Unwrap"></a>
-### func \(\*ResourceFetchError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L103>)
+### func \(\*ResourceFetchError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L104>)
 
 ```go
 func (e *ResourceFetchError) Unwrap() error
@@ -1503,7 +1503,7 @@ func (e *ResourceFetchError) Unwrap() error
 
 
 <a name="ResourceFetchErrorKind"></a>
-## type [ResourceFetchErrorKind](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L45>)
+## type [ResourceFetchErrorKind](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L46>)
 
 ResourceFetchErrorKind classifies failures from standard C2SP resource retrieval.
 
@@ -1531,7 +1531,7 @@ const (
 ```
 
 <a name="ResourceFetchGuarantees"></a>
-## type [ResourceFetchGuarantees](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L19-L25>)
+## type [ResourceFetchGuarantees](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L20-L26>)
 
 ResourceFetchGuarantees declares the security properties provided by a BoundedResourceFetcher. The verification convenience factory requires every property for policy and public\-log reads.
 
@@ -1546,7 +1546,7 @@ type ResourceFetchGuarantees struct {
 ```
 
 <a name="ResourceFetchGuarantees.SupportsPublicReads"></a>
-### func \(ResourceFetchGuarantees\) [SupportsPublicReads](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L29>)
+### func \(ResourceFetchGuarantees\) [SupportsPublicReads](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L30>)
 
 ```go
 func (g ResourceFetchGuarantees) SupportsPublicReads() bool

@@ -19,7 +19,7 @@ func TestProfile_SnapshotsSignatureAgentFlag(t *testing.T) {
 		flag := initial
 		cfg := Config{IncludeSignatureAgent: &flag}
 		p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), cfg)
-		profiles := []*Profile{p, NewVerifier(nil, cfg), NewFromIdentityManager(nil, cfg)}
+		profiles := []*Profile{p, newWBAVerifier(t, newWBAFixture(t, false, false).manager, cfg), NewFromIdentityManager(nil, cfg)}
 		flag = !initial
 		for _, profile := range profiles {
 			if *profile.cfg.IncludeSignatureAgent != initial || profile.cfg.IncludeSignatureAgent == &flag {

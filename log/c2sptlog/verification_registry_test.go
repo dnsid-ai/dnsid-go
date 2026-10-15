@@ -20,6 +20,7 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	formatlog "github.com/transparency-dev/formats/log"
 	"golang.org/x/mod/sumdb/note"
@@ -340,11 +341,14 @@ func TestHTTPBoundedResourceFetcherClassifiesFailures(t *testing.T) {
 
 func TestHTTPBoundedResourceFetcherAcceptsExactLimit(t *testing.T) {
 	fetcher := &httpBoundedResourceFetcher{client: &http.Client{Transport: scanRoundTripper(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Cache-Control") != "no-cache" {
+			t.Error("identity refresh did not revalidate log resources")
+		}
 		response := resourceResponse(http.StatusOK, "1234")
 		response.Request = req
 		return response, nil
 	})}, httpsOnly: true}
-	body, err := fetcher.FetchBounded(context.Background(), "https://resource.example/value", 4)
+	body, err := fetcher.FetchBounded(httputil.WithRevalidation(context.Background()), "https://resource.example/value", 4)
 	if err != nil {
 		t.Fatalf("FetchBounded: %v", err)
 	}
