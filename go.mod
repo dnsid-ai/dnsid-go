@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/WebDecoy/web-bot-auth v0.4.1
 	github.com/forcebit/http-message-signatures-rfc9421-go v0.0.20
+	github.com/lestrrat-go/httpcc v1.0.1
 	github.com/lestrrat-go/jwx/v3 v3.2.0
 	github.com/transparency-dev/formats v0.1.1
 	github.com/transparency-dev/merkle v0.0.2
@@ -19,7 +20,6 @@ require (
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.3.0 // indirect
 	github.com/lestrrat-go/dsig-secp256k1 v1.0.0 // indirect
-	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/httprc/v3 v3.0.6 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect

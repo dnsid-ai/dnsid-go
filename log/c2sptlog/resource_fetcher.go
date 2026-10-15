@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	"github.com/dnsid-ai/dnsid-go/internal/netguard"
 )
 
@@ -139,6 +140,9 @@ func (f *httpBoundedResourceFetcher) FetchBounded(ctx context.Context, rawURL st
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return nil, &ResourceFetchError{Kind: ResourceFetchMalformedURL, URL: rawURL, Cause: err}
+	}
+	if httputil.Revalidation(ctx) {
+		req.Header.Set("Cache-Control", "no-cache")
 	}
 	client := f.client
 	if client == nil {

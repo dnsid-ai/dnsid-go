@@ -92,6 +92,7 @@ type VerifiedDomain struct {
 	status               *AgentStatus
 	dnssecState          DNSSECState
 	verifiedAt           time.Time
+	acquiredAt           time.Time
 	lastStatusCheckAt    time.Time
 	dnsTTL               time.Duration
 	dnsExpiresAt         time.Time
@@ -297,6 +298,7 @@ func cloneVerifiedDomain(v *VerifiedDomain) *VerifiedDomain {
 		status:                   cloneAgentStatus(v.status),
 		dnssecState:              v.dnssecState,
 		verifiedAt:               v.verifiedAt,
+		acquiredAt:               v.acquiredAt,
 		lastStatusCheckAt:        v.lastStatusCheckAt,
 		dnsTTL:                   v.dnsTTL,
 		dnsExpiresAt:             v.dnsExpiresAt,
@@ -586,11 +588,23 @@ func (c *IdentityCache) get(domain string, context *IdentityManager) *VerifiedDo
 func (c *IdentityCache) Put(vd *VerifiedDomain) { c.put(vd, nil) }
 
 func (c *IdentityCache) put(vd *VerifiedDomain, context *IdentityManager) {
-	if c == nil || vd == nil || vd.domain == "" || vd.expiry.IsZero() || !time.Now().Before(vd.expiry) || vd.dnsTTL <= 0 {
+	if c == nil || vd == nil || vd.domain == "" {
 		return
 	}
 	copy := cloneVerifiedDomain(vd)
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := identityCacheKey{copy.domain, context}
+	// An older lookup or status refresh must not replace a newer acquisition.
+	if current := c.entries[key]; current != nil && !copy.acquiredAt.IsZero() && copy.acquiredAt.Before(current.acquiredAt) {
+		return
+	}
+	if copy.expiry.IsZero() || !time.Now().Before(copy.expiry) || copy.dnsTTL <= 0 {
+		if context != nil && !copy.acquiredAt.IsZero() {
+			delete(c.entries, key)
+		}
+		return
+	}
 	// ponytail: bounded cache; arbitrary eviction, use an LRU only if hit rates require it.
 	if len(c.entries) >= 1024 {
 		for key := range c.entries {
@@ -598,8 +612,7 @@ func (c *IdentityCache) put(vd *VerifiedDomain, context *IdentityManager) {
 			break
 		}
 	}
-	c.entries[identityCacheKey{copy.domain, context}] = copy
-	c.mu.Unlock()
+	c.entries[key] = copy
 }
 
 // Evict removes the entry for domain, if present. The domain must already be

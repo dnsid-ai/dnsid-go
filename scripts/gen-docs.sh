@@ -54,6 +54,7 @@ IdentityCache dnsid
 IdentityManager dnsid
 IdentityManagerOption dnsid
 IdentityResolver dnsid
+RefreshingIdentityResolver dnsid
 Config dnsid
 IdentityConfig dnsid
 VerificationConfig dnsid

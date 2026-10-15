@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
@@ -282,6 +283,13 @@ type IdentityResolver interface {
 	VerifyDomain(ctx context.Context, domain string) (*VerifiedDomain, error)
 }
 
+// RefreshingIdentityResolver acquires new identity evidence without a cached
+// result or stale fallback. Each call enforces current-peer and acceptance policy.
+type RefreshingIdentityResolver interface {
+	IdentityResolver
+	RefreshDomain(context.Context, string, VerifyDomainOpts) (*VerifiedDomain, error)
+}
+
 // VerifyDomainOpts contains optional inputs for core domain verification.
 type VerifyDomainOpts struct {
 	// PeerCertificate is the TLS client certificate leaf for records with fl=mtls.
@@ -395,6 +403,8 @@ type FetchOptions struct {
 	DomainBoundary   bool
 	MaxResponseBytes int64
 	RedirectPolicy   RedirectPolicy
+	// Revalidate requires injected caches to revalidate rather than reuse evidence.
+	Revalidate bool
 }
 
 // HTTPSFetcher fetches JSON over safe HTTPS. Implementations must be safe for
@@ -517,6 +527,9 @@ func (f defaultHTTPSFetcher) FetchJSON(ctx context.Context, rawURL string, opts 
 		return nil, nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	if opts.Revalidate {
+		req.Header.Set("Cache-Control", "no-cache")
+	}
 	client = clientWithRedirectPolicy(client, rawURL, opts)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -549,8 +562,7 @@ type IdentityManager struct {
 	cache        *IdentityCache
 	logRegistry  *dnsidlog.LogRegistry
 	inFlightMu   sync.Mutex
-	verifying    map[string]*inFlightVerification
-	refreshing   map[string]*inFlightVerification
+	verifying    map[verificationWorkKey]*inFlightVerification
 	// inFlightHook is a test-only seam called after a caller joins shared work.
 	inFlightHook func(string, bool)
 	localLogMu   sync.Mutex
@@ -562,12 +574,28 @@ type IdentityManager struct {
 	httpsInjected bool
 }
 
+type verificationWork uint8
+
+const (
+	identityLookup verificationWork = iota
+	statusRefresh
+	identityRefresh
+)
+
+type verificationWorkKey struct {
+	domain string
+	kind   verificationWork
+}
+
 type inFlightVerification struct {
-	done    chan struct{}
-	cancel  context.CancelFunc
-	waiters int
-	result  *VerifiedDomain
-	err     error
+	startedAt   time.Time
+	superseded  bool
+	invalidated error
+	done        chan struct{}
+	cancel      context.CancelFunc
+	waiters     int
+	result      *VerifiedDomain
+	err         error
 }
 
 // IdentityManagerOption configures IdentityManager.
@@ -950,7 +978,16 @@ func (m *IdentityManager) VerifyDomain(ctx context.Context, domain string) (*Ver
 	return m.VerifyDomainWithOptions(ctx, domain, VerifyDomainOpts{})
 }
 
-var _ IdentityResolver = (*IdentityManager)(nil)
+var _ RefreshingIdentityResolver = (*IdentityManager)(nil)
+
+// RefreshDomain performs complete verification with new identity evidence,
+// bypassing the identity cache and revalidating HTTP resources. Concurrent
+// refreshes share acquisition, but not per-caller peer or acceptance checks.
+// Failure never returns cached evidence. Observed non-ACTIVE status invalidates
+// cached and in-flight evidence. DNS propagation can still delay rotation.
+func (m *IdentityManager) RefreshDomain(ctx context.Context, domain string, opts VerifyDomainOpts) (*VerifiedDomain, error) {
+	return m.verifyDomain(ctx, domain, opts, true, true)
+}
 
 // VerifyDomainWithOptions performs core DNSid trust establishment with optional
 // peer inputs, then enforces any configured VerificationConfig.TrustedEntities
@@ -959,13 +996,13 @@ var _ IdentityResolver = (*IdentityManager)(nil)
 // never cached. A denial is reported as a permanent
 // VerificationCodeCounterpartyNotAccepted error.
 func (m *IdentityManager) VerifyDomainWithOptions(ctx context.Context, domain string, opts VerifyDomainOpts) (*VerifiedDomain, error) {
-	return m.verifyDomain(ctx, domain, opts, true)
+	return m.verifyDomain(ctx, domain, opts, true, false)
 }
 
 // verifyDomain is the shared per-invocation verification boundary. Only the
 // internal registry publication confirmation path passes acceptance=false;
 // there is no public bypass.
-func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts VerifyDomainOpts, acceptance bool) (result *VerifiedDomain, err error) {
+func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts VerifyDomainOpts, acceptance, refresh bool) (result *VerifiedDomain, err error) {
 	ctx, cancel := VerificationContext(ctx)
 	defer cancel()
 	defer func() {
@@ -989,10 +1026,14 @@ func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts 
 	if err != nil {
 		return nil, NewArgumentError("dnsid: invalid domain", err)
 	}
-	if vd := m.cachedDomain(normalized); vd != nil {
+	kind := identityLookup
+	if refresh {
+		kind = identityRefresh
+		ctx = httputil.WithRevalidation(ctx)
+	} else if vd := m.cachedDomain(normalized); vd != nil {
 		return m.verifyCachedDomain(ctx, normalized, opts, vd)
 	}
-	vd, err := m.coalesceVerification(ctx, normalized, false, func(sharedCtx context.Context) (*VerifiedDomain, error) {
+	vd, err := m.coalesceVerification(ctx, normalized, kind, func(sharedCtx context.Context) (*VerifiedDomain, error) {
 		return m.verifyReusableDomain(sharedCtx, normalized)
 	})
 	if err != nil {
@@ -1050,8 +1091,10 @@ func (m *IdentityManager) verifyCachedDomain(ctx context.Context, domain string,
 }
 
 func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized string) (*VerifiedDomain, error) {
-	if vd := m.cachedDomain(normalized); vd != nil {
-		return vd, nil
+	if !httputil.Revalidation(ctx) {
+		if vd := m.cachedDomain(normalized); vd != nil {
+			return vd, nil
+		}
 	}
 	name := "_dnsid." + normalized
 	dnsAcquiredAt := time.Now() // Lookup start is conservative even for injected resolvers.
@@ -1166,6 +1209,7 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 			}
 		case statusCheck = <-statusResults:
 			statusResults = nil
+			m.invalidateNonActiveDomain(normalized, statusCheck.err)
 			if statusCheck.err != nil {
 				cancel()
 			}
@@ -1192,6 +1236,7 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 	vd.verifiedAt = now
 	vd.lastStatusCheckAt = now
 	vd.statusTLSCertificate = statusCert
+	vd.acquiredAt = dnsAcquiredAt
 	vd.dnsExpiresAt = dnsAcquiredAt.Add(rdatas[0].TTL)
 	vd.expiry = verifiedDomainExpiry(dnsAcquiredAt, rdatas[0].TTL, rec.KeyAge, vd.keyBoundAt, vd.jwksTLSCertificate, jwksCert)
 	vd.cachedState = "fresh"
@@ -1201,40 +1246,44 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 	if err := m.requireFreshIdentityEvidence(vd, true); err != nil {
 		return nil, err
 	}
-	m.cache.put(vd, m)
 	return vd, nil
 }
 
-func (m *IdentityManager) coalesceVerification(ctx context.Context, domain string, refresh bool, work func(context.Context) (*VerifiedDomain, error)) (*VerifiedDomain, error) {
+func (m *IdentityManager) coalesceVerification(ctx context.Context, domain string, kind verificationWork, work func(context.Context) (*VerifiedDomain, error)) (*VerifiedDomain, error) {
 	if ctx == nil {
 		return work(ctx)
 	}
 	m.inFlightMu.Lock()
-	calls := m.verifying
-	if refresh {
-		calls = m.refreshing
+	if m.verifying == nil {
+		m.verifying = make(map[verificationWorkKey]*inFlightVerification)
 	}
-	if calls == nil {
-		calls = make(map[string]*inFlightVerification)
-		if refresh {
-			m.refreshing = calls
-		} else {
-			m.verifying = calls
-		}
-	}
-	call := calls[domain]
+	calls, key := m.verifying, verificationWorkKey{domain, kind}
+	call := calls[key]
 	if call == nil {
 		sharedCtx, cancel := VerificationContext(context.WithoutCancel(ctx))
-		call = &inFlightVerification{done: make(chan struct{}), cancel: cancel}
-		calls[domain] = call
+		call = &inFlightVerification{startedAt: time.Now(), done: make(chan struct{}), cancel: cancel}
+		calls[key] = call
 		go func() {
 			result, err := work(sharedCtx)
 			cancel()
 
 			m.inFlightMu.Lock()
+			if err == nil && call.invalidated != nil {
+				result, err = nil, call.invalidated
+			}
+			if err == nil && !call.superseded {
+				if kind != statusRefresh {
+					for otherKey, other := range calls {
+						if otherKey.domain == domain && other.startedAt.Before(call.startedAt) {
+							other.superseded = true
+						}
+					}
+				}
+				m.cache.put(result, m)
+			}
 			call.result, call.err = result, err
-			if calls[domain] == call {
-				delete(calls, domain)
+			if calls[key] == call {
+				delete(calls, key)
 			}
 			close(call.done)
 			m.inFlightMu.Unlock()
@@ -1243,7 +1292,7 @@ func (m *IdentityManager) coalesceVerification(ctx context.Context, domain strin
 	call.waiters++
 	m.inFlightMu.Unlock()
 	if m.inFlightHook != nil {
-		m.inFlightHook(domain, refresh)
+		m.inFlightHook(domain, kind != identityLookup)
 	}
 
 	select {
@@ -1251,10 +1300,10 @@ func (m *IdentityManager) coalesceVerification(ctx context.Context, domain strin
 		return cloneVerifiedDomain(call.result), call.err
 	case <-ctx.Done():
 		m.inFlightMu.Lock()
-		if calls[domain] == call {
+		if calls[key] == call {
 			call.waiters--
 			if call.waiters == 0 {
-				delete(calls, domain)
+				delete(calls, key)
 				call.cancel()
 			}
 		}
@@ -1428,7 +1477,7 @@ func (m *IdentityManager) fetchJWKSForDomain(ctx context.Context, keyURL, domain
 }
 
 func (m *IdentityManager) fetchJWKS(ctx context.Context, keyURL, domain string, domainBoundary bool) (jwk.Set, *tls.Certificate, error) {
-	msg, cert, err := m.https.FetchJSON(ctx, keyURL, FetchOptions{AllowedHost: domain, DomainBoundary: domainBoundary, MaxResponseBytes: 1 << 20, RedirectPolicy: RedirectPolicySameHost})
+	msg, cert, err := m.https.FetchJSON(ctx, keyURL, FetchOptions{AllowedHost: domain, DomainBoundary: domainBoundary, MaxResponseBytes: 1 << 20, RedirectPolicy: RedirectPolicySameHost, Revalidate: httputil.Revalidation(ctx)})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1459,6 +1508,22 @@ func fetchErrorTransient(err error) bool {
 	return true
 }
 
+func (m *IdentityManager) invalidateNonActiveDomain(domain string, err error) {
+	var verificationErr *VerificationError
+	if !errors.As(err, &verificationErr) || verificationErr.Code() != VerificationCodeStatusNotActive {
+		return
+	}
+	m.inFlightMu.Lock()
+	defer m.inFlightMu.Unlock()
+	// Eviction and worker invalidation must be atomic with cache insertion.
+	m.cache.evict(domain, m)
+	for key, call := range m.verifying {
+		if key.domain == domain {
+			call.superseded, call.invalidated = true, err
+		}
+	}
+}
+
 func (m *IdentityManager) refreshCachedStatusIfNeeded(ctx context.Context, vd *VerifiedDomain) (*VerifiedDomain, error) {
 	if !m.cachedStatusNeedsRefresh(vd) {
 		return vd, nil
@@ -1467,7 +1532,7 @@ func (m *IdentityManager) refreshCachedStatusIfNeeded(ctx context.Context, vd *V
 	if err != nil {
 		return nil, NewArgumentError("dnsid: invalid cached domain", err)
 	}
-	return m.coalesceVerification(ctx, domain, true, func(sharedCtx context.Context) (*VerifiedDomain, error) {
+	return m.coalesceVerification(ctx, domain, statusRefresh, func(sharedCtx context.Context) (*VerifiedDomain, error) {
 		base := vd
 		if current := m.cachedDomain(domain); current != nil {
 			base = current
@@ -1477,10 +1542,7 @@ func (m *IdentityManager) refreshCachedStatusIfNeeded(ctx context.Context, vd *V
 		}
 		status, statusCert, err := m.fetchAgentStatus(sharedCtx, base.record.StatusURI)
 		if err != nil {
-			var verificationErr *VerificationError
-			if errors.As(err, &verificationErr) && verificationErr.Code() == VerificationCodeStatusNotActive {
-				m.cache.evict(domain, m)
-			}
+			m.invalidateNonActiveDomain(domain, err)
 			return nil, err
 		}
 		now := time.Now()
@@ -1495,7 +1557,6 @@ func (m *IdentityManager) refreshCachedStatusIfNeeded(ctx context.Context, vd *V
 		if err := m.requireFreshIdentityEvidence(&updated, false); err != nil {
 			return nil, err
 		}
-		m.cache.put(&updated, m)
 		return &updated, nil
 	})
 }
@@ -1509,7 +1570,7 @@ func (m *IdentityManager) cachedStatusNeedsRefresh(vd *VerifiedDomain) bool {
 }
 
 func (m *IdentityManager) fetchAgentStatus(ctx context.Context, statusURL string) (*AgentStatus, *tls.Certificate, error) {
-	msg, cert, err := m.https.FetchJSON(ctx, statusURL, FetchOptions{AllowedHost: allowedHostFromURL(statusURL), MaxResponseBytes: 64 << 10, RedirectPolicy: RedirectPolicyHTTPS})
+	msg, cert, err := m.https.FetchJSON(ctx, statusURL, FetchOptions{AllowedHost: allowedHostFromURL(statusURL), MaxResponseBytes: 64 << 10, RedirectPolicy: RedirectPolicyHTTPS, Revalidate: httputil.Revalidation(ctx)})
 	if err != nil {
 		if isTLSError(err) {
 			return nil, nil, NewVerificationError(VerificationCodeTLSError, false, "dnsid: fetching agent status", err)

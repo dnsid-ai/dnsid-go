@@ -52,7 +52,12 @@ type VerificationOptions struct {
 
 // NewVerifier constructs a verification-only profile with public-address-only,
 // Web-PKI HTTPS discovery. Redirects are rejected. No local key is required.
-func NewVerifier(resolver dnsid.IdentityResolver, cfg Config) *Profile {
+// Construction fails unless resolver implements dnsid.RefreshingIdentityResolver.
+func NewVerifier(resolver dnsid.IdentityResolver, cfg Config) (*Profile, error) {
+	refreshing, ok := resolver.(dnsid.RefreshingIdentityResolver)
+	if !ok || refreshing == nil {
+		return nil, dnsid.NewArgumentError("dnsid: WBA requires a RefreshingIdentityResolver", nil)
+	}
 	transport := dnsid.SafeDialerTransport()
 	// Discovery must not inherit disabled Web PKI or application client keys.
 	transport.TLSClientConfig = nil
@@ -65,8 +70,8 @@ func NewVerifier(resolver dnsid.IdentityResolver, cfg Config) *Profile {
 		},
 	}
 	p := New("", nil, cfg)
-	p.resolver, p.client = resolver, client
-	return p
+	p.resolver, p.client = refreshing, client
+	return p, nil
 }
 
 func directoryFetchError(err error) error {
@@ -101,7 +106,7 @@ func wbaError(message string) error {
 // limits, with at most 128 components per signature.
 func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.Request, opts VerificationOptions) (*dnsid.VerifiedDomain, error) {
 	if p == nil || p.resolver == nil || req == nil || p.client == nil {
-		return nil, dnsid.NewArgumentError("dnsid: WBA verification requires a request and IdentityResolver", nil)
+		return nil, dnsid.NewArgumentError("dnsid: WBA verification requires a request and RefreshingIdentityResolver", nil)
 	}
 	if err := p.validateConfig(); err != nil {
 		return nil, err
@@ -163,7 +168,10 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	if err != nil {
 		return nil, err
 	}
+	// There is no local directory cache: revalidate upstream on every acquisition.
+	directoryReq.Header.Set("Cache-Control", "no-cache")
 	directoryReq.Header.Set("Accept-Encoding", "identity")
+	fetchStarted := p.currentTime()
 	res, err := p.client.Do(directoryReq)
 	if err != nil {
 		return nil, directoryFetchError(err)
@@ -179,6 +187,10 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	mediaType, _, err := mime.ParseMediaType(res.Header.Get("Content-Type"))
 	if err != nil || res.StatusCode != http.StatusOK || mediaType != DirectoryContentType {
 		return nil, wbaError("invalid directory status or media type")
+	}
+	directoryExpiry, err := directoryFreshness(res.Header, fetchStarted, p.currentTime())
+	if err != nil {
+		return nil, err
 	}
 	body, err := boundedContent(ctx, res.Body, 1<<20)
 	if err != nil {
@@ -230,24 +242,40 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	if err != nil {
 		return nil, err
 	}
-	if vd == nil || vd.Domain() != domain || vd.KeySet() == nil || vd.Record() == nil {
-		return nil, wbaError("missing DNSid identity")
+	checkEvidence := func() error {
+		if err := p.validTime(params); err != nil {
+			return err
+		}
+		if err := p.validTime(dirParams); err != nil {
+			return err
+		}
+		if !directoryExpiry.IsZero() && !p.currentTime().Before(directoryExpiry) {
+			return wbaError("HTTP-stale directory")
+		}
+		return vd.CheckFreshness(identityStartedAt)
 	}
-	current, err := vd.KeySet().CurrentOperationalSigningKey(vd.Record().Version)
+	if err := checkEvidence(); err != nil {
+		return nil, err
+	}
+	matched, err := currentKeyMatches(vd, domain, endpoint, params.KeyID)
 	if err != nil {
 		return nil, err
 	}
-	thumb, err := current.Thumbprint()
-	if err != nil || thumb != params.KeyID || current.Alg() != dnsid.JoseAlgEdDSA {
+	if !matched && p.allowKeyRefresh(domain) {
+		identityStartedAt = time.Now()
+		vd, err = p.resolver.RefreshDomain(ctx, domain, peer)
+		if err != nil {
+			return nil, err
+		}
+		matched, err = currentKeyMatches(vd, domain, endpoint, params.KeyID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !matched {
 		return nil, wbaError("directory key is not the current DNSid ku key")
 	}
-	if err := p.validTime(params); err != nil {
-		return nil, err
-	}
-	if err := p.validTime(dirParams); err != nil {
-		return nil, err
-	}
-	if err := vd.CheckFreshness(identityStartedAt); err != nil {
+	if err := checkEvidence(); err != nil {
 		return nil, err
 	}
 	if opts.Replay != nil {
@@ -261,13 +289,7 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := p.validTime(params); err != nil {
-		return nil, err
-	}
-	if err := p.validTime(dirParams); err != nil {
-		return nil, err
-	}
-	if err := vd.CheckFreshness(identityStartedAt); err != nil {
+	if err := checkEvidence(); err != nil {
 		return nil, err
 	}
 	return vd, nil

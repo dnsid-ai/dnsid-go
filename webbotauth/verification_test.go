@@ -113,7 +113,10 @@ func newWBAFixtureWithKey(t *testing.T, denied, mtls bool, domain string, kp dns
 		t.Fatal(err)
 	}
 	signer := NewFromIdentityManager(issuer, Config{})
-	checker := NewVerifier(manager, Config{})
+	checker, err := NewVerifier(manager, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	checker.client = &http.Client{Transport: wbaRoundTrip(func(req *http.Request) (*http.Response, error) {
 		return signer.ServeHttpMessageSignaturesDirectory(req)
 	})}
@@ -302,6 +305,10 @@ func (f wbaResolverFunc) VerifyDomain(ctx context.Context, domain string) (*dnsi
 	return f(ctx, domain)
 }
 
+func (f wbaResolverFunc) RefreshDomain(ctx context.Context, domain string, _ dnsid.VerifyDomainOpts) (*dnsid.VerifiedDomain, error) {
+	return f(ctx, domain)
+}
+
 func TestProfile_WBAVerifiesServerRequestsWithExplicitDefaultPort(t *testing.T) {
 	f := newWBAFixture(t, false, false)
 	f.signer.cfg.DirectoryURL = "https://bot.example.com:443"
@@ -364,7 +371,7 @@ func TestProfile_WBAForwardsApplicationPeer(t *testing.T) {
 	f := newWBAFixture(t, false, false)
 	cert := &x509.Certificate{DNSNames: []string{"bot.example.com"}}
 	f.request.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}, VerifiedChains: [][]*x509.Certificate{{cert}}}
-	spy := &wbaPeerResolver{IdentityResolver: f.manager, t: t, cert: cert}
+	spy := &wbaPeerResolver{RefreshingIdentityResolver: f.manager, t: t, cert: cert}
 	f.checker.resolver = spy
 	if _, err := f.checker.VerifyWebBotAuthSignedRequest(context.Background(), f.request, f.opts); err != nil {
 		t.Fatal(err)
@@ -375,7 +382,7 @@ func TestProfile_WBAForwardsApplicationPeer(t *testing.T) {
 }
 
 type wbaPeerResolver struct {
-	dnsid.IdentityResolver
+	dnsid.RefreshingIdentityResolver
 	t      *testing.T
 	cert   *x509.Certificate
 	called bool
@@ -390,7 +397,7 @@ func (r *wbaPeerResolver) VerifyDomainWithOptions(ctx context.Context, domain st
 }
 
 func TestProfile_WBARejectsPrivateDiscoveryAndRedirects(t *testing.T) {
-	p := NewVerifier(nil, Config{})
+	p := newWBAVerifier(t, newWBAFixture(t, false, false).manager, Config{})
 	if p.client.Timeout != dnsid.DefaultVerificationTimeout {
 		t.Fatal("discovery timeout differs from the verification budget")
 	}
