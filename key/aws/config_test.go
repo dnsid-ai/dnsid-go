@@ -103,6 +103,8 @@ func TestConfigFactory_ValidatesImmutableExistingKeys(t *testing.T) {
 	}
 	for _, invalid := range []config.KeySource{
 		{Provider: "aws-kms", KeyRef: "alias/active"},
+		{Provider: "aws-kms", KeyRef: arn, Generation: &config.KeyGenerationConfig{Locator: "new", Algorithm: "ES256"}},
+		{Provider: "aws-kms", Generation: &config.KeyGenerationConfig{Locator: "new", Algorithm: "ES256"}},
 		{Provider: "aws-kms", KeyRef: arn, Settings: map[string]string{"algorithm": "RS256"}},
 		{Provider: "aws-kms", KeyRef: arn, Settings: map[string]string{"accessKey": "secret"}},
 	} {

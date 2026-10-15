@@ -10,6 +10,7 @@
   { "label": "Key providers", "slug": "reference/go/dnsid-keys" },
   { "label": "Key providers: AWS KMS", "slug": "reference/go/key-aws" },
   { "label": "Registry", "slug": "reference/go/dnsid-registry" },
+  { "label": "Managed registration", "slug": "reference/go/registration" },
   { "label": "Lifecycle log", "slug": "reference/go/log" },
   { "label": "Transparency log", "slug": "reference/go/log-c2sptlog" },
   { "label": "Errors & enums", "slug": "reference/go/dnsid-errors" }

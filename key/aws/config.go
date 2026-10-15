@@ -20,6 +20,9 @@ func init() {
 }
 
 func validateSource(src config.KeySource) error {
+	if src.Generation != nil {
+		return dnsid.NewArgumentError("dnsid: aws-kms generation cannot atomically converge across replicas; supply an existing immutable keyRef", nil)
+	}
 	reference, err := arn.Parse(src.KeyRef)
 	if err != nil || reference.Service != "kms" || reference.Partition == "" || reference.Region == "" || reference.AccountID == "" || !strings.HasPrefix(reference.Resource, "key/") || len(reference.Resource) <= len("key/") || strings.ContainsAny(src.KeyRef, " \t\r\n#") {
 		return dnsid.NewArgumentError("dnsid: aws-kms keyRef must be an immutable KMS key ARN, not an alias", nil)
