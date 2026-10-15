@@ -95,6 +95,7 @@ the Go module release; the two versions are intentionally separate.
 
 - **[QUICKSTART.md](QUICKSTART.md)** — sign as an agent, mint a JWT, and sign an HTTP request.
 - **[Trust policy example](examples/trust-policy/)** — status interval, entity-key pins, and log/bundle trust. [Full guide](https://docs.dnsid.ai/sdk-trust-policy/).
+- **[Managed registration example](examples/managed-registration/)** — register a dev sandbox identity, complete issuance, and verify its published DNSid.
 - **[examples/](examples/)** — runnable programs for domain verification, key rotation, and Web Bot Auth.
 - **[docs.dnsid.ai](https://docs.dnsid.ai)** — protocol docs and account setup.
 
