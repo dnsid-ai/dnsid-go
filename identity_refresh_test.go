@@ -177,7 +177,7 @@ func TestDefaultHTTPSFetcher_Revalidates(t *testing.T) {
 		if req.Header.Get("Cache-Control") != "no-cache" || req.Header.Get("If-None-Match") != "" {
 			t.Error("expected unconditional HTTP revalidation")
 		}
-		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
 	})}}
 	if _, _, err := fetcher.FetchJSON(context.Background(), "https://agent.example.com/ku", FetchOptions{AllowedHost: "agent.example.com", Revalidate: true}); err != nil {
 		t.Fatal(err)
