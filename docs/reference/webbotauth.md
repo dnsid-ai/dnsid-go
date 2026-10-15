@@ -14,9 +14,9 @@ description: "Web Bot Auth profile: RFC 9421-signed HTTP requests identifying a 
 import "github.com/dnsid-ai/dnsid-go/webbotauth"
 ```
 
-Package webbotauth implements the constrained DNSid Web Bot Auth profile targeting draft\-meunier\-webbotauth\-httpsig\-protocol\-00 and draft\-meunier\-webbotauth\-httpsig\-directory\-00 using package httpsig. It signs and verifies requests and signed key directories using Ed25519. This is not a generic WBA verifier or a partner interoperability claim.
+Package webbotauth implements the constrained DNSid Web Bot Auth profile targeting published draft\-ietf\-webbotauth\-httpsig\-protocol\-00, including its directory format, using package httpsig. Unpublished editor changes are not the baseline; typed discovery and directory JWK alg="ed25519" remain. It signs and verifies requests and signed key directories using Ed25519. This is not a generic WBA verifier or a partner interoperability claim.
 
-The main entry type is Profile. A Profile holds the agent's domain and its dnsid.KeyProvider; Config controls the Signature\-Agent header, the key directory URL, and signature lifetimes, and its zero value applies the profile defaults.
+The main entry type is Profile. A Profile holds the agent's domain and its dnsid.KeyProvider; Config controls the Signature\-Agent header, the key directory URL, and signature lifetimes, and its zero value applies the profile defaults. Signature\-Agent is always required and covered. Directory discovery requires an HTTPS origin with no path \(including /\), query, or fragment; jwks\_uri identifies a direct HTTPS endpoint. Trusted caller policy does not replace signed discovery. Directory creation times cannot be in the future, even within the configured request clock skew.
 
 A typical caller signs a request and lets the origin discover its key through the Signature\-Agent header:
 
@@ -28,7 +28,7 @@ signed, err := profile.CreateWebBotAuthSignedRequest(req, webbotauth.SigningOpti
 // signed carries Signature-Agent, Signature-Input, and Signature headers.
 ```
 
-ServeHttpMessageSignaturesDirectory produces the signed key directory response that origins fetch from DirectoryPath to obtain the agent's public key. Request signing preserves existing Authorization fields.
+ServeHttpMessageSignaturesDirectory produces the signed key directory response that origins fetch from DirectoryPath to obtain the agent's public key. Request signing preserves existing Authorization fields. Only the current DNSid operational key is accepted. There is no rotation overlap or automatic refresh on key mismatch; cached DNSid evidence can delay acceptance of a new key, and refreshed evidence rejects the superseded key.
 
 VerifyWebBotAuthSignedRequest authenticates both signatures and binds the directory key to the current DNSid ku key through an IdentityResolver, including its configured accountable\-entity acceptance. NewVerifier requires no local identity. Discovery uses public\-address\-only, Web\-PKI HTTPS with no redirects, content coding, or directory caching. Discovery availability failures are transient; invalid evidence and unsafe destinations are not. Supply a trusted SignerDomain or explicitly permit the signed discovery host to identify it; cross\-host delegation is unsupported. Pass the current application peer's verified certificate chains for fl=mtls, not the directory server's certificate.
 
@@ -119,7 +119,7 @@ const (
 ```
 
 <a name="Config"></a>
-## type [Config](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L37-L70>)
+## type [Config](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L37-L71>)
 
 Config contains Web Bot Auth profile defaults. The zero value applies the profile defaults.
 
@@ -140,8 +140,8 @@ type Config struct {
     // Nonzero values below 1 second or above 5 minutes are invalid.
     SignatureTTL time.Duration
 
-    // IncludeSignatureAgent controls whether signed requests carry a
-    // Signature-Agent header covered by the signature. Nil means true.
+    // Deprecated: Signature-Agent is required. Nil and true are accepted;
+    // false is invalid.
     IncludeSignatureAgent *bool
 
     // DirectorySignatureTTL is the signature lifetime for key directory
@@ -150,15 +150,16 @@ type Config struct {
     // or above 5 minutes are invalid.
     DirectorySignatureTTL time.Duration
 
-    // ClockSkew is the WBA verification tolerance. Negative values are
-    // invalid. Zero means omitted (5 seconds); WithClockSkew(0) sets strict zero.
+    // ClockSkew is the request creation and signature expiry tolerance.
+    // Directory creation times never permit future timestamps. Negative values
+    // are invalid. Zero means omitted (5 seconds); WithClockSkew(0) sets strict zero.
     ClockSkew time.Duration
     // contains filtered or unexported fields
 }
 ```
 
 <a name="Config.WithClockSkew"></a>
-### func \(Config\) [WithClockSkew](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L85>)
+### func \(Config\) [WithClockSkew](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L86>)
 
 ```go
 func (c Config) WithClockSkew(skew time.Duration) Config
@@ -167,7 +168,7 @@ func (c Config) WithClockSkew(skew time.Duration) Config
 WithClockSkew specifies verification tolerance, including explicit zero.
 
 <a name="Config.WithDirectorySignatureTTL"></a>
-### func \(Config\) [WithDirectorySignatureTTL](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L79>)
+### func \(Config\) [WithDirectorySignatureTTL](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L80>)
 
 ```go
 func (c Config) WithDirectorySignatureTTL(ttl time.Duration) Config
@@ -176,7 +177,7 @@ func (c Config) WithDirectorySignatureTTL(ttl time.Duration) Config
 WithDirectorySignatureTTL specifies an explicit positive directory lifetime.
 
 <a name="Config.WithSignatureTTL"></a>
-### func \(Config\) [WithSignatureTTL](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L73>)
+### func \(Config\) [WithSignatureTTL](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L74>)
 
 ```go
 func (c Config) WithSignatureTTL(ttl time.Duration) Config
@@ -185,7 +186,7 @@ func (c Config) WithSignatureTTL(ttl time.Duration) Config
 WithSignatureTTL specifies an explicit positive request signature lifetime.
 
 <a name="Profile"></a>
-## type [Profile](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L119-L126>)
+## type [Profile](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L121-L128>)
 
 Profile signs and verifies DNSid Web Bot Auth requests and serves signed key directories. The signing key must be Ed25519. Verification requires an IdentityResolver, supplied through NewVerifier or NewFromIdentityManager.
 
@@ -196,7 +197,7 @@ type Profile struct {
 ```
 
 <a name="New"></a>
-### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L140>)
+### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L142>)
 
 ```go
 func New(domain string, kp dnsid.KeyProvider, cfg Config) *Profile
@@ -205,7 +206,7 @@ func New(domain string, kp dnsid.KeyProvider, cfg Config) *Profile
 New constructs a Web Bot Auth profile that signs as domain using kp. The domain is normalized to a FQDN when possible. Signing fails unless kp's active key is Ed25519.
 
 <a name="NewFromIdentityManager"></a>
-### func [NewFromIdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L154>)
+### func [NewFromIdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L156>)
 
 ```go
 func NewFromIdentityManager(manager identityManager, cfg Config) *Profile
@@ -223,16 +224,16 @@ func NewVerifier(resolver dnsid.IdentityResolver, cfg Config) *Profile
 NewVerifier constructs a verification\-only profile with public\-address\-only, Web\-PKI HTTPS discovery. Redirects are rejected. No local key is required.
 
 <a name="Profile.CreateWebBotAuthSignedRequest"></a>
-### func \(\*Profile\) [CreateWebBotAuthSignedRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L171>)
+### func \(\*Profile\) [CreateWebBotAuthSignedRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L172>)
 
 ```go
 func (p *Profile) CreateWebBotAuthSignedRequest(req *http.Request, opts SigningOptions) (*http.Request, error)
 ```
 
-CreateWebBotAuthSignedRequest returns a signed clone of req carrying Signature\-Input and Signature headers tagged "web\-bot\-auth", plus a Signature\-Agent header unless disabled by configuration. Requests with a body also gain a covered Content\-Digest header. The profile's active key must be Ed25519.
+CreateWebBotAuthSignedRequest returns a signed clone of req carrying Signature\-Input and Signature headers tagged "web\-bot\-auth", plus a covered Signature\-Agent header. Requests with a body also gain a covered Content\-Digest header. The profile's active key must be Ed25519.
 
 <a name="Profile.ServeHttpMessageSignaturesDirectory"></a>
-### func \(\*Profile\) [ServeHttpMessageSignaturesDirectory](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L256>)
+### func \(\*Profile\) [ServeHttpMessageSignaturesDirectory](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L263>)
 
 ```go
 func (p *Profile) ServeHttpMessageSignaturesDirectory(req *http.Request) (*http.Response, error)
@@ -259,7 +260,7 @@ type ReplayPolicy func(ctx context.Context, domain, keyID, nonce string, retainU
 ```
 
 <a name="SigningOptions"></a>
-## type [SigningOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L91-L108>)
+## type [SigningOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L92-L110>)
 
 SigningOptions configures Web Bot Auth request signing.
 
@@ -270,11 +271,12 @@ type SigningOptions struct {
     AdditionalComponents []string
 
     // AdditionalComponentIDs lists extra components, with parameters, to
-    // cover beyond the profile's defaults.
+    // cover beyond the profile's defaults. Nested signing is unsupported:
+    // signature and signature-input components are rejected.
     AdditionalComponentIDs []httpsig.ComponentIdentifier
 
-    // SignatureAgent, when non-nil, overrides Config.IncludeSignatureAgent
-    // for this request.
+    // Deprecated: Signature-Agent is required. Nil and true are accepted;
+    // false is invalid.
     SignatureAgent *bool
 
     // TTL overrides Config.SignatureTTL. Zero means omitted; WithTTL records
@@ -285,7 +287,7 @@ type SigningOptions struct {
 ```
 
 <a name="SigningOptions.WithTTL"></a>
-### func \(SigningOptions\) [WithTTL](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L111>)
+### func \(SigningOptions\) [WithTTL](<https://github.com/dnsid-ai/dnsid-go/blob/main/webbotauth/webbotauth.go#L113>)
 
 ```go
 func (o SigningOptions) WithTTL(ttl time.Duration) SigningOptions
@@ -301,8 +303,8 @@ VerificationOptions supplies trusted discovery and current application\-peer evi
 ```go
 type VerificationOptions struct {
     SignerDomain string
-    // DirectoryURL is a trusted direct HTTPS directory endpoint. Without a
-    // Signature-Agent, it defaults to the well-known path on SignerDomain.
+    // Deprecated: discovery requires a covered Signature-Agent. This field
+    // has no effect; SignerDomain constrains the signed discovery host.
     DirectoryURL string
     // AllowSignatureAgentDomain permits the signed discovery origin host to
     // identify the signer when SignerDomain is absent. Default is false.

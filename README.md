@@ -7,7 +7,7 @@ DNSid binds an agent to a domain: a signed `_dnsid` TXT record names the agent's
 organization (`gi`), accountable-entity record-signing key set (`ek`), and agent runtime key set
 (`ku`); a status endpoint reports whether the agent is `ACTIVE` or `REVOKED`. This SDK resolves and
 verifies that chain, and signs on the agent's behalf — DNSid JWTs (JOSE profile), OIDC tokens, and
-[Web Bot Auth](https://datatracker.ietf.org/doc/draft-meunier-webbotauth-httpsig-protocol/) HTTP
+[Web Bot Auth](https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/) HTTP
 Message Signatures (RFC 9421).
 
 ## Install

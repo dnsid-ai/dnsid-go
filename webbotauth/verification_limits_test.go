@@ -133,6 +133,8 @@ func TestWBA_DiscoveryRejectsInvalidPolicy(t *testing.T) {
 	params := httpsig.SignatureParams{Components: []httpsig.ComponentIdentifier{{Name: "signature-agent", Params: map[string]any{"key": "agent"}}}}
 	for _, agent := range []string{
 		`agent="http://bot.example.com"`,
+		`"https://bot.example.com"`,
+		`agent="https://bot.example.com";type=cimd`,
 		`agent="https://bot.example.com";type="directory"`,
 		`agent="https://bot.example.com";type=other`,
 		`agent="https://bot.example.com";type=directory;type=jwks_uri`,
@@ -149,12 +151,34 @@ func TestWBA_DiscoveryRejectsInvalidPolicy(t *testing.T) {
 	}
 }
 
-func TestWBA_DirectoryDiscoveryDiscardsEmptyQuery(t *testing.T) {
-	params := httpsig.SignatureParams{Components: []httpsig.ComponentIdentifier{{Name: "signature-agent", Params: map[string]any{"key": "sig1"}}}}
-	header := http.Header{"Signature-Agent": {`sig1="https://bot.example.com/custom?";type=directory`}}
-	_, endpoint, err := discovery(header, params, VerificationOptions{SignerDomain: "bot.example.com"})
-	if err != nil || endpoint != "https://bot.example.com"+DirectoryPath {
-		t.Fatalf("endpoint=%q: %v", endpoint, err)
+func TestWBA_RequiresCoveredOriginBeforeDiscovery(t *testing.T) {
+	for _, suffix := range []string{"missing", "uncovered", "/", "/custom", "?q=x", "?", "#fragment", "#", "unsupported"} {
+		t.Run(suffix, func(t *testing.T) {
+			f := newWBAFixture(t, false, false)
+			f.opts.DirectoryURL = "https://bot.example.com" + DirectoryPath
+			switch suffix {
+			case "missing":
+				f.request.Header.Del("Signature-Agent")
+			case "uncovered":
+				inputs, _ := httpsig.ParseSignatureInput(f.request.Header.Get("Signature-Input"))
+				params := inputs["sig1"]
+				params.Components = params.Components[:2]
+				if err := httpsig.SignHTTPMessage(f.request, params, f.signer.keys); err != nil {
+					t.Fatal(err)
+				}
+			case "unsupported":
+				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com";type=cimd`)
+			default:
+				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com`+suffix+`";type=directory`)
+			}
+			f.checker.client.Transport = wbaRoundTrip(func(*http.Request) (*http.Response, error) {
+				t.Fatal("invalid discovery reached the network")
+				return nil, nil
+			})
+			if _, err := f.checker.VerifyWebBotAuthSignedRequest(context.Background(), f.request, f.opts); err == nil {
+				t.Fatal("accepted missing, uncovered, or invalid discovery")
+			}
+		})
 	}
 }
 
