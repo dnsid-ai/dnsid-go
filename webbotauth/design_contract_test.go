@@ -149,6 +149,44 @@ func TestWBA_ConfigExplicitPresence(t *testing.T) {
 	}
 }
 
+func TestWBA_CreationTimeSkew(t *testing.T) {
+	f := newWBAFixture(t, false, false)
+	inputs, _ := httpsig.ParseSignatureInput(f.request.Header.Get("Signature-Input"))
+	params := inputs["sig1"]
+	now := time.Unix(params.Created, 0)
+	f.checker.now = func() time.Time { return now }
+	for _, tag := range []string{"web-bot-auth", "http-message-signatures-directory"} {
+		for _, offset := range []int64{0, 1, 5, 6} {
+			params.Tag, params.Created = tag, now.Unix()+offset
+			valid := offset == 0 || (tag == "web-bot-auth" && offset <= 5)
+			if err := f.checker.validTime(params); (err == nil) != valid {
+				t.Fatalf("tag=%s, offset=%d, valid=%v: %v", tag, offset, valid, err)
+			}
+		}
+	}
+}
+
+func TestWBA_DiscoveryRejectsRedirects(t *testing.T) {
+	for _, status := range []int{301, 302, 303, 307, 308} {
+		f := newWBAFixture(t, false, false)
+		f.checker.client = NewVerifier(f.manager, Config{}).client
+		calls := 0
+		f.checker.client.Transport = wbaRoundTrip(func(req *http.Request) (*http.Response, error) {
+			calls++
+			if calls > 1 {
+				t.Fatal("followed a directory redirect")
+			}
+			res, err := f.signer.ServeHttpMessageSignaturesDirectory(req)
+			res.StatusCode = status
+			res.Header.Set("Location", "https://bot.example.com/next")
+			return res, err
+		})
+		if _, err := f.checker.VerifyWebBotAuthSignedRequest(context.Background(), f.request, f.opts); err == nil || calls != 1 {
+			t.Fatalf("status=%d, calls=%d: %v", status, calls, err)
+		}
+	}
+}
+
 func TestWBA_SelectionAndResponseStatus(t *testing.T) {
 	for _, mode := range []string{"incomplete-request", "incomplete-directory", "invalid-request-candidate", "invalid-directory-candidate", "directory-status-component"} {
 		t.Run(mode, func(t *testing.T) {

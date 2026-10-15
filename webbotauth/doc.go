@@ -1,13 +1,18 @@
 // Package webbotauth implements the constrained DNSid Web Bot Auth profile
-// targeting draft-meunier-webbotauth-httpsig-protocol-00 and
-// draft-meunier-webbotauth-httpsig-directory-00 using package httpsig.
+// targeting published draft-ietf-webbotauth-httpsig-protocol-00, including
+// its directory format, using package httpsig. Unpublished editor changes
+// are not the baseline; typed discovery and directory JWK alg="ed25519" remain.
 // It signs and verifies requests and signed key directories using Ed25519.
 // This is not a generic WBA verifier or a partner interoperability claim.
 //
 // The main entry type is Profile. A Profile holds the agent's domain and its
 // dnsid.KeyProvider; Config controls the Signature-Agent header, the key
 // directory URL, and signature lifetimes, and its zero value applies the
-// profile defaults.
+// profile defaults. Signature-Agent is always required and covered. Directory
+// discovery requires an HTTPS origin with no path (including /), query, or
+// fragment; jwks_uri identifies a direct HTTPS endpoint. Trusted caller policy
+// does not replace signed discovery. Directory creation times cannot be in the
+// future, even within the configured request clock skew.
 //
 // A typical caller signs a request and lets the origin discover its key
 // through the Signature-Agent header:
@@ -21,6 +26,9 @@
 // ServeHttpMessageSignaturesDirectory produces the signed key directory
 // response that origins fetch from DirectoryPath to obtain the agent's
 // public key. Request signing preserves existing Authorization fields.
+// Only the current DNSid operational key is accepted. There is no rotation
+// overlap or automatic refresh on key mismatch; cached DNSid evidence can delay
+// acceptance of a new key, and refreshed evidence rejects the superseded key.
 //
 // VerifyWebBotAuthSignedRequest authenticates both signatures and binds the
 // directory key to the current DNSid ku key through an IdentityResolver,

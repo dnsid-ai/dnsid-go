@@ -50,8 +50,8 @@ type Config struct {
 	// Nonzero values below 1 second or above 5 minutes are invalid.
 	SignatureTTL time.Duration
 
-	// IncludeSignatureAgent controls whether signed requests carry a
-	// Signature-Agent header covered by the signature. Nil means true.
+	// Deprecated: Signature-Agent is required. Nil and true are accepted;
+	// false is invalid.
 	IncludeSignatureAgent *bool
 
 	// DirectorySignatureTTL is the signature lifetime for key directory
@@ -60,8 +60,9 @@ type Config struct {
 	// or above 5 minutes are invalid.
 	DirectorySignatureTTL time.Duration
 
-	// ClockSkew is the WBA verification tolerance. Negative values are
-	// invalid. Zero means omitted (5 seconds); WithClockSkew(0) sets strict zero.
+	// ClockSkew is the request creation and signature expiry tolerance.
+	// Directory creation times never permit future timestamps. Negative values
+	// are invalid. Zero means omitted (5 seconds); WithClockSkew(0) sets strict zero.
 	ClockSkew time.Duration
 
 	signatureTTLSet          bool
@@ -94,11 +95,12 @@ type SigningOptions struct {
 	AdditionalComponents []string
 
 	// AdditionalComponentIDs lists extra components, with parameters, to
-	// cover beyond the profile's defaults.
+	// cover beyond the profile's defaults. Nested signing is unsupported:
+	// signature and signature-input components are rejected.
 	AdditionalComponentIDs []httpsig.ComponentIdentifier
 
-	// SignatureAgent, when non-nil, overrides Config.IncludeSignatureAgent
-	// for this request.
+	// Deprecated: Signature-Agent is required. Nil and true are accepted;
+	// false is invalid.
 	SignatureAgent *bool
 
 	// TTL overrides Config.SignatureTTL. Zero means omitted; WithTTL records
@@ -165,9 +167,8 @@ func NewFromIdentityManager(manager identityManager, cfg Config) *Profile {
 
 // CreateWebBotAuthSignedRequest returns a signed clone of req carrying
 // Signature-Input and Signature headers tagged "web-bot-auth", plus a
-// Signature-Agent header unless disabled by configuration. Requests with a
-// body also gain a covered Content-Digest header. The profile's active key
-// must be Ed25519.
+// covered Signature-Agent header. Requests with a body also gain a covered
+// Content-Digest header. The profile's active key must be Ed25519.
 func (p *Profile) CreateWebBotAuthSignedRequest(req *http.Request, opts SigningOptions) (*http.Request, error) {
 	if req == nil {
 		return nil, dnsid.NewArgumentError("dnsid: nil HTTP request", nil)
@@ -184,6 +185,13 @@ func (p *Profile) CreateWebBotAuthSignedRequest(req *http.Request, opts SigningO
 	}
 	if ttl < time.Second || ttl > 5*time.Minute {
 		return nil, dnsid.NewArgumentError("dnsid: Web Bot Auth signature TTL must be positive and no greater than 5 minutes", nil)
+	}
+	if opts.SignatureAgent != nil && !*opts.SignatureAgent {
+		return nil, dnsid.NewArgumentError("dnsid: Web Bot Auth requires Signature-Agent", nil)
+	}
+	agentValue, err := p.signatureAgentValue()
+	if err != nil {
+		return nil, err
 	}
 	kid, alg, key, err := p.activeWBAKey("signing")
 	if err != nil {
@@ -212,14 +220,8 @@ func (p *Profile) CreateWebBotAuthSignedRequest(req *http.Request, opts SigningO
 		signed.Header.Set("Content-Digest", contentDigest(body))
 		components = append(components, httpsig.ComponentIdentifier{Name: "content-digest"})
 	}
-	if p.includeSignatureAgent(opts) {
-		agentValue, err := p.signatureAgentValue()
-		if err != nil {
-			return nil, err
-		}
-		signed.Header.Set("Signature-Agent", agentValue)
-		components = append(components, httpsig.ComponentIdentifier{Name: "signature-agent", Params: map[string]any{"key": "sig1"}})
-	}
+	signed.Header.Set("Signature-Agent", agentValue)
+	components = append(components, httpsig.ComponentIdentifier{Name: "signature-agent", Params: map[string]any{"key": "sig1"}})
 	for _, name := range opts.AdditionalComponents {
 		if err := httpsig.AppendComponent(&components, httpsig.ComponentIdentifier{Name: name}); err != nil {
 			return nil, err
@@ -228,6 +230,11 @@ func (p *Profile) CreateWebBotAuthSignedRequest(req *http.Request, opts SigningO
 	for _, component := range opts.AdditionalComponentIDs {
 		if err := httpsig.AppendComponent(&components, component); err != nil {
 			return nil, err
+		}
+	}
+	for _, component := range components {
+		if component.Name == "signature" || component.Name == "signature-input" {
+			return nil, dnsid.NewArgumentError("dnsid: Web Bot Auth nested signing is unsupported", nil)
 		}
 	}
 	now := p.currentTime().Unix()
@@ -352,17 +359,6 @@ func activeJWK(kp dnsid.KeyProvider, kid string) (jwk.Key, error) {
 	return key, nil
 }
 
-func (p *Profile) includeSignatureAgent(opts SigningOptions) bool {
-	include := true
-	if p.cfg.IncludeSignatureAgent != nil {
-		include = *p.cfg.IncludeSignatureAgent
-	}
-	if opts.SignatureAgent != nil {
-		include = *opts.SignatureAgent
-	}
-	return include
-}
-
 func (p *Profile) signatureAgentValue() (string, error) {
 	raw := p.cfg.DirectoryURL
 	if raw == "" {
@@ -372,7 +368,7 @@ func (p *Profile) signatureAgentValue() (string, error) {
 		raw = "https://" + p.domain
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
 		return "", dnsid.NewArgumentError("dnsid: Web Bot Auth Signature-Agent must be https", nil)
 	}
 	discoveryType := p.cfg.SignatureAgentType
@@ -382,12 +378,8 @@ func (p *Profile) signatureAgentValue() (string, error) {
 	if discoveryType != "directory" && discoveryType != "jwks_uri" {
 		return "", dnsid.NewArgumentError("dnsid: unsupported Web Bot Auth Signature-Agent type", nil)
 	}
-	if discoveryType == "directory" {
-		if (u.EscapedPath() != "" && u.EscapedPath() != "/") || u.RawQuery != "" || u.ForceQuery {
-			return "", dnsid.NewArgumentError("dnsid: Web Bot Auth directory Signature-Agent must be an origin URI", nil)
-		}
-		u.Path, u.RawPath, u.RawQuery = "", "", ""
-		raw = u.String()
+	if discoveryType == "directory" && raw != "https://"+u.Host {
+		return "", dnsid.NewArgumentError("dnsid: Web Bot Auth directory Signature-Agent must be an origin URI", nil)
 	}
 	item := sfv.Item{Value: raw, Parameters: []sfv.Parameter{{Key: "type", Value: sfv.Token{Value: discoveryType}}}}
 	return sfv.SerializeDictionary(&sfv.Dictionary{Keys: []string{"sig1"}, Values: map[string]interface{}{"sig1": item}})
@@ -424,6 +416,9 @@ func wbaJWK(key jwk.Key) (map[string]any, error) {
 }
 
 func (p *Profile) validateConfig() error {
+	if p.cfg.IncludeSignatureAgent != nil && !*p.cfg.IncludeSignatureAgent {
+		return dnsid.NewArgumentError("dnsid: Web Bot Auth requires Signature-Agent", nil)
+	}
 	if (p.cfg.signatureTTLSet && p.cfg.SignatureTTL == 0) || p.cfg.SignatureTTL < 0 || (p.cfg.SignatureTTL > 0 && p.cfg.SignatureTTL < time.Second) || p.cfg.SignatureTTL > 5*time.Minute {
 		return dnsid.NewArgumentError("dnsid: Web Bot Auth signature TTL must be positive and no greater than 5 minutes", nil)
 	}

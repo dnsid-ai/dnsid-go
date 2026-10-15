@@ -35,8 +35,8 @@ type ReplayPolicy func(ctx context.Context, domain, keyID, nonce string, retainU
 // evidence. Cross-host delegation is not supported.
 type VerificationOptions struct {
 	SignerDomain string
-	// DirectoryURL is a trusted direct HTTPS directory endpoint. Without a
-	// Signature-Agent, it defaults to the well-known path on SignerDomain.
+	// Deprecated: discovery requires a covered Signature-Agent. This field
+	// has no effect; SignerDomain constrains the signed discovery host.
 	DirectoryURL string
 	// AllowSignatureAgentDomain permits the signed discovery origin host to
 	// identify the signer when SignerDomain is absent. Default is false.
@@ -327,8 +327,12 @@ func (p *Profile) validTime(params httpsig.SignatureParams) error {
 		return wbaError("invalid thumbprint or algorithm")
 	}
 	now := p.currentTime()
+	creationSkew := p.clockSkew()
+	if params.Tag == "http-message-signatures-directory" {
+		creationSkew = 0
+	}
 	if !created || !expires || params.Created > params.Expires || params.Expires-params.Created > 300 ||
-		time.Unix(params.Created, 0).After(now.Add(p.clockSkew())) || !now.Before(time.Unix(params.Expires, 0).Add(p.clockSkew())) {
+		time.Unix(params.Created, 0).After(now.Add(creationSkew)) || !now.Before(time.Unix(params.Expires, 0).Add(p.clockSkew())) {
 		return wbaError("signature outside validity window")
 	}
 	return nil
@@ -478,94 +482,89 @@ func directoryKey(body []byte, keyID string) (jwk.Key, error) {
 }
 
 func discovery(header http.Header, params httpsig.SignatureParams, opts VerificationOptions) (string, string, error) {
-	raw, kind := opts.DirectoryURL, "jwks_uri"
-	if values := header.Values("Signature-Agent"); len(values) > 0 {
-		input := strings.Join(values, ", ")
-		limits := sfv.DefaultLimits()
-		if len(input) > limits.MaxInputLength {
-			return "", "", wbaError("Signature-Agent exceeds size limit")
-		}
-		members, err := wbahttpsig.ParseDictionaryHeader(input)
-		if err != nil {
-			return "", "", err
-		}
-		if len(members) > limits.MaxDictionaryMembers {
-			return "", "", wbaError("Signature-Agent exceeds member limit")
-		}
-		seen := map[string]bool{}
-		for _, member := range members {
-			if seen[member.Key] {
-				return "", "", wbaError("duplicate Signature-Agent member")
-			}
-			seen[member.Key] = true
-		}
-		dict, err := sfv.NewParser(input, sfv.DefaultLimits()).ParseDictionary()
-		if err != nil {
-			return "", "", err
-		}
-		member := ""
-		for _, c := range params.Components {
-			if c.Name != "signature-agent" {
-				continue
-			}
-			key, ok := c.Params["key"].(string)
-			if !ok || len(c.Params) != 1 || member != "" {
-				return "", "", wbaError("requires one exact Signature-Agent member")
-			}
-			member = key
-		}
-		item, ok := dict.Values[member].(sfv.Item)
-		if !ok || member == "" {
-			return "", "", wbaError("missing covered Signature-Agent member")
-		}
-		raw, ok = item.Value.(string)
-		if !ok {
-			return "", "", wbaError("invalid Signature-Agent URI")
-		}
-		kind = "directory"
-		typeSeen := false
-		for _, parameter := range item.Parameters {
-			if parameter.Key != "type" {
-				continue
-			}
-			token, ok := parameter.Value.(sfv.Token)
-			if !ok || typeSeen {
-				return "", "", wbaError("invalid discovery type")
-			}
-			kind, typeSeen = token.Value, true
-		}
+	input := strings.Join(header.Values("Signature-Agent"), ", ")
+	if input == "" {
+		return "", "", wbaError("requires Signature-Agent")
 	}
-	domain := opts.SignerDomain
-	if domain != "" {
-		var err error
-		domain, err = dnsid.NormalizeFQDN(domain)
-		if err != nil {
-			return "", "", err
-		}
+	limits := sfv.DefaultLimits()
+	if len(input) > limits.MaxInputLength {
+		return "", "", wbaError("Signature-Agent exceeds size limit")
 	}
-	if raw == "" && domain != "" {
-		raw = "https://" + domain + DirectoryPath
+	members, err := wbahttpsig.ParseDictionaryHeader(input)
+	if err != nil {
+		return "", "", err
+	}
+	if len(members) > limits.MaxDictionaryMembers {
+		return "", "", wbaError("Signature-Agent exceeds member limit")
+	}
+	seen := map[string]bool{}
+	for _, member := range members {
+		if seen[member.Key] {
+			return "", "", wbaError("duplicate Signature-Agent member")
+		}
+		seen[member.Key] = true
+	}
+	dict, err := sfv.NewParser(input, limits).ParseDictionary()
+	if err != nil {
+		return "", "", err
+	}
+	member := ""
+	for _, c := range params.Components {
+		if c.Name != "signature-agent" {
+			continue
+		}
+		key, ok := c.Params["key"].(string)
+		if !ok || len(c.Params) != 1 || member != "" {
+			return "", "", wbaError("requires one exact Signature-Agent member")
+		}
+		member = key
+	}
+	item, ok := dict.Values[member].(sfv.Item)
+	if !ok || member == "" {
+		return "", "", wbaError("missing covered Signature-Agent member")
+	}
+	raw, ok := item.Value.(string)
+	if !ok {
+		return "", "", wbaError("invalid Signature-Agent URI")
+	}
+	kind := "directory"
+	typeSeen := false
+	for _, parameter := range item.Parameters {
+		if parameter.Key != "type" {
+			continue
+		}
+		token, ok := parameter.Value.(sfv.Token)
+		if !ok || typeSeen {
+			return "", "", wbaError("invalid discovery type")
+		}
+		kind, typeSeen = token.Value, true
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || (kind != "directory" && kind != "jwks_uri") {
 		return "", "", wbaError("invalid HTTPS discovery")
 	}
+	if kind == "directory" && raw != "https://"+u.Host {
+		return "", "", wbaError("directory Signature-Agent must be an origin URI")
+	}
+	domain := opts.SignerDomain
+	if domain != "" {
+		domain, err = dnsid.NormalizeFQDN(domain)
+		if err != nil {
+			return "", "", err
+		}
+	}
 	host, err := dnsid.NormalizeFQDN(u.Hostname())
 	if err != nil {
 		return "", "", err
 	}
-	if domain == "" && opts.AllowSignatureAgentDomain && len(header.Values("Signature-Agent")) > 0 {
+	if domain == "" && opts.AllowSignatureAgentDomain {
 		domain = host
 	}
 	if domain == "" || host != domain {
 		return "", "", wbaError("discovery host not approved as signer")
 	}
 	if kind == "directory" {
-		u.Path, u.RawPath, u.RawQuery, u.Fragment = DirectoryPath, "", "", ""
-		u.ForceQuery = false
-	}
-	if u.Fragment != "" {
-		return "", "", wbaError("discovery endpoint contains fragment")
+		u.Path = DirectoryPath
 	}
 	return domain, u.String(), nil
 }
