@@ -291,7 +291,7 @@ func TestMemoryCheckpointStore_ValidationAndExactTime(t *testing.T) {
 	if _, err := NewMemoryTrustedC2spCheckpointStore().Load(""); !errors.As(err, &argumentError) {
 		t.Fatalf("empty origin: %v", err)
 	}
-	if _, err := NewMemoryTrustedC2spCheckpointStore().LoadContext(nil, "log"); !errors.As(err, &argumentError) {
+	if _, err := NewMemoryTrustedC2spCheckpointStore().LoadContext(nil, "log"); !errors.As(err, &argumentError) { //nolint:staticcheck // Intentionally test nil-context rejection.
 		t.Fatalf("nil context: %v", err)
 	}
 	valid := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: bytes.Repeat([]byte{1}, 32), WitnessTime: time.Unix(1, 0)}
