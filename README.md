@@ -7,7 +7,7 @@ DNSid binds an agent to a domain: a signed `_dnsid` TXT record names the agent's
 organization (`gi`), accountable-entity record-signing key set (`ek`), and agent runtime key set
 (`ku`); a status endpoint reports whether the agent is `ACTIVE` or `REVOKED`. This SDK resolves and
 verifies that chain, and signs on the agent's behalf — DNSid JWTs (JOSE profile), OIDC tokens, and
-[Web Bot Auth](https://datatracker.ietf.org/doc/draft-meunier-webbotauth-httpsig-protocol/) HTTP
+[Web Bot Auth](https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/) HTTP
 Message Signatures (RFC 9421).
 
 ## Install
@@ -92,6 +92,7 @@ the Go module release; the two versions are intentionally separate.
 ## Next steps
 
 - **[QUICKSTART.md](QUICKSTART.md)** — sign as an agent, mint a JWT, and sign an HTTP request.
+- **[Trust policy example](examples/trust-policy/)** — status interval, entity-key pins, and log/bundle trust. [Full guide](https://docs.dnsid.ai/sdk-trust-policy/).
 - **[examples/](examples/)** — runnable programs for domain verification, key rotation, and Web Bot Auth.
 - **[docs.dnsid.ai](https://docs.dnsid.ai)** — protocol docs and account setup.
 
@@ -124,7 +125,7 @@ chose:
 
 - DNS TXT lookup of `_dnsid.<domain>` through your system resolver (no hardcoded resolver)
 - HTTPS GET to the JWKS and status URLs published in that TXT record
-- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws`
+- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` / `log.partners.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws`
 - No telemetry, usage reporting, update checks, or crash reporting
 
 **Logging.** The SDK has no logger; errors are returned to the caller. It warns on stderr if a

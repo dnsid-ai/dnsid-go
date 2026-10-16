@@ -1,7 +1,6 @@
 package httpsig
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/x509"
@@ -11,11 +10,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	wbahttpsig "github.com/WebDecoy/web-bot-auth/httpsig"
 	"github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	"github.com/dnsid-ai/dnsid-go/internal/joseutil"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/digest"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/sfv"
@@ -213,8 +214,9 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 		if err != nil {
 			return nil, fmt.Errorf("dnsid: reading request body: %w", err)
 		}
-		req.Body = io.NopCloser(bytes.NewReader(body))
-		signed.Body = io.NopCloser(bytes.NewReader(body))
+		original := req.Body
+		req.Body = httputil.ReplayBody(body, original)
+		signed.Body = httputil.ReplayBody(body, original)
 		signed.ContentLength = int64(len(body))
 		signed.Header.Set("Content-Digest", contentDigest(body))
 		components = append(components, ComponentIdentifier{Name: "content-digest"})
@@ -653,12 +655,6 @@ func httpSignatureComponentValue(msg any, component ComponentIdentifier) (string
 		if res != nil {
 			return fmt.Sprintf("%d", res.StatusCode), nil
 		}
-	case "content-digest":
-		value, ok := headerFieldValue(headers, "Content-Digest")
-		if !ok {
-			return "", dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: missing HTTP signature field content-digest", nil)
-		}
-		return value, nil
 	default:
 		if strings.HasPrefix(component.Name, "@") {
 			return "", dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: unsupported HTTP signature derived component "+component.Name, nil)
@@ -719,7 +715,8 @@ func httpAuthority(req *http.Request) string {
 	if host == "" && req.URL != nil {
 		host = req.URL.Host
 	}
-	return normalizeHTTPAuthority(host, req.URL)
+	scheme, _ := httpScheme(req)
+	return normalizeHTTPAuthority(host, &url.URL{Scheme: scheme})
 }
 
 func normalizeHTTPAuthority(host string, u *url.URL) string {
@@ -971,7 +968,7 @@ func requireHTTPComponents(req *http.Request, components []ComponentIdentifier) 
 	if hasBody && !containsComponent(components, ComponentIdentifier{Name: "content-digest"}) {
 		return dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: request body is present but content-digest is not covered", nil)
 	}
-	if containsComponent(components, ComponentIdentifier{Name: "content-digest"}) {
+	if slices.ContainsFunc(components, func(c ComponentIdentifier) bool { return c.Name == "content-digest" }) {
 		if req.Body == nil {
 			return dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: content-digest covered but request has no body", nil)
 		}
@@ -979,7 +976,7 @@ func requireHTTPComponents(req *http.Request, components []ComponentIdentifier) 
 		if err != nil {
 			return fmt.Errorf("dnsid: reading request body: %w", err)
 		}
-		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.Body = httputil.ReplayBody(body, req.Body)
 		if err := digest.VerifyContentDigestBytes(body, req.Header.Get("Content-Digest"), []string{"sha-256"}); err != nil {
 			return dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: content-digest mismatch", err)
 		}

@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.41.0] - 2026-10-16
+
+### Features
+
+- feat: add the partner log to the managed verification catalog ([#41](https://github.com/dnsid-ai/dnsid-go/pull/41))
+
+### Bug Fixes
+
+- fix: align Web Bot Auth with published WG draft 00 ([#75](https://github.com/dnsid-ai/dnsid-go/pull/75))
+- fix: align WBA refresh and directory timing with design ([#77](https://github.com/dnsid-ai/dnsid-go/pull/77))
+
+## [0.40.0] - 2026-10-14
+
+### Features
+
+- feat: verify DNSid Web Bot Auth requests and directories ([#69](https://github.com/dnsid-ai/dnsid-go/pull/69))
+
+### Bug Fixes
+
+- fix: preserve parsed empty TXT tags ([#67](https://github.com/dnsid-ai/dnsid-go/pull/67))
+
+## [0.39.0] - 2026-10-12
+
+### Features
+
+- feat: server-compatible SDK registration groundwork ([#61](https://github.com/dnsid-ai/dnsid-go/pull/61))
+
+### Bug Fixes
+
+- fix: update deployment example dependencies in release PRs ([#66](https://github.com/dnsid-ai/dnsid-go/pull/66))
+
+### Documentation
+
+- docs: add trust policy setup example ([#63](https://github.com/dnsid-ai/dnsid-go/pull/63))
+
+## [Unreleased]
+
+### Features
+
+- Load strict non-secret deployment files and select linked optional key providers, including existing AWS KMS keys.
+- Read authenticated organization onboarding through the registry client.
+
+### Bug Fixes
+
+- Apply deployment transport settings to managed log verification.
+- Replace operational key sources as a group when merging configuration.
+- Keep empty deployment identity sections verification-only.
+
 ## [0.38.0] - 2026-10-07
 
 ### Features

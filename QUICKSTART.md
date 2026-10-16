@@ -55,7 +55,7 @@ DNSID_LOG_TRUST_PROFILE_FILE=/path/to/trusted-profile.json \
 Replace the placeholder `your-agent.example` with a published DNSid-enabled domain. Choose log trust based on the
 log you expect to verify:
 
-- **DNSid-managed development or production logs:** the SDK includes reviewed trust profiles.
+- **DNSid-managed development, production, or partner logs:** the SDK includes reviewed trust profiles.
   Opt in from Go code (instead of the environment loader above):
 
   ```go
@@ -157,7 +157,26 @@ fmt.Println("Signature-Input:", signed.Header.Get("Signature-Input"))
 fmt.Println("Signature:", signed.Header.Get("Signature"))
 ```
 
-Runnable version: [`examples/webbotauth`](examples/webbotauth).
+At the recipient, use a verification-only core manager and trusted signer policy:
+
+```go
+checker := webbotauth.NewVerifier(verifier, webbotauth.Config{})
+identity, err := checker.VerifyWebBotAuthSignedRequest(ctx, signed, webbotauth.VerificationOptions{
+	SignerDomain: "agent.example.com", // From recipient policy, not an unsigned header.
+})
+```
+
+This verifies the signed directory, current DNSid `ku` binding, and configured entity
+acceptance. Discovery requires public HTTPS and rejects redirects. Set `Replay` for
+one-time request semantics; expiry alone does not prevent reuse. For `fl=mtls`, pass
+the current application's authenticated peer chains through `Peer` or `req.TLS`.
+The default coverage requires authority, not method or path. Sign extra components
+with `AdditionalComponentIDs` and require them at the recipient with
+`VerificationOptions.RequiredComponents`. Directories must not use `Content-Encoding`.
+For a custom discovery endpoint, explicitly set `SignatureAgentType: "jwks_uri"`. This targets the WBA protocol and
+directory drafts at revision `00`, not general WBA interoperability.
+
+Runnable signing version: [`examples/webbotauth`](examples/webbotauth).
 
 ```sh
 go run ./examples/webbotauth

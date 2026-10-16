@@ -2,6 +2,7 @@ package webbotauth
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -12,6 +13,32 @@ import (
 	"github.com/dnsid-ai/dnsid-go/httpsig"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
+
+func TestProfile_SnapshotsSignatureAgentFlag(t *testing.T) {
+	for _, initial := range []bool{false, true} {
+		flag := initial
+		cfg := Config{IncludeSignatureAgent: &flag}
+		p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), cfg)
+		profiles := []*Profile{p, newWBAVerifier(t, newWBAFixture(t, false, false).manager, cfg), NewFromIdentityManager(nil, cfg)}
+		flag = !initial
+		for _, profile := range profiles {
+			if *profile.cfg.IncludeSignatureAgent != initial || profile.cfg.IncludeSignatureAgent == &flag {
+				t.Fatal("constructor retained caller-owned configuration")
+			}
+		}
+		req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
+		signed, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{})
+		if !initial {
+			if err == nil {
+				t.Fatal("accepted disabled Signature-Agent")
+			}
+			continue
+		}
+		if err != nil || signed.Header.Get("Signature-Agent") == "" {
+			t.Fatalf("caller mutation changed the profile: %v", err)
+		}
+	}
+}
 
 func TestProfile_CreateWebBotAuthSignedRequest(t *testing.T) {
 	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{})
@@ -74,20 +101,30 @@ func TestWBAJWKRejectsUnsupportedKey(t *testing.T) {
 func TestProfile_WebBotAuthValidatesAdditionalComponents(t *testing.T) {
 	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{})
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
-	_, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{AdditionalComponentIDs: []httpsig.ComponentIdentifier{{Name: "@query-param"}}})
-	if err == nil {
-		t.Fatal("accepted @query-param without name")
+	disabled := false
+	for _, opts := range []SigningOptions{
+		{SignatureAgent: &disabled},
+		{AdditionalComponentIDs: []httpsig.ComponentIdentifier{{Name: "@query-param"}}},
+		{AdditionalComponents: []string{"Signature"}},
+		{AdditionalComponentIDs: []httpsig.ComponentIdentifier{{Name: "signature", Params: map[string]any{"key": "inner"}}}},
+		{AdditionalComponents: []string{"signature-input"}},
+	} {
+		_, err := p.CreateWebBotAuthSignedRequest(req, opts)
+		var ae *dnsid.ArgumentError
+		if !errors.As(err, &ae) {
+			t.Fatalf("expected ArgumentError for %+v: %v", opts, err)
+		}
 	}
 }
 
 func TestProfile_SignatureAgentCustomURLUsesExplicitType(t *testing.T) {
-	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{DirectoryURL: "https://keys.example/custom.json"})
+	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{DirectoryURL: "https://keys.example/custom.json?q=x#fragment", SignatureAgentType: "jwks_uri"})
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
 	signed, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := signed.Header.Get("Signature-Agent"); got != `sig1="https://keys.example/custom.json";type=jwks_uri` {
+	if got := signed.Header.Get("Signature-Agent"); got != `sig1="https://keys.example/custom.json?q=x#fragment";type=jwks_uri` {
 		t.Fatalf("Signature-Agent = %q", got)
 	}
 }
@@ -95,9 +132,11 @@ func TestProfile_SignatureAgentCustomURLUsesExplicitType(t *testing.T) {
 func TestProfile_WebBotAuthRejectsOutOfBoundsConfiguration(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
 	for name, cfg := range map[string]Config{
-		"request ttl":   {SignatureTTL: 5*time.Minute + time.Second},
-		"directory ttl": {DirectorySignatureTTL: 5*time.Minute + time.Second},
-		"clock skew":    {ClockSkew: -time.Second},
+		"request ttl":             {SignatureTTL: 5*time.Minute + time.Second},
+		"directory ttl":           {DirectorySignatureTTL: 5*time.Minute + time.Second},
+		"clock skew":              {ClockSkew: -time.Second},
+		"subsecond request ttl":   {SignatureTTL: time.Millisecond},
+		"subsecond directory ttl": {DirectorySignatureTTL: time.Millisecond},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), cfg)
@@ -112,14 +151,15 @@ func TestProfile_WebBotAuthRejectsOutOfBoundsConfiguration(t *testing.T) {
 	}
 }
 
-func TestProfile_SignatureAgentDirectoryRejectsPath(t *testing.T) {
-	p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{
-		DirectoryURL:       "https://bot.example.com/custom",
-		SignatureAgentType: "directory",
-	})
-	req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
-	if _, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{}); err == nil {
-		t.Fatal("accepted pathful directory discovery URI")
+func TestProfile_SignatureAgentDirectoryRequiresOrigin(t *testing.T) {
+	for _, suffix := range []string{"/custom", "/", "?q=x", "?", "#fragment", "#"} {
+		p := New("bot.example.com", dnsid.GenerateEd25519KeyProvider(), Config{
+			DirectoryURL: "https://bot.example.com" + suffix,
+		})
+		req, _ := http.NewRequest(http.MethodGet, "https://target.example/", nil)
+		if _, err := p.CreateWebBotAuthSignedRequest(req, SigningOptions{}); err == nil {
+			t.Fatalf("accepted non-origin directory URI: %s", suffix)
+		}
 	}
 }
 

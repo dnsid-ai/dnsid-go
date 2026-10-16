@@ -44,6 +44,23 @@ func (m *IdentityManager) cachedDomain(domain string) *VerifiedDomain {
 }
 
 func (m *IdentityManager) requireFreshIdentityEvidence(vd *VerifiedDomain, freshDNS bool) error {
+	err := vd.requireFreshIdentityEvidence(freshDNS)
+	if err != nil && vd != nil {
+		m.cache.evict(vd.domain, m)
+	}
+	return err
+}
+
+// CheckFreshness checks DNS, key-age, and identity TLS evidence at the current
+// time. acquiredAfter is the start of this invocation's identity resolution:
+// zero-TTL evidence is usable only if freshly verified within that invocation.
+// It does not repeat acceptance, current-peer, or operational-key checks.
+func (v *VerifiedDomain) CheckFreshness(acquiredAfter time.Time) error {
+	freshDNS := v != nil && v.cachedState == "fresh" && !acquiredAfter.IsZero() && !v.verifiedAt.Before(acquiredAfter)
+	return v.requireFreshIdentityEvidence(freshDNS)
+}
+
+func (vd *VerifiedDomain) requireFreshIdentityEvidence(freshDNS bool) error {
 	if vd == nil {
 		return NewVerificationError(VerificationCodeDNSResolution, true, "dnsid: missing identity evidence", nil)
 	}
@@ -62,9 +79,6 @@ func (m *IdentityManager) requireFreshIdentityEvidence(vd *VerifiedDomain, fresh
 	}
 	if err == nil && ((vd.dnsTTL > 0 && !now.Before(vd.dnsExpiresAt)) || (vd.dnsTTL <= 0 && !freshDNS)) {
 		err = NewVerificationError(VerificationCodeDNSResolution, true, "dnsid: DNS identity evidence expired", nil)
-	}
-	if err != nil {
-		m.cache.evict(vd.domain, m)
 	}
 	return err
 }
