@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.41.0] - 2026-10-16
+
+### Features
+
+- feat: add the partner log to the managed verification catalog ([#41](https://github.com/dnsid-ai/dnsid-go/pull/41))
+
+### Bug Fixes
+
+- fix: align Web Bot Auth with published WG draft 00 ([#75](https://github.com/dnsid-ai/dnsid-go/pull/75))
+- fix: align WBA refresh and directory timing with design ([#77](https://github.com/dnsid-ai/dnsid-go/pull/77))
+
 ## [0.40.0] - 2026-10-14
 
 ### Features
