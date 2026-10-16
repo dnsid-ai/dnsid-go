@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -186,7 +187,7 @@ func (s *ScanSource) FetchEntriesThrough(ctx context.Context, reference Referenc
 		return nil, err
 	}
 	if uint64(len(scan.entries)) < treeSize {
-		return nil, fmt.Errorf("dnsid: c2sp-tlog complete scan ended at size %d before requested checkpoint size %d", len(scan.entries), treeSize)
+		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: c2sp-tlog scan does not cover requested candidate prefix", fmt.Errorf("scan ended at %d, want %d", len(scan.entries), treeSize))
 	}
 	return cloneEntries(scan.entries[:treeSize]), nil
 }
@@ -198,7 +199,7 @@ type completeScan struct {
 	levels     [][]tlog.Hash
 }
 
-func (s *ScanSource) scan(ctx context.Context, reference Reference) (*completeScan, error) {
+func (s *ScanSource) scan(ctx context.Context, reference Reference) (result *completeScan, err error) {
 	ctx, cancel := dnsid.VerificationContext(ctx)
 	defer cancel()
 	if s == nil || s.fetcher == nil {
@@ -207,6 +208,12 @@ func (s *ScanSource) scan(ctx context.Context, reference Reference) (*completeSc
 	if err := reference.Validate(); err != nil {
 		return nil, err
 	}
+	defer func() {
+		var classified *dnsid.VerificationError
+		if err != nil && !errors.As(err, &classified) {
+			err = dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: invalid complete c2sp-tlog scan", err)
+		}
+	}()
 	checkpoint, err := s.fetch(ctx, reference.LogPrefix+"/checkpoint", s.maxCheckpointBytes)
 	if err != nil {
 		return nil, err
@@ -270,7 +277,8 @@ func (s *ScanSource) scan(ctx context.Context, reference Reference) (*completeSc
 }
 
 func (s *ScanSource) fetch(ctx context.Context, rawURL string, maximum int64) ([]byte, error) {
-	return fetchBounded(s.fetcher, ctx, rawURL, maximum)
+	data, err := fetchBounded(s.fetcher, ctx, rawURL, maximum)
+	return data, logVerificationError(err, true)
 }
 
 func (s *completeScan) provenEntry(index uint64) ProvenEntry {

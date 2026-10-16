@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
-	"sync"
+	"math"
 	"time"
 
+	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/transparency-dev/merkle/proof"
 	"github.com/transparency-dev/merkle/rfc6962"
 	"golang.org/x/mod/sumdb/tlog"
@@ -21,7 +23,7 @@ const (
 	CheckpointAdvanceRollback CheckpointAdvanceErrorKind = "rollback"
 	// CheckpointAdvanceRootConflict indicates different roots at equal sizes.
 	CheckpointAdvanceRootConflict CheckpointAdvanceErrorKind = "root_conflict"
-	// CheckpointAdvanceConsistencyFailed indicates invalid supplied proof or scan evidence.
+	// CheckpointAdvanceConsistencyFailed indicates an invalid proof or a candidate-valid scan contradicting trusted history.
 	CheckpointAdvanceConsistencyFailed CheckpointAdvanceErrorKind = "consistency_failed"
 	// CheckpointAdvanceConsistencyUnavailable indicates no supported consistency source.
 	CheckpointAdvanceConsistencyUnavailable CheckpointAdvanceErrorKind = "consistency_unavailable"
@@ -29,7 +31,7 @@ const (
 
 // CheckpointAdvanceError rejects a candidate without replacing trusted state.
 // Root hashes are copied from the checkpoints. Fetch and storage errors retain
-// their original types instead of being classified as inconsistent evidence.
+// their causes instead of being classified as inconsistent evidence.
 type CheckpointAdvanceError struct {
 	Kind        CheckpointAdvanceErrorKind
 	Origin      string
@@ -97,8 +99,21 @@ type TrustedC2spCheckpointStore interface {
 	// CompareAndSwap stores candidate only if the current state for origin
 	// equals expected (nil expected means no state recorded). It reports
 	// whether the swap happened; false with a nil error means another writer
-	// advanced the state first and the caller should reload and retry.
+	// advanced the state first and the verifier should reload and retry.
+	// Administrative replacement instead stops on contention. Errors never
+	// imply that publication was undone; reconcile state before recovery.
 	CompareAndSwap(origin string, expected *TrustedC2spCheckpoint, candidate TrustedC2spCheckpoint) (bool, error)
+}
+
+// ContextTrustedC2spCheckpointStore supports cancellation during lock waits and
+// staging, up to publication. Stores that wait or stage writes must implement
+// this interface; legacy synchronous operations start publication when called.
+// Once publication starts, errors may leave an indeterminate outcome. Callers
+// must reconcile storage before recovery, never assume that an error undid a write.
+type ContextTrustedC2spCheckpointStore interface {
+	TrustedC2spCheckpointStore
+	LoadContext(ctx context.Context, origin string) (*TrustedC2spCheckpoint, error)
+	CompareAndSwapContext(ctx context.Context, origin string, expected *TrustedC2spCheckpoint, candidate TrustedC2spCheckpoint) (bool, error)
 }
 
 // C2spConsistencyProofSource supplies an RFC 6962 consistency proof between
@@ -106,6 +121,10 @@ type TrustedC2spCheckpointStore interface {
 type C2spConsistencyProofSource interface {
 	FetchConsistencyProof(ctx context.Context, reference Reference, fromSize, toSize uint64) ([][]byte, error)
 }
+
+// ErrConsistencyUnavailable identifies a source that cannot provide consistency
+// evidence. It is not a retrieval failure or permission to reset trust.
+var ErrConsistencyUnavailable = errors.New("dnsid: c2sp-tlog consistency evidence unavailable")
 
 // C2spFullLogSource supplies all raw entries in [0, treeSize). It is an
 // optional fallback for proving an old prefix when no consistency-proof source
@@ -116,45 +135,95 @@ type C2spFullLogSource interface {
 
 // MemoryTrustedC2spCheckpointStore protects against rollback for the lifetime
 // of this store instance. Use durable injected storage for protection across restarts.
+// Construct it with NewMemoryTrustedC2spCheckpointStore before use.
 type MemoryTrustedC2spCheckpointStore struct {
-	mu          sync.Mutex
+	mu          chan struct{}
 	checkpoints map[string]TrustedC2spCheckpoint
 }
 
 // NewMemoryTrustedC2spCheckpointStore returns an empty in-memory store. It is
 // safe for concurrent use.
 func NewMemoryTrustedC2spCheckpointStore() *MemoryTrustedC2spCheckpointStore {
-	return &MemoryTrustedC2spCheckpointStore{checkpoints: make(map[string]TrustedC2spCheckpoint)}
+	return &MemoryTrustedC2spCheckpointStore{
+		mu: make(chan struct{}, 1), checkpoints: make(map[string]TrustedC2spCheckpoint),
+	}
 }
 
 // Load implements TrustedC2spCheckpointStore. It returns a copy of the stored
 // checkpoint, nil when none is recorded, and an error on a nil receiver.
 func (s *MemoryTrustedC2spCheckpointStore) Load(origin string) (*TrustedC2spCheckpoint, error) {
-	if s == nil {
-		return nil, fmt.Errorf("dnsid: nil trusted c2sp checkpoint store")
+	return s.LoadContext(context.Background(), origin)
+}
+
+// LoadContext is Load with a cancellable lock wait.
+func (s *MemoryTrustedC2spCheckpointStore) LoadContext(ctx context.Context, origin string) (*TrustedC2spCheckpoint, error) {
+	if origin == "" {
+		return nil, dnsid.NewArgumentError("dnsid: checkpoint origin is required", nil)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if err := s.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer func() { <-s.mu }()
 	checkpoint, ok := s.checkpoints[origin]
 	if !ok {
 		return nil, nil
+	}
+	if err := validateTrustedCheckpoint(origin, checkpoint); err != nil {
+		return nil, checkpointStoreError("invalid stored c2sp checkpoint", err)
 	}
 	copy := cloneTrustedCheckpoint(checkpoint)
 	return &copy, nil
 }
 
+func (s *MemoryTrustedC2spCheckpointStore) lock(ctx context.Context) error {
+	if s == nil || s.mu == nil {
+		return checkpointStoreError("uninitialized trusted c2sp checkpoint store", nil)
+	}
+	if ctx == nil {
+		return dnsid.NewArgumentError("dnsid: checkpoint context is required", nil)
+	}
+	select {
+	case s.mu <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			<-s.mu
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // CompareAndSwap implements TrustedC2spCheckpointStore. It returns an error
-// on a nil receiver or when candidate's Origin does not match origin.
+// on invalid input. Administrative replacements require external authorization.
 func (s *MemoryTrustedC2spCheckpointStore) CompareAndSwap(origin string, expected *TrustedC2spCheckpoint, candidate TrustedC2spCheckpoint) (bool, error) {
-	if s == nil {
-		return false, fmt.Errorf("dnsid: nil trusted c2sp checkpoint store")
+	return s.CompareAndSwapContext(context.Background(), origin, expected, candidate)
+}
+
+// CompareAndSwapContext cancels lock waits and checks cancellation immediately
+// before publication. It never leaves a queued write running after return.
+func (s *MemoryTrustedC2spCheckpointStore) CompareAndSwapContext(ctx context.Context, origin string, expected *TrustedC2spCheckpoint, candidate TrustedC2spCheckpoint) (bool, error) {
+	if err := validateTrustedCheckpoint(origin, candidate); err != nil {
+		return false, err
 	}
-	if origin == "" || candidate.Origin != origin {
-		return false, fmt.Errorf("dnsid: trusted c2sp checkpoint origin mismatch")
+	if expected != nil {
+		if err := validateTrustedCheckpoint(origin, *expected); err != nil {
+			return false, err
+		}
+		copy := cloneTrustedCheckpoint(*expected)
+		expected = &copy
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	candidate = cloneTrustedCheckpoint(candidate)
+	if err := s.lock(ctx); err != nil {
+		return false, err
+	}
+	defer func() { <-s.mu }()
 	current, ok := s.checkpoints[origin]
+	if ok {
+		if err := validateTrustedCheckpoint(origin, current); err != nil {
+			return false, checkpointStoreError("invalid stored c2sp checkpoint", err)
+		}
+	}
 	if expected == nil {
 		if ok {
 			return false, nil
@@ -162,7 +231,10 @@ func (s *MemoryTrustedC2spCheckpointStore) CompareAndSwap(origin string, expecte
 	} else if !ok || !trustedCheckpointsEqual(current, *expected) {
 		return false, nil
 	}
-	s.checkpoints[origin] = cloneTrustedCheckpoint(candidate)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s.checkpoints[origin] = candidate
 	return true, nil
 }
 
@@ -185,12 +257,37 @@ func (c *Client) advanceTrustedCheckpoints(ctx context.Context, checkpoints []*V
 }
 
 func (c *Client) advanceTrustedCheckpoint(ctx context.Context, candidate TrustedC2spCheckpoint) error {
+	if err := validateTrustedCheckpoint(candidate.Origin, candidate); err != nil {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: invalid accepted c2sp checkpoint tuple", err)
+	}
+	candidate = cloneTrustedCheckpoint(candidate)
 	for {
-		trusted, err := c.checkpointStore.Load(candidate.Origin)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var trusted *TrustedC2spCheckpoint
+		var err error
+		contextStore, contextual := c.checkpointStore.(ContextTrustedC2spCheckpointStore)
+		if contextual {
+			trusted, err = contextStore.LoadContext(ctx, candidate.Origin)
+		} else {
+			trusted, err = c.checkpointStore.Load(candidate.Origin)
+		}
 		if err != nil {
-			return fmt.Errorf("dnsid: loading trusted c2sp checkpoint: %w", err)
+			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+				return err
+			}
+			return checkpointStoreError("loading trusted c2sp checkpoint", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		if trusted != nil {
+			if err := validateTrustedCheckpoint(candidate.Origin, *trusted); err != nil {
+				return checkpointStoreError("invalid stored c2sp checkpoint", err)
+			}
+			copy := cloneTrustedCheckpoint(*trusted)
+			trusted = &copy
 			switch {
 			case candidate.TreeSize < trusted.TreeSize:
 				return checkpointAdvanceError(CheckpointAdvanceRollback, *trusted, candidate, nil)
@@ -205,9 +302,18 @@ func (c *Client) advanceTrustedCheckpoint(ctx context.Context, candidate Trusted
 				}
 			}
 		}
-		advanced, err := c.checkpointStore.CompareAndSwap(candidate.Origin, trusted, candidate)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var advanced bool
+		if contextual {
+			advanced, err = contextStore.CompareAndSwapContext(ctx, candidate.Origin, trusted, candidate)
+		} else {
+			advanced, err = c.checkpointStore.CompareAndSwap(candidate.Origin, trusted, candidate)
+		}
 		if err != nil {
-			return fmt.Errorf("dnsid: advancing trusted c2sp checkpoint: %w", err)
+			// Publication may have happened. Never retry a failed write or reset trust.
+			return checkpointStoreError("advancing trusted c2sp checkpoint; reconcile stored state before recovery", err)
 		}
 		if advanced {
 			return nil
@@ -219,7 +325,10 @@ func (c *Client) verifyCheckpointConsistency(ctx context.Context, old, next Trus
 	if source, ok := c.source.(C2spConsistencyProofSource); ok {
 		hashes, err := source.FetchConsistencyProof(ctx, c.ref, old.TreeSize, next.TreeSize)
 		if err != nil {
-			return fmt.Errorf("dnsid: fetching c2sp-tlog consistency proof: %w", err)
+			if errors.Is(err, ErrConsistencyUnavailable) {
+				return checkpointAdvanceError(CheckpointAdvanceConsistencyUnavailable, old, next, err)
+			}
+			return logVerificationError(fmt.Errorf("dnsid: fetching c2sp-tlog consistency proof: %w", err), true)
 		}
 		if err := proof.VerifyConsistency(rfc6962.DefaultHasher, old.TreeSize, next.TreeSize, hashes, old.RootHash, next.RootHash); err != nil {
 			return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, err)
@@ -229,15 +338,19 @@ func (c *Client) verifyCheckpointConsistency(ctx context.Context, old, next Trus
 	if source, ok := c.source.(C2spFullLogSource); ok {
 		entries, err := source.FetchEntriesThrough(ctx, c.ref, next.TreeSize)
 		if err != nil {
-			return fmt.Errorf("dnsid: fetching complete c2sp-tlog scan: %w", err)
+			if errors.Is(err, ErrConsistencyUnavailable) {
+				return checkpointAdvanceError(CheckpointAdvanceConsistencyUnavailable, old, next, err)
+			}
+			return logVerificationError(fmt.Errorf("dnsid: fetching complete c2sp-tlog scan: %w", err), true)
 		}
 		if uint64(len(entries)) != next.TreeSize {
-			return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, fmt.Errorf("complete scan returned %d entries, want %d", len(entries), next.TreeSize))
+			return dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: incomplete candidate checkpoint scan", fmt.Errorf("complete scan returned %d entries, want %d", len(entries), next.TreeSize))
 		}
-		oldRoot := merkleRoot(entries[:old.TreeSize])
-		nextRoot := merkleRoot(entries)
-		if !bytes.Equal(oldRoot, old.RootHash) || !bytes.Equal(nextRoot, next.RootHash) {
-			return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, fmt.Errorf("complete scan does not match trusted checkpoints"))
+		if !bytes.Equal(merkleRoot(entries), next.RootHash) {
+			return dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: complete scan does not match candidate checkpoint root", nil)
+		}
+		if !bytes.Equal(merkleRoot(entries[:old.TreeSize]), old.RootHash) {
+			return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, fmt.Errorf("complete scan contradicts trusted prefix root"))
 		}
 		return nil
 	}
@@ -265,6 +378,17 @@ func merkleRoot(entries [][]byte) []byte {
 	input = append(input, right...)
 	hash := sha256.Sum256(input)
 	return hash[:]
+}
+
+func checkpointStoreError(message string, cause error) error {
+	return dnsid.NewVerificationError(dnsid.VerificationCodeCheckpointStore, false, "dnsid: "+message, cause)
+}
+
+func validateTrustedCheckpoint(origin string, checkpoint TrustedC2spCheckpoint) error {
+	if origin == "" || checkpoint.Origin != origin || checkpoint.TreeSize > math.MaxInt64 || len(checkpoint.RootHash) != sha256.Size || checkpoint.WitnessTime.IsZero() || checkpoint.WitnessTime.Year() < 1 || checkpoint.WitnessTime.Year() > 9999 {
+		return dnsid.NewArgumentError("dnsid: checkpoint requires a matching nonempty origin, int64 tree size, SHA-256 root and valid witnessed time", nil)
+	}
+	return nil
 }
 
 func cloneTrustedCheckpoint(checkpoint TrustedC2spCheckpoint) TrustedC2spCheckpoint {

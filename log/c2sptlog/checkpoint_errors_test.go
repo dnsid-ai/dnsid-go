@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type checkpointProofSource struct {
@@ -29,8 +30,8 @@ func (s checkpointScanSource) FetchEntriesThrough(context.Context, Reference, ui
 
 func TestCheckpointAdvanceError_Classifications(t *testing.T) {
 	entries := [][]byte{[]byte("one"), []byte("two")}
-	old := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: merkleRoot(entries[:1])}
-	next := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot(entries)}
+	old := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: merkleRoot(entries[:1]), WitnessTime: time.Unix(1, 0)}
+	next := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot(entries), WitnessTime: time.Unix(1, 0)}
 	rollback := cloneTrustedCheckpoint(old)
 	rollback.TreeSize = 0
 	conflict := cloneTrustedCheckpoint(old)
@@ -45,8 +46,7 @@ func TestCheckpointAdvanceError_Classifications(t *testing.T) {
 		{"rollback", rollback, basicSource{}, CheckpointAdvanceRollback, false},
 		{"conflict", conflict, basicSource{}, CheckpointAdvanceRootConflict, false},
 		{"proof", next, checkpointProofSource{}, CheckpointAdvanceConsistencyFailed, true},
-		{"scan count", next, checkpointScanSource{entries: entries[:1]}, CheckpointAdvanceConsistencyFailed, true},
-		{"scan root", next, checkpointScanSource{entries: [][]byte{[]byte("other"), []byte("two")}}, CheckpointAdvanceConsistencyFailed, true},
+		{"contradictory prefix", TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot([][]byte{[]byte("other"), []byte("two")}), WitnessTime: time.Unix(1, 0)}, checkpointScanSource{entries: [][]byte{[]byte("other"), []byte("two")}}, CheckpointAdvanceConsistencyFailed, true},
 		{"missing", next, basicSource{}, CheckpointAdvanceConsistencyUnavailable, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -103,8 +103,8 @@ func (s failingCheckpointStore) CompareAndSwap(origin string, expected *TrustedC
 
 func TestCheckpointAdvanceError_PreservesFetchAndStorageCauses(t *testing.T) {
 	entries := [][]byte{[]byte("one"), []byte("two")}
-	old := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: merkleRoot(entries[:1])}
-	next := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot(entries)}
+	old := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: merkleRoot(entries[:1]), WitnessTime: time.Unix(1, 0)}
+	next := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot(entries), WitnessTime: time.Unix(1, 0)}
 	cause := errors.New("storage unavailable")
 	for _, mode := range []string{"proof fetch", "scan fetch", "load", "cas"} {
 		t.Run(mode, func(t *testing.T) {
@@ -152,9 +152,9 @@ func (s racingCheckpointStore) CompareAndSwap(origin string, expected *TrustedC2
 
 func TestCheckpointAdvanceError_ReloadsAfterCASRace(t *testing.T) {
 	entries := [][]byte{[]byte("one"), []byte("two"), []byte("three")}
-	old := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: merkleRoot(entries[:1])}
-	next := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot(entries[:2])}
-	winner := TrustedC2spCheckpoint{Origin: "log", TreeSize: 3, RootHash: merkleRoot(entries)}
+	old := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: merkleRoot(entries[:1]), WitnessTime: time.Unix(1, 0)}
+	next := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot(entries[:2]), WitnessTime: time.Unix(1, 0)}
+	winner := TrustedC2spCheckpoint{Origin: "log", TreeSize: 3, RootHash: merkleRoot(entries), WitnessTime: time.Unix(1, 0)}
 	store := NewMemoryTrustedC2spCheckpointStore()
 	if ok, err := store.CompareAndSwap("log", nil, old); err != nil || !ok {
 		t.Fatal(ok, err)
@@ -172,8 +172,8 @@ func TestCheckpointAdvanceError_ReloadsAfterCASRace(t *testing.T) {
 
 func TestMemoryCheckpointStore_AuthorizedReplacement(t *testing.T) {
 	store := NewMemoryTrustedC2spCheckpointStore()
-	old := TrustedC2spCheckpoint{Origin: "log", TreeSize: 10, RootHash: bytes.Repeat([]byte{1}, 32)}
-	replacement := TrustedC2spCheckpoint{Origin: "log", TreeSize: 5, RootHash: bytes.Repeat([]byte{2}, 32)}
+	old := TrustedC2spCheckpoint{Origin: "log", TreeSize: 10, RootHash: bytes.Repeat([]byte{1}, 32), WitnessTime: time.Unix(1, 0)}
+	replacement := TrustedC2spCheckpoint{Origin: "log", TreeSize: 5, RootHash: bytes.Repeat([]byte{2}, 32), WitnessTime: time.Unix(1, 0)}
 	if ok, err := store.CompareAndSwap("log", nil, old); err != nil || !ok {
 		t.Fatal(ok, err)
 	}

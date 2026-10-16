@@ -23,6 +23,7 @@ import (
 	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	formatlog "github.com/transparency-dev/formats/log"
+	formatnote "github.com/transparency-dev/formats/note"
 	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/net/dns/dnsmessage"
 )
@@ -414,9 +415,11 @@ func TestNewVerificationRegistryDrivesIdentityManagerFromStandardResources(t *te
 		}
 		return append([]byte(nil), body...), nil
 	}}
+	store := &failingCheckpointStore{TrustedC2spCheckpointStore: NewMemoryTrustedC2spCheckpointStore()}
 	registry, err := NewVerificationRegistry(context.Background(), VerificationRegistryConfig{
-		PolicyDocument:  policyDocument,
-		ResourceFetcher: resourceFetcher,
+		PolicyDocument:         policyDocument,
+		ResourceFetcher:        resourceFetcher,
+		TrustedCheckpointStore: store,
 	})
 	if err != nil {
 		t.Fatalf("NewVerificationRegistry: %v", err)
@@ -438,6 +441,21 @@ func TestNewVerificationRegistryDrivesIdentityManagerFromStandardResources(t *te
 	}
 	if verified.Domain() != domain {
 		t.Fatalf("verified domain = %q, want %q", verified.Domain(), domain)
+	}
+	trusted, err := store.Load("tlog.example/log")
+	if err != nil || trusted == nil {
+		t.Fatalf("injected store was not used: %v %v", trusted, err)
+	}
+	cause := errors.New("trusted store unavailable")
+	store.loadErr = cause
+	_, err = verifier.RefreshDomain(context.Background(), domain, dnsid.VerifyDomainOpts{})
+	checkpointCode(t, err, dnsid.VerificationCodeCheckpointStore, false)
+	if !errors.Is(err, cause) {
+		t.Fatal("identity manager lost storage cause")
+	}
+	got, err := store.TrustedC2spCheckpointStore.Load("tlog.example/log")
+	if err != nil || !trustedCheckpointsEqual(*got, *trusted) {
+		t.Fatal("failed refresh changed trusted state")
 	}
 }
 
@@ -484,8 +502,16 @@ func standardResourceFixture(t *testing.T, entries [][]byte) ([]byte, map[string
 	if err != nil {
 		t.Fatalf("NewSigner: %v", err)
 	}
+	witnessKey, witnessVerifier, err := note.GenerateKey(rand.Reader, "witness.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	witness, err := formatnote.NewSignerForCosignatureV1(witnessKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	checkpoint := formatlog.Checkpoint{Origin: "tlog.example/log", Size: uint64(len(entries)), Hash: merkleRoot(entries)}
-	signedCheckpoint, err := note.Sign(&note.Note{Text: string(checkpoint.Marshal())}, signer)
+	signedCheckpoint, err := note.Sign(&note.Note{Text: string(checkpoint.Marshal())}, signer, witness)
 	if err != nil {
 		t.Fatalf("Sign checkpoint: %v", err)
 	}
@@ -498,7 +524,7 @@ func standardResourceFixture(t *testing.T, entries [][]byte) ([]byte, map[string
 		tile = append(tile, leaf[:]...)
 	}
 	width := itoa(len(entries))
-	return []byte(fmt.Sprintf("log %s\nquorum none\n", verifierKey)), map[string][]byte{
+	return []byte(fmt.Sprintf("log %s\nwitness primary %s\nquorum primary\n", verifierKey, witnessVerifier)), map[string][]byte{
 		"/log/checkpoint":                  signedCheckpoint,
 		"/log/tile/entries/000.p/" + width: bundle,
 		"/log/tile/0/000.p/" + width:       tile,

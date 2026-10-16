@@ -35,6 +35,10 @@ const (
 	VerificationCodeKeyContinuity     VerificationCode = "KEY_CONTINUITY"
 	VerificationCodeInvalidMigration  VerificationCode = "INVALID_MIGRATION"
 	VerificationCodeTerminalState     VerificationCode = "TERMINAL_STATE"
+	VerificationCodeLogRollback       VerificationCode = "LOG_ROLLBACK"
+	VerificationCodeLogFork           VerificationCode = "LOG_FORK"
+	VerificationCodeLogInconsistent   VerificationCode = "LOG_INCONSISTENT"
+	VerificationCodeCheckpointStore   VerificationCode = "CHECKPOINT_STORE_ERROR"
 )
 
 // VerificationCodeJWKSUnavailable is a Go binding extension for JWKS fetch

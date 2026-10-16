@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 )
 
 type fullLogTestSource struct {
@@ -28,11 +29,11 @@ func TestTrustedCheckpointStoreRejectsRollbackAndConflict(t *testing.T) {
 	store := NewMemoryTrustedC2spCheckpointStore()
 	client := &Client{ref: ref, source: fullLogTestSource{entries: entries}, checkpointStore: store}
 
-	first := TrustedC2spCheckpoint{Origin: origin, TreeSize: 1, RootHash: merkleRoot(entries[:1])}
+	first := TrustedC2spCheckpoint{Origin: origin, TreeSize: 1, RootHash: merkleRoot(entries[:1]), WitnessTime: time.Unix(1, 0)}
 	if err := client.advanceTrustedCheckpoint(context.Background(), first); err != nil {
 		t.Fatalf("first checkpoint: %v", err)
 	}
-	third := TrustedC2spCheckpoint{Origin: origin, TreeSize: 3, RootHash: merkleRoot(entries)}
+	third := TrustedC2spCheckpoint{Origin: origin, TreeSize: 3, RootHash: merkleRoot(entries), WitnessTime: time.Unix(1, 0)}
 	if err := client.advanceTrustedCheckpoint(context.Background(), third); err != nil {
 		t.Fatalf("consistent checkpoint: %v", err)
 	}
@@ -65,11 +66,11 @@ func TestTrustedCheckpointAdvanceRequiresConsistencyEvidence(t *testing.T) {
 	}
 	store := NewMemoryTrustedC2spCheckpointStore()
 	client := &Client{ref: ref, source: basicSource{}, checkpointStore: store}
-	first := TrustedC2spCheckpoint{Origin: origin, TreeSize: 1, RootHash: merkleRoot([][]byte{[]byte("one")})}
+	first := TrustedC2spCheckpoint{Origin: origin, TreeSize: 1, RootHash: merkleRoot([][]byte{merkleRoot([][]byte{[]byte("one")})}), WitnessTime: time.Unix(1, 0)}
 	if err := client.advanceTrustedCheckpoint(context.Background(), first); err != nil {
 		t.Fatal(err)
 	}
-	next := TrustedC2spCheckpoint{Origin: origin, TreeSize: 2, RootHash: merkleRoot([][]byte{[]byte("one"), []byte("two")})}
+	next := TrustedC2spCheckpoint{Origin: origin, TreeSize: 2, RootHash: merkleRoot([][]byte{merkleRoot([][]byte{[]byte("one")}), merkleRoot([][]byte{[]byte("two")})}), WitnessTime: time.Unix(1, 0)}
 	if err := client.advanceTrustedCheckpoint(context.Background(), next); err == nil {
 		t.Fatal("checkpoint advanced without consistency evidence")
 	}
@@ -77,13 +78,13 @@ func TestTrustedCheckpointAdvanceRequiresConsistencyEvidence(t *testing.T) {
 
 func TestMemoryCheckpointStoreCompareAndSwapUsesExactExpectedState(t *testing.T) {
 	store := NewMemoryTrustedC2spCheckpointStore()
-	first := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: []byte("one")}
+	first := TrustedC2spCheckpoint{Origin: "log", TreeSize: 1, RootHash: merkleRoot([][]byte{[]byte("one")}), WitnessTime: time.Unix(1, 0)}
 	if swapped, err := store.CompareAndSwap("log", nil, first); err != nil || !swapped {
 		t.Fatalf("initial CompareAndSwap = %v, %v", swapped, err)
 	}
 	stale := first
-	stale.RootHash = []byte("stale")
-	second := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: []byte("two")}
+	stale.RootHash = bytes.Repeat([]byte{0xff}, 32)
+	second := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot([][]byte{[]byte("two")}), WitnessTime: time.Unix(1, 0)}
 	if swapped, err := store.CompareAndSwap("log", &stale, second); err != nil || swapped {
 		t.Fatalf("stale CompareAndSwap = %v, %v", swapped, err)
 	}

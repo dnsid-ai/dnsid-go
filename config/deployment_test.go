@@ -73,6 +73,10 @@ func TestLoadDeploymentFile_RejectsInvalidDocuments(t *testing.T) {
 		`{"keySource":{"keyRef":null}}`,
 		`{"registry":{"registryUrl":"one","registryUrl":"two"}}`,
 		`{"logTrust":{"managed":false}}`,
+		`{"logTrust":{"managed":true,"checkpointStorePath":"trust.json"}}`,
+		`{"logTrust":{"managed":true,"trustedCheckpointStore":{}}}`,
+		`{"logTrust":{"policyUrl":"https://policy.example","initialize":true}}`,
+		`{"logTrust":{"managed":true,"recovery":{}}}`,
 		`{} {}`,
 		`[]`,
 	} {
