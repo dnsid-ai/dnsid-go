@@ -31,6 +31,18 @@ const (
     "dnsid-stream-bundle+2e77a3f1+AbKj/zrAfK04/NM07Zj7kxP2YXbM5neT8ym6juXC2PXG"
   ]
 }`
+
+	// managedPartnersProfile matches the reviewed service profile in
+	// Identity-Digital/dnsid#2639; discovery endpoints are not trust anchors.
+	managedPartnersProfile = `{
+  "version": 1,
+  "scope": "public",
+  "log_prefix": "https://log.partners.dnsid.ai",
+  "tlog_policy": "log log.partners.dnsid.ai+f0143e09+Ae5vrTVQUr0h2GKbeHq70ml37N+uVBsU4NpZD4qMqAu1\nwitness dnsid-witness-1 witness.partners.dnsid.ai/w1+a115eb67+BB0avWVeSelUBk2w8FtTbT+orf2i826q9VemA0jaXxg4\nquorum dnsid-witness-1\n",
+  "bundle_verifier_keys": [
+    "dnsid-stream-bundle+b1e0b597+AQt9ol4cfwPHxdH4NHNRidsAvU2bYE7KVItOlBG/bsaZ"
+  ]
+}`
 )
 
 // DnsidManagedVerificationConfig configures shared infrastructure for
@@ -64,6 +76,7 @@ type managedTrustSelector struct {
 var dnsidManagedTrustCatalog = []managedTrustEntry{
 	{scope: "public", logPrefix: "https://log.dev.dnsid.ai", trustProfileDocument: managedDevelopmentProfile},
 	{scope: "public", logPrefix: "https://log.dnsid.ai", trustProfileDocument: managedProductionProfile},
+	{scope: "public", logPrefix: "https://log.partners.dnsid.ai", trustProfileDocument: managedPartnersProfile},
 }
 
 // NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed,
@@ -71,7 +84,8 @@ var dnsidManagedTrustCatalog = []managedTrustEntry{
 // separately named factory is an explicit application trust decision; the
 // generic NewVerificationRegistry never selects these roots implicitly.
 //
-// Development and production verification prefer signed stream bundles with
+// The catalog covers the development, production, and partner
+// (https://log.partners.dnsid.ai) logs. Each prefers signed stream bundles with
 // safe raw-scan fallback. The default checkpoint store is restart-ephemeral;
 // deployments needing rollback protection across restarts should inject durable
 // storage and retain the returned registry for the process lifetime.
