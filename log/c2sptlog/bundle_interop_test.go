@@ -199,7 +199,7 @@ func TestVerifyStreamBundleAdvancesCheckpointOnlyAfterFullValidation(t *testing.
 	_, err = client.RebuildHistory(context.Background(), bundle.FQDN)
 	var verificationErr *dnsid.VerificationError
 	if !errors.As(err, &advanceErr) || advanceErr.Kind != CheckpointAdvanceRollback ||
-		!errors.As(err, &verificationErr) || verificationErr.Code() != dnsid.VerificationCodeInvalidEvidence || verificationErr.Transient() {
+		!errors.As(err, &verificationErr) || verificationErr.Code() != dnsid.VerificationCodeLogRollback || verificationErr.Transient() {
 		t.Fatalf("client lost checkpoint classification: %v", err)
 	}
 	if got, err := store.Load(origin); err != nil || !trustedCheckpointsEqual(*got, advanced) {
@@ -381,7 +381,7 @@ func TestFetchedStreamBundleSourceUsesRawScanOnlyForMissingConsistencyEvidence(t
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := NewMemoryTrustedC2spCheckpointStore()
-			old := TrustedC2spCheckpoint{Origin: origin, TreeSize: 1, RootHash: merkleRoot(rawEntries[:1])}
+			old := TrustedC2spCheckpoint{Origin: origin, TreeSize: 1, RootHash: merkleRoot(rawEntries[:1]), WitnessTime: time.Unix(1, 0)}
 			if swapped, err := store.CompareAndSwap(origin, nil, old); err != nil || !swapped {
 				t.Fatalf("seed checkpoint = %v, %v", swapped, err)
 			}

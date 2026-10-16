@@ -41,12 +41,16 @@
 
 - Load strict non-secret deployment files and select linked optional key providers, including existing AWS KMS keys.
 - Read authenticated organization onboarding through the registry client.
+- Add context-aware checkpoint-store operations for cancellable lock waits and publication.
 
 ### Bug Fixes
 
 - Apply deployment transport settings to managed log verification.
 - Replace operational key sources as a group when merging configuration.
 - Keep empty deployment identity sections verification-only.
+- Preserve checkpoint continuity/storage classifications and retrieval causes through verification APIs.
+- Distinguish candidate-invalid scans from authenticated contradictions of trusted history.
+- Validate checkpoint-store tuples and stop canceled verification before checkpoint publication.
 
 ## [0.38.0] - 2026-10-07
 

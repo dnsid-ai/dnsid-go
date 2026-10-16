@@ -152,11 +152,11 @@ func (*fetchedStreamBundleSource) GlobalCandidates() bool { return true }
 // advancing a checkpoint accepted from an otherwise valid stream bundle.
 func (s *fetchedStreamBundleSource) FetchEntriesThrough(ctx context.Context, reference Reference, treeSize uint64) ([][]byte, error) {
 	if s == nil || s.requireBundle {
-		return nil, fmt.Errorf("dnsid: c2sp-tlog stream bundle consistency evidence is required")
+		return nil, ErrConsistencyUnavailable
 	}
 	fallback, ok := s.fallback.(C2spFullLogSource)
 	if !ok {
-		return nil, fmt.Errorf("dnsid: c2sp-tlog complete raw scanner is required for checkpoint consistency")
+		return nil, ErrConsistencyUnavailable
 	}
 	return fallback.FetchEntriesThrough(ctx, reference, treeSize)
 }
@@ -469,7 +469,7 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 			RootHash:    append([]byte(nil), proof.Checkpoint.Hash...),
 			WitnessTime: proof.CheckpointWitnessTime,
 		}); err != nil {
-			return nil, err
+			return nil, logVerificationError(err, false)
 		}
 	}
 	if err := ctx.Err(); err != nil {
