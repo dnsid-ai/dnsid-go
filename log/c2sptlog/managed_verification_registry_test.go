@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"golang.org/x/mod/sumdb/note"
 )
 
 const (
@@ -57,11 +59,11 @@ func TestManagedProductionCatalogEntryIsReviewedTrustProfile(t *testing.T) {
 }
 
 const (
-	expectedManagedPartnersPolicy = `log log.partners.dnsid.ai+52d6a7c3+ASsAuEkXpM63Qh2yh0q7DvueHqITfWGvcpWCOQfaDz5m
+	expectedManagedPartnersPolicy = `log log.partners.dnsid.ai+f0143e09+Ae5vrTVQUr0h2GKbeHq70ml37N+uVBsU4NpZD4qMqAu1
 witness dnsid-witness-1 witness.partners.dnsid.ai/w1+a115eb67+BB0avWVeSelUBk2w8FtTbT+orf2i826q9VemA0jaXxg4
 quorum dnsid-witness-1
 `
-	expectedManagedPartnersBundleVerifierKey = "dnsid-stream-bundle+b12677d8+AWOB3PQPuFoGK66bqsFRcNh4n4q2DaAcauBijHymUUWH"
+	expectedManagedPartnersBundleVerifierKey = "dnsid-stream-bundle+b1e0b597+AQt9ol4cfwPHxdH4NHNRidsAvU2bYE7KVItOlBG/bsaZ"
 )
 
 func TestManagedPartnersCatalogEntryIsReviewedTrustProfile(t *testing.T) {
@@ -84,11 +86,9 @@ func TestManagedPartnersCatalogEntryIsReviewedTrustProfile(t *testing.T) {
 	}
 }
 
-// The pinned partner keys must be the ones the live partner log and its
-// witness sign with. The fixture is the size-1 checkpoint
-// https://log.partners.dnsid.ai served on 2026-09-28.
+// Live checkpoint captured on 2026-10-16, signed by the log and its witness.
 func TestManagedPartnersPolicyVerifiesPartnerCheckpoint(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("testdata", "c2sp-partners-checkpoint-size1.txt"))
+	raw, err := os.ReadFile(filepath.Join("testdata", "c2sp-partners-checkpoint.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,8 +104,37 @@ func TestManagedPartnersPolicyVerifiesPartnerCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pinned partners policy rejects the partner checkpoint: %v", err)
 	}
-	if proof.Checkpoint.Size != 1 || proof.CheckpointWitnessTime.IsZero() {
+	if proof.Checkpoint.Size != 172 || proof.CheckpointWitnessTime.IsZero() {
 		t.Fatalf("partner checkpoint = size %d, witness time %v", proof.Checkpoint.Size, proof.CheckpointWitnessTime)
+	}
+}
+
+// Reviewed service fixture from Identity-Digital/dnsid#2639, captured 2026-10-02.
+func TestManagedPartnersProfileVerifiesPartnerStreamBundle(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "c2sp-partners-stream-bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := ParseTrustProfile([]byte(managedPartnersProfile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := note.NewVerifier(profile.BundleVerifierKeys[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := VerifyStreamBundle(context.Background(), data, StreamBundleTrust{
+		PolicyDocument:    []byte(profile.PolicyDocument),
+		BundleVerifier:    verifier,
+		Now:               func() time.Time { return time.Unix(1790958018-60, 0) },
+		MaxBundleLifetime: managedVerificationFreshness,
+		MaxCheckpointAge:  managedVerificationFreshness,
+	})
+	if err != nil {
+		t.Fatalf("pinned partners profile rejects a partner-signed stream bundle: %v", err)
+	}
+	if verified.Reference.LogPrefix != "https://log.partners.dnsid.ai" || verified.LoggedState != "ACTIVE" || len(verified.Events) != 1 {
+		t.Fatalf("unexpected partner bundle: %+v", verified)
 	}
 }
 
@@ -158,7 +187,7 @@ func TestNewDnsidManagedVerificationRegistrySelectsExactCatalogEntries(t *testin
 	if partners.checkpointStore != store || partners.policy.MaxCheckpointAge != managedVerificationFreshness || partnersSource.trust.MaxCheckpointAge != managedVerificationFreshness || partnersSource.trust.MaxBundleLifetime != managedVerificationFreshness || partnersSource.trust.TrustedCheckpointStore != store {
 		t.Fatal("partners reader does not use managed freshness and shared checkpoint store")
 	}
-	if partners.policy.LogVerifier == nil || partners.policy.LogVerifier.Name() != "log.partners.dnsid.ai" || partners.policy.LogVerifier.KeyHash() != 0x52d6a7c3 {
+	if partners.policy.LogVerifier == nil || partners.policy.LogVerifier.Name() != "log.partners.dnsid.ai" || partners.policy.LogVerifier.KeyHash() != 0xf0143e09 {
 		t.Fatal("partners reader does not use the pinned partner log key")
 	}
 }
