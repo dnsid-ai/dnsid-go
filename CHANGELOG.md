@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.41.1] - 2026-10-16
+
+### Testing
+
+- ci: add security scanning via shared github-actions workflow ([#64](https://github.com/dnsid-ai/dnsid-go/pull/64))
+
 ## [0.41.0] - 2026-10-16
 
 ### Features
