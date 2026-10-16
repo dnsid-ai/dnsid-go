@@ -32,7 +32,7 @@ type AgentError struct {
 ```
 
 <a name="AgentEvent"></a>
-## type [ArgumentError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L151>)
+## type [ArgumentError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L155>)
 
 ArgumentError is the shared SDK ArgumentError category.
 
@@ -41,7 +41,7 @@ type ArgumentError = sdkerrors.ArgumentError
 ```
 
 <a name="NewArgumentError"></a>
-### func [NewArgumentError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L154>)
+### func [NewArgumentError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L158>)
 
 ```go
 func NewArgumentError(msg string, cause error) *ArgumentError
@@ -50,7 +50,7 @@ func NewArgumentError(msg string, cause error) *ArgumentError
 NewArgumentError creates an argument error with an optional underlying cause.
 
 <a name="CanonicalRecordContentResponse"></a>
-## type [ParseError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L101>)
+## type [ParseError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L105>)
 
 ParseError is the shared SDK ParseError category.
 
@@ -59,7 +59,7 @@ type ParseError = sdkerrors.ParseError
 ```
 
 <a name="NewParseError"></a>
-### func [NewParseError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L104>)
+### func [NewParseError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L108>)
 
 ```go
 func NewParseError(msg string, cause error) *ParseError
@@ -190,7 +190,7 @@ func (e *RegistryWorkflowError) Unwrap() error
 Unwrap returns the cancellation or timeout that interrupted the workflow.
 
 <a name="RetireAgentRequest"></a>
-## type [ValidationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L110-L113>)
+## type [ValidationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L114-L117>)
 
 ValidationError is returned when input parses successfully but fails a semantic or structural rule: required tags missing, FQDN normalization violations, policy\-flag whitelist violations, host equality checks, etc. A ValidationError is always permanent.
 
@@ -202,7 +202,7 @@ type ValidationError struct {
 ```
 
 <a name="NewValidationError"></a>
-### func [NewValidationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L116>)
+### func [NewValidationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L120>)
 
 ```go
 func NewValidationError(msg string, cause error) *ValidationError
@@ -211,7 +211,7 @@ func NewValidationError(msg string, cause error) *ValidationError
 NewValidationError constructs a ValidationError wrapping cause with msg.
 
 <a name="ValidationError.Error"></a>
-### func \(\*ValidationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L121>)
+### func \(\*ValidationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L125>)
 
 ```go
 func (e *ValidationError) Error() string
@@ -220,7 +220,7 @@ func (e *ValidationError) Error() string
 Error implements error.
 
 <a name="ValidationError.Is"></a>
-### func \(\*ValidationError\) [Is](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L145>)
+### func \(\*ValidationError\) [Is](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L149>)
 
 ```go
 func (e *ValidationError) Is(target error) bool
@@ -229,7 +229,7 @@ func (e *ValidationError) Is(target error) bool
 Is matches any other \*ValidationError. ValidationError is a category, not an identity: errors.Is\(anyValidationError, anyOther\) returns true. Use errors.As to read Message / Cause.
 
 <a name="ValidationError.Unwrap"></a>
-### func \(\*ValidationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L135>)
+### func \(\*ValidationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L139>)
 
 ```go
 func (e *ValidationError) Unwrap() error
@@ -277,6 +277,10 @@ const (
     VerificationCodeKeyContinuity     VerificationCode = "KEY_CONTINUITY"
     VerificationCodeInvalidMigration  VerificationCode = "INVALID_MIGRATION"
     VerificationCodeTerminalState     VerificationCode = "TERMINAL_STATE"
+    VerificationCodeLogRollback       VerificationCode = "LOG_ROLLBACK"
+    VerificationCodeLogFork           VerificationCode = "LOG_FORK"
+    VerificationCodeLogInconsistent   VerificationCode = "LOG_INCONSISTENT"
+    VerificationCodeCheckpointStore   VerificationCode = "CHECKPOINT_STORE_ERROR"
 )
 ```
 
@@ -306,7 +310,7 @@ const VerificationCodeJWKSUnavailable VerificationCode = "jwks_unavailable"
 ```
 
 <a name="VerificationConfig"></a>
-## type [VerificationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L168-L177>)
+## type [VerificationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L172-L181>)
 
 VerificationError is returned when runtime verification fails: signature mismatch, JWKS fetch failure, status check failure, key not found, revoked agent, expired/invalid token, etc. The Code classifies the failure; Transient indicates whether retrying might succeed.
 
@@ -319,7 +323,7 @@ type VerificationError struct {
 ```
 
 <a name="NewVerificationError"></a>
-### func [NewVerificationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L199>)
+### func [NewVerificationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L203>)
 
 ```go
 func NewVerificationError(code VerificationCode, transient bool, msg string, cause error, opts ...VerificationErrorOption) *VerificationError
@@ -328,7 +332,7 @@ func NewVerificationError(code VerificationCode, transient bool, msg string, cau
 NewVerificationError constructs a VerificationError.
 
 <a name="VerificationError.AgentState"></a>
-### func \(\*VerificationError\) [AgentState](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L230>)
+### func \(\*VerificationError\) [AgentState](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L234>)
 
 ```go
 func (e *VerificationError) AgentState() AgentState
@@ -337,7 +341,7 @@ func (e *VerificationError) AgentState() AgentState
 AgentState returns the agent state recorded with this error, if any \(populated when a status check returned a specific state\).
 
 <a name="VerificationError.Code"></a>
-### func \(\*VerificationError\) [Code](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L213>)
+### func \(\*VerificationError\) [Code](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L217>)
 
 ```go
 func (e *VerificationError) Code() VerificationCode
@@ -346,7 +350,7 @@ func (e *VerificationError) Code() VerificationCode
 Code returns the failure classifier.
 
 <a name="VerificationError.Error"></a>
-### func \(\*VerificationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L265>)
+### func \(\*VerificationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L269>)
 
 ```go
 func (e *VerificationError) Error() string
@@ -355,7 +359,7 @@ func (e *VerificationError) Error() string
 Error implements error.
 
 <a name="VerificationError.Is"></a>
-### func \(\*VerificationError\) [Is](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L307>)
+### func \(\*VerificationError\) [Is](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L311>)
 
 ```go
 func (e *VerificationError) Is(target error) bool
@@ -364,7 +368,7 @@ func (e *VerificationError) Is(target error) bool
 Is matches another \*VerificationError with the same Code. It also matches a sentinel exemplar whose Code is a parent category of the receiver's Code \(see invalidClaimsChildren\). This lets callers compare against a sentinel — e.g. errors.Is\(err, ErrTXTRecordNotFound\) — without holding the original pointer, and lets specific claim errors satisfy the broader errors.Is\(err, ErrInvalidClaims\) check.
 
 <a name="VerificationError.Message"></a>
-### func \(\*VerificationError\) [Message](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L257>)
+### func \(\*VerificationError\) [Message](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L261>)
 
 ```go
 func (e *VerificationError) Message() string
@@ -373,7 +377,7 @@ func (e *VerificationError) Message() string
 Message returns the human\-readable detail string.
 
 <a name="VerificationError.Transient"></a>
-### func \(\*VerificationError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L221>)
+### func \(\*VerificationError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L225>)
 
 ```go
 func (e *VerificationError) Transient() bool
@@ -382,7 +386,7 @@ func (e *VerificationError) Transient() bool
 Transient reports whether retrying might succeed.
 
 <a name="VerificationError.Unwrap"></a>
-### func \(\*VerificationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L283>)
+### func \(\*VerificationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L287>)
 
 ```go
 func (e *VerificationError) Unwrap() error
@@ -391,7 +395,7 @@ func (e *VerificationError) Unwrap() error
 Unwrap returns the wrapped cause, if any.
 
 <a name="VerificationError.VerifiedEntityKeyThumbprint"></a>
-### func \(\*VerificationError\) [VerifiedEntityKeyThumbprint](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L249>)
+### func \(\*VerificationError\) [VerifiedEntityKeyThumbprint](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L253>)
 
 ```go
 func (e *VerificationError) VerifiedEntityKeyThumbprint() string
@@ -400,7 +404,7 @@ func (e *VerificationError) VerifiedEntityKeyThumbprint() string
 VerifiedEntityKeyThumbprint returns the observed verified record\-signing key's RFC 7638 SHA\-256 thumbprint for a VerificationCodeCounterpartyNotAccepted error; empty for other codes.
 
 <a name="VerificationError.VerifiedGovernanceID"></a>
-### func \(\*VerificationError\) [VerifiedGovernanceID](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L239>)
+### func \(\*VerificationError\) [VerifiedGovernanceID](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L243>)
 
 ```go
 func (e *VerificationError) VerifiedGovernanceID() string
@@ -409,7 +413,7 @@ func (e *VerificationError) VerifiedGovernanceID() string
 VerifiedGovernanceID returns the observed verified governance ID for a VerificationCodeCounterpartyNotAccepted error; empty for other codes.
 
 <a name="VerificationErrorOption"></a>
-## type [VerificationErrorOption](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L180>)
+## type [VerificationErrorOption](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L184>)
 
 VerificationErrorOption configures optional fields on a VerificationError.
 
@@ -418,7 +422,7 @@ type VerificationErrorOption func(*VerificationError)
 ```
 
 <a name="WithAgentState"></a>
-### func [WithAgentState](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L184>)
+### func [WithAgentState](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L188>)
 
 ```go
 func WithAgentState(state AgentState) VerificationErrorOption
@@ -427,7 +431,7 @@ func WithAgentState(state AgentState) VerificationErrorOption
 WithAgentState attaches an agent state to a VerificationError. Used when a status check returned a specific state \(e.g. "revoked"\).
 
 <a name="WithVerifiedIdentity"></a>
-### func [WithVerifiedIdentity](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L191>)
+### func [WithVerifiedIdentity](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L195>)
 
 ```go
 func WithVerifiedIdentity(governanceID, entityKeyThumbprint string) VerificationErrorOption
