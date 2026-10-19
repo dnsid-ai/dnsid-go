@@ -9,8 +9,11 @@ type VerificationCode string
 
 // Core verification codes defined by the language-agnostic SDK contract.
 const (
-	VerificationCodeDNSResolution     VerificationCode = "dns_resolution"
-	VerificationCodeDNSSECFailed      VerificationCode = "dnssec_failed"
+	VerificationCodeDNSResolution VerificationCode = "dns_resolution"
+	VerificationCodeDNSSECFailed  VerificationCode = "dnssec_failed"
+	// VerificationCodeRecordNotFound reports NXDOMAIN or NODATA after DNSSEC
+	// policy succeeds. Non-transient; later publication may permit verification.
+	VerificationCodeRecordNotFound    VerificationCode = "record_not_found"
 	VerificationCodeRecordInvalid     VerificationCode = "record_invalid"
 	VerificationCodeSignatureInvalid  VerificationCode = "signature_invalid"
 	VerificationCodeTLSError          VerificationCode = "tls_error"

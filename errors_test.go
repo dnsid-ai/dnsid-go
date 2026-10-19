@@ -50,6 +50,7 @@ func TestVerificationCodes_CoreContract(t *testing.T) {
 	want := map[VerificationCode]string{
 		VerificationCodeDNSResolution:     "dns_resolution",
 		VerificationCodeDNSSECFailed:      "dnssec_failed",
+		VerificationCodeRecordNotFound:    "record_not_found",
 		VerificationCodeRecordInvalid:     "record_invalid",
 		VerificationCodeSignatureInvalid:  "signature_invalid",
 		VerificationCodeTLSError:          "tls_error",
