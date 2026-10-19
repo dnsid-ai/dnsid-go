@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.42.0] - 2026-10-19
+
+### Bug Fixes
+
+- fix!: enforce checkpoint continuity and trusted-store contracts ([#78](https://github.com/dnsid-ai/dnsid-go/pull/78))
+- fix: classify absent DNSid records as record not found ([#80](https://github.com/dnsid-ai/dnsid-go/pull/80))
+- fix: classify checkpoint contract changes as breaking for releases ([#81](https://github.com/dnsid-ai/dnsid-go/pull/81))
+
+### Testing
+
+- ci: add security scanning via shared github-actions workflow ([#64](https://github.com/dnsid-ai/dnsid-go/pull/64))
+
 ## [0.41.0] - 2026-10-16
 
 ### Features
