@@ -85,6 +85,8 @@ the Go module release; the two versions are intentionally separate.
 | Import | What it does |
 |---|---|
 | `github.com/dnsid-ai/dnsid-go` | Core SDK: `IdentityManager`, domain verification, TXT record parse/create, JWKS/JWK, key providers, typed errors. |
+| `.../dnsid-go/config` | Environment/deployment loading, merging, and explicit construction. |
+| `.../dnsid-go/registration` | [Managed registration](registration/README.md), durable file recovery, and public readiness checks. |
 | `.../dnsid-go/jose` | DNSid JOSE profile — create and verify DNSid JWTs and compact JWS. |
 | `.../dnsid-go/oidc` | Mint and verify DNSid OIDC tokens. |
 | `.../dnsid-go/httpsig` · `.../webbotauth` | RFC 9421 HTTP Message Signatures and the Web Bot Auth profile. |

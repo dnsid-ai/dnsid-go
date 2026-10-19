@@ -17,20 +17,21 @@ import (
 // ISSUANCE. Once EntryBytes is set it is immutable and every retry reuses it
 // with IdempotencyKey.
 type ManagedIssuanceState struct {
-	Domain                string                  `json:"domain"`
-	GovernanceID          string                  `json:"governance_id"`
-	LogReference          string                  `json:"log_reference"`
-	EntityThumbprint      string                  `json:"entity_thumbprint"`
-	OperationalKid        string                  `json:"operational_kid"`
-	OperationalThumbprint string                  `json:"operational_thumbprint"`
-	EntryBytes            []byte                  `json:"entry_bytes,omitempty"`
-	EntryHash             string                  `json:"entry_hash,omitempty"`
-	IdempotencyKey        string                  `json:"idempotency_key"`
-	Submission            *dnsid.SubmissionResult `json:"submission,omitempty"`
-	LastErrorCode         string                  `json:"last_error_code,omitempty"`
-	TerminalFailure       bool                    `json:"terminal_failure"`
-	Complete              bool                    `json:"complete"`
-	ActivationBlocked     bool                    `json:"activation_blocked"`
+	Domain                string                       `json:"domain"`
+	GovernanceID          string                       `json:"governance_id"`
+	LogReference          string                       `json:"log_reference"`
+	EntityThumbprint      string                       `json:"entity_thumbprint"`
+	OperationalKid        string                       `json:"operational_kid"`
+	OperationalThumbprint string                       `json:"operational_thumbprint"`
+	Prepared              *dnsid.PreparedRegistryEvent `json:"prepared,omitempty"`
+	EntryBytes            []byte                       `json:"entry_bytes,omitempty"`
+	EntryHash             string                       `json:"entry_hash,omitempty"`
+	IdempotencyKey        string                       `json:"idempotency_key"`
+	Submission            *dnsid.SubmissionResult      `json:"submission,omitempty"`
+	LastErrorCode         string                       `json:"last_error_code,omitempty"`
+	TerminalFailure       bool                         `json:"terminal_failure"`
+	Complete              bool                         `json:"complete"`
+	ActivationBlocked     bool                         `json:"activation_blocked"`
 }
 
 // ManagedIssuanceStore provides exclusive durable state for one identity
@@ -261,18 +262,22 @@ func CompleteManagedIssuance(ctx context.Context, domain string, store ManagedIs
 }
 
 func prepareAndSubmitManagedIssuance(ctx context.Context, client *Client, entityKey jwk.Key, provider dnsid.KeyProvider, registry dnsid.RegistryPreparedEventClient, issuance *ManagedIssuanceState, store ManagedIssuanceStore) (*ManagedIssuanceState, error) {
-	raw, err := registry.PrepareIssuance(ctx, issuance.Domain, issuance.IdempotencyKey)
-	if err != nil {
-		operationErr := normalizeManagedPreparationError("issuance", issuance, err)
-		next := cloneManagedIssuance(issuance)
-		next.LastErrorCode = managedPreparationErrorCode(err)
-		next.TerminalFailure = !operationErr.Transient()
-		if persistErr := persistManagedIssuance(ctx, store, next); persistErr != nil {
-			operationErr.Err = errors.Join(operationErr.Err, persistErr)
-			return issuance, operationErr
+	raw := issuance.Prepared
+	if raw == nil {
+		var err error
+		raw, err = registry.PrepareIssuance(ctx, issuance.Domain, issuance.IdempotencyKey)
+		if err != nil {
+			operationErr := normalizeManagedPreparationError("issuance", issuance, err)
+			next := cloneManagedIssuance(issuance)
+			next.LastErrorCode = managedPreparationErrorCode(err)
+			next.TerminalFailure = !operationErr.Transient()
+			if persistErr := persistManagedIssuance(ctx, store, next); persistErr != nil {
+				operationErr.Err = errors.Join(operationErr.Err, persistErr)
+				return issuance, operationErr
+			}
+			operationErr.Issuance = cloneManagedIssuance(next)
+			return next, operationErr
 		}
-		operationErr.Issuance = cloneManagedIssuance(next)
-		return next, operationErr
 	}
 	if raw == nil || raw.LogReference != issuance.LogReference {
 		return issuance, dnsid.NewValidationError("dnsid: registry preparation returned an unexpected c2sp-tlog reference", nil)
@@ -283,6 +288,14 @@ func prepareAndSubmitManagedIssuance(ctx context.Context, client *Client, entity
 	}
 	if err := validateManagedPreparedIssuance(prepared, issuance, entityKey, provider.JWK()); err != nil {
 		return issuance, err
+	}
+	if issuance.Prepared == nil {
+		next := cloneManagedIssuance(issuance)
+		next.Prepared = &dnsid.PreparedRegistryEvent{EntryBytes: bytes.Clone(raw.EntryBytes), LogReference: raw.LogReference}
+		if err := persistManagedIssuance(ctx, store, next); err != nil {
+			return issuance, err
+		}
+		issuance = next
 	}
 	prepared, err = client.SignPreparedEvent(ctx, prepared, SignerOperationalCountersignature, provider)
 	if err != nil {
@@ -379,6 +392,16 @@ func validateManagedPreparedIssuance(prepared *PreparedEvent, issuance *ManagedI
 	return nil
 }
 
+// ValidateManagedIssuanceState checks recovery integrity without preparation,
+// submission, or activation changes. Accepted state uses historical public keys
+// from the saved signed entry, so the original private key is not required.
+func ValidateManagedIssuanceState(ctx context.Context, client *Client, issuance *ManagedIssuanceState, entityKey jwk.Key, provider dnsid.KeyProvider) error {
+	if client == nil || entityKey == nil || provider == nil {
+		return dnsid.NewArgumentError("dnsid: issuance validation requires client, entity key, and provider", nil)
+	}
+	return validatePersistedManagedIssuance(ctx, client, issuance, entityKey, provider)
+}
+
 func validatePersistedManagedIssuance(ctx context.Context, client *Client, issuance *ManagedIssuanceState, entityKey jwk.Key, provider dnsid.KeyProvider) error {
 	if issuance == nil || issuance.Domain == "" || issuance.GovernanceID == "" || issuance.LogReference == "" || issuance.IdempotencyKey == "" || issuance.EntityThumbprint == "" || issuance.OperationalKid == "" || issuance.OperationalThumbprint == "" {
 		return fmt.Errorf("complete persisted managed issuance state is required")
@@ -403,6 +426,30 @@ func validatePersistedManagedIssuance(ctx context.Context, client *Client, issua
 	if entityThumb, err := thumbprint(entityKey); err != nil || entityThumb != issuance.EntityThumbprint {
 		return managedIssuanceIntegrityError("persisted entity key does not match expected key", err)
 	}
+	var savedPrepared *PreparedEvent
+	if issuance.Prepared != nil {
+		if issuance.Prepared.LogReference != issuance.LogReference {
+			return fmt.Errorf("prepared issuance reference changed")
+		}
+		savedPrepared, err = client.ParsePreparedEvent(issuance.Prepared.EntryBytes)
+		if err != nil {
+			return err
+		}
+		event, err := savedPrepared.Event()
+		if err != nil {
+			return err
+		}
+		if err := validateManagedPreparedIssuance(savedPrepared, issuance, entityKey, event.InitialOperationalPublicKey); err != nil {
+			return err
+		}
+		keys, err := client.preparedSignerKeys(ctx, savedPrepared)
+		if err != nil {
+			return err
+		}
+		if err := verifyPresentSignatures(savedPrepared, keys); err != nil {
+			return err
+		}
+	}
 	if len(issuance.EntryBytes) == 0 {
 		if issuance.EntryHash != "" || issuance.Submission != nil {
 			return fmt.Errorf("persisted issuance has submission state without completed bytes")
@@ -424,6 +471,9 @@ func validatePersistedManagedIssuance(ctx context.Context, client *Client, issua
 	if err != nil {
 		return err
 	}
+	if savedPrepared != nil && !bytes.Equal(savedPrepared.SignedBytes(), prepared.SignedBytes()) {
+		return fmt.Errorf("completed issuance differs from prepared bytes")
+	}
 	verifiedBytes, err := client.PreparedEntryBytes(ctx, prepared)
 	if err != nil || !bytes.Equal(verifiedBytes, issuance.EntryBytes) {
 		return managedIssuanceIntegrityError("persisted issuance signatures or bytes are invalid", err)
@@ -442,6 +492,9 @@ func validatePersistedManagedIssuance(ctx context.Context, client *Client, issua
 	operationalEventThumb, err := thumbprint(event.InitialOperationalPublicKey)
 	if err != nil || operationalEventThumb != issuance.OperationalThumbprint {
 		return managedIssuanceIntegrityError("persisted issuance operational key does not match metadata", err)
+	}
+	if issuance.Submission != nil {
+		return validateManagedIssuanceSubmission(issuance, issuance.Submission)
 	}
 	return nil
 }
@@ -533,6 +586,11 @@ func cloneManagedIssuance(issuance *ManagedIssuanceState) *ManagedIssuanceState 
 		return nil
 	}
 	copy := *issuance
+	if issuance.Prepared != nil {
+		prepared := *issuance.Prepared
+		prepared.EntryBytes = bytes.Clone(prepared.EntryBytes)
+		copy.Prepared = &prepared
+	}
 	copy.EntryBytes = append([]byte(nil), issuance.EntryBytes...)
 	copy.Submission = cloneSubmission(issuance.Submission)
 	return &copy

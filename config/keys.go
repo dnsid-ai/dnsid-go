@@ -9,6 +9,13 @@ import (
 	dnsid "github.com/dnsid-ai/dnsid-go"
 )
 
+// KeyGenerationConfig identifies a recoverable key generation operation.
+// Cloud packages without atomic create-or-recover support require KeyRef instead.
+type KeyGenerationConfig struct {
+	Locator   string        `json:"locator"`
+	Algorithm dnsid.JoseAlg `json:"algorithm"`
+}
+
 // KeyProviderFactory validates non-secret settings and opens an existing key.
 // Validate must not generate keys or perform network requests.
 type KeyProviderFactory struct {
@@ -41,14 +48,20 @@ func RegisterKeyProviderFactory(name string, factory KeyProviderFactory) {
 // ValidateKeySource checks availability and settings without opening a key.
 // Injected providers bypass this selection entirely.
 func ValidateKeySource(src KeySource) error {
+	if src.KeyRef != "" && src.Generation != nil {
+		return dnsid.NewArgumentError("dnsid: keySource.keyRef and generation are mutually exclusive", nil)
+	}
 	if src.CliDirectory != "" || src.KeyStorePath != "" {
-		if (src.Provider != "" && src.Provider != "file") || src.KeyRef != "" {
-			return dnsid.NewArgumentError("dnsid: CLI/key-store paths cannot combine with cloud selection or keyRef", nil)
+		if (src.Provider != "" && src.Provider != "file") || src.KeyRef != "" || src.Generation != nil {
+			return dnsid.NewArgumentError("dnsid: CLI/key-store paths cannot combine with cloud selection, keyRef, or generation", nil)
 		}
 	}
 	if src.Provider == "" || src.Provider == "file" {
 		if len(src.Settings) != 0 {
 			return dnsid.NewArgumentError("dnsid: file key source has no settings", nil)
+		}
+		if g := src.Generation; g != nil && (g.Locator == "" || (g.Algorithm != dnsid.JoseAlgEdDSA && g.Algorithm != dnsid.JoseAlgES256)) {
+			return dnsid.NewArgumentError("dnsid: file generation requires a locator and EdDSA or ES256", nil)
 		}
 		return nil
 	}
@@ -73,6 +86,9 @@ func keyFactory(name string) (KeyProviderFactory, error) {
 func OperationalKeyProviderFrom(ctx context.Context, src KeySource, domain string) (dnsid.KeyProvider, error) {
 	if err := ValidateKeySource(src); err != nil {
 		return nil, err
+	}
+	if src.Generation != nil {
+		return nil, dnsid.NewArgumentError("dnsid: Construct opens existing keys only; generation belongs to managed registration", nil)
 	}
 	if src.Provider == "" || src.Provider == "file" {
 		WarnLocalKeys()

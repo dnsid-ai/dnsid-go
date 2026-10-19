@@ -851,7 +851,19 @@ func (c *Client) verifyCompleteCheckpoint(history CompleteHistoryResult) (*Verif
 // reference <lr>@<index>. The entry's inclusion proof must verify, its index
 // must match the reference, and the entry must appear in the domain's
 // verified lifecycle history; otherwise an error is returned.
-func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsidlog.LogEvent, err error) {
+func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (dnsidlog.LogEvent, error) {
+	event, _, err := c.readEvent(ctx, ref)
+	return event, err
+}
+
+// ReadEntry returns the exact bytes at a final reference after the same
+// inclusion, signature, and lifecycle checks as ReadEvent.
+func (c *Client) ReadEntry(ctx context.Context, ref dnsidlog.LogRef) ([]byte, error) {
+	_, entry, err := c.readEvent(ctx, ref)
+	return entry, err
+}
+
+func (c *Client) readEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsidlog.LogEvent, entry []byte, err error) {
 	ctx, cancel := dnsid.VerificationContext(ctx)
 	defer cancel()
 	defer func() {
@@ -861,49 +873,49 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 		err = logVerificationError(err, false)
 	}()
 	if c == nil || c.source == nil {
-		return dnsidlog.LogEvent{}, dnsid.NewArgumentError("dnsid: c2sp-tlog source is required", nil)
+		return dnsidlog.LogEvent{}, nil, dnsid.NewArgumentError("dnsid: c2sp-tlog source is required", nil)
 	}
 	wantRef, wantIndex, err := ParseFinalEventRef(ref)
 	if err != nil {
-		return dnsidlog.LogEvent{}, err
+		return dnsidlog.LogEvent{}, nil, err
 	}
 	if wantRef.String() != c.ref.String() {
-		return dnsidlog.LogEvent{}, dnsid.NewArgumentError("dnsid: c2sp-tlog final ref does not match client reference", nil)
+		return dnsidlog.LogEvent{}, nil, dnsid.NewArgumentError("dnsid: c2sp-tlog final ref does not match client reference", nil)
 	}
 	proven, err := c.source.ReadEvent(ctx, ref)
 	if err != nil {
-		return dnsidlog.LogEvent{}, logVerificationError(err, true)
+		return dnsidlog.LogEvent{}, nil, logVerificationError(err, true)
 	}
 	if proven.Index != wantIndex {
-		return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog proof index %d does not match final ref index %d", proven.Index, wantIndex)
+		return dnsidlog.LogEvent{}, nil, fmt.Errorf("dnsid: c2sp-tlog proof index %d does not match final ref index %d", proven.Index, wantIndex)
 	}
 	parsed, proof, err := c.verifyProvenEntry(proven)
 	if err != nil {
-		return dnsidlog.LogEvent{}, err
+		return dnsidlog.LogEvent{}, nil, err
 	}
 	if proof.Index != wantIndex {
-		return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog proof index %d does not match final ref index %d", proof.Index, wantIndex)
+		return dnsidlog.LogEvent{}, nil, fmt.Errorf("dnsid: c2sp-tlog proof index %d does not match final ref index %d", proof.Index, wantIndex)
 	}
 	if !proof.LogTime.IsZero() && parsed.event.Timestamp.After(proof.LogTime) {
-		return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog event timestamp is after accepted log timestamp")
+		return dnsidlog.LogEvent{}, nil, fmt.Errorf("dnsid: c2sp-tlog event timestamp is after accepted log timestamp")
 	}
 	signed, err := CanonicalFromEntry(proven.Entry)
 	if err != nil {
-		return dnsidlog.LogEvent{}, err
+		return dnsidlog.LogEvent{}, nil, err
 	}
 	verified, _, err := c.rebuildVerifiedHistory(ctx, parsed.event.Domain)
 	if err != nil {
-		return dnsidlog.LogEvent{}, err
+		return dnsidlog.LogEvent{}, nil, err
 	}
 	for _, item := range verified {
 		if item.index <= wantIndex && string(item.signed) == string(signed) && candidateAuthorizedByCurrentHistory(parsed.event, signed, item.authorityEntity, item.authorityOperational) {
 			if err := ctx.Err(); err != nil {
-				return dnsidlog.LogEvent{}, err
+				return dnsidlog.LogEvent{}, nil, err
 			}
-			return parsed.event, nil
+			return parsed.event, append([]byte(nil), proven.Entry...), nil
 		}
 	}
-	return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog final event is not in verified lifecycle")
+	return dnsidlog.LogEvent{}, nil, fmt.Errorf("dnsid: c2sp-tlog final event is not in verified lifecycle")
 }
 
 // RebuildHistory returns domain's verified lifecycle events in log order.
