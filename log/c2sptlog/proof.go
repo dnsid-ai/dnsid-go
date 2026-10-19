@@ -2,9 +2,11 @@ package c2sptlog
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
+	dnsid "github.com/dnsid-ai/dnsid-go"
 	formatlog "github.com/transparency-dev/formats/log"
 	formatnote "github.com/transparency-dev/formats/note"
 	formatproof "github.com/transparency-dev/formats/proof"
@@ -93,7 +95,12 @@ func (p Policy) VerifyProof(ref Reference, entry, rawProof []byte) (*VerifiedPro
 	return verified, nil
 }
 
-func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (*VerifiedProof, error) {
+func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (verified *VerifiedProof, err error) {
+	defer func() {
+		if err != nil {
+			err = dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: invalid c2sp-tlog checkpoint", err)
+		}
+	}()
 	if p.LogVerifier == nil {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog policy missing log verifier")
 	}
@@ -107,6 +114,9 @@ func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (*Verified
 	cp, _, checkpointNote, err := formatlog.ParseCheckpoint(rawCheckpoint, origin, p.LogVerifier, p.WitnessVerifiers...)
 	if err != nil {
 		return nil, fmt.Errorf("dnsid: verifying c2sp-tlog checkpoint: %w", err)
+	}
+	if cp.Size > math.MaxInt64 {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint size exceeds int64 range")
 	}
 	if len(cp.Hash) != tlog.HashSize {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint root length %d, want %d", len(cp.Hash), tlog.HashSize)

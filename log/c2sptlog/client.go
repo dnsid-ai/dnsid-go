@@ -694,6 +694,10 @@ func (c *Client) VerifyNonRevocation(ctx context.Context, domain string, at time
 	}
 	completeHistory, err := complete.RebuildCompleteHistory(ctx, c.ref, domain)
 	if err != nil {
+		var verificationErr *dnsid.VerificationError
+		if errors.As(err, &verificationErr) {
+			return dnsidlog.LoggedStateEvidence{}, err
+		}
 		return dnsidlog.LoggedStateEvidence{}, dnsid.NewVerificationError(dnsid.VerificationCodeIncompleteStream, resourceFailureTransient(err, true), "dnsid: c2sp-tlog history is incomplete", err)
 	}
 	checkpoint, err := c.verifyCompleteCheckpoint(completeHistory)
@@ -891,6 +895,9 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 	if err != nil {
 		return dnsidlog.LogEvent{}, err
 	}
+	if err := c.advanceTrustedCheckpoints(ctx, []*VerifiedProof{proof}); err != nil {
+		return dnsidlog.LogEvent{}, err
+	}
 	verified, _, err := c.rebuildVerifiedHistory(ctx, parsed.event.Domain)
 	if err != nil {
 		return dnsidlog.LogEvent{}, err
@@ -934,7 +941,10 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 		return nil, nil, err
 	}
 	verified := make([]verifiedEvent, 0, len(entries))
-	verifiedProofs := make([]*VerifiedProof, 0, len(entries))
+	verifiedProofs := make([]*VerifiedProof, 0, len(entries)+1)
+	if requiredCheckpoint != nil {
+		verifiedProofs = append(verifiedProofs, requiredCheckpoint)
+	}
 	globalCandidates := false
 	if source, ok := c.source.(GlobalCandidateSource); ok {
 		globalCandidates = source.GlobalCandidates()
@@ -946,7 +956,8 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 		// Every supplied bundle proof verifies even when its lifecycle payload is noise.
 		proof, err := c.policy.VerifyProof(c.ref, entry.Entry, entry.Proof)
 		if err != nil {
-			if !globalCandidates {
+			var checkpointError *dnsid.VerificationError
+			if !globalCandidates || errors.As(err, &checkpointError) {
 				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: invalid c2sp-tlog inclusion or checkpoint evidence", err)
 			}
 			continue
@@ -961,7 +972,10 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 			return nil, nil, fmt.Errorf("dnsid: c2sp-tlog entry proof is not bound to the complete checkpoint")
 		}
 		if proof.Index != entry.Index {
-			return nil, nil, fmt.Errorf("dnsid: supplied occurrence index does not match its proof")
+			return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: supplied occurrence index does not match its proof", nil)
+		}
+		if proof.Checkpoint != nil {
+			verifiedProofs = append(verifiedProofs, proof)
 		}
 		if err := c.validateEntryMetadata(entry.Entry); err != nil {
 			if !globalCandidates {
@@ -990,13 +1004,10 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 			continue
 		}
 		verified = append(verified, verifiedEvent{event: parsed.event, chain: parsed.chain, index: proof.Index, signed: signed, parseError: parsed.validationError})
-		if proof.Checkpoint != nil {
-			verifiedProofs = append(verifiedProofs, proof)
-		}
 	}
 	sort.SliceStable(verifiedProofs, func(i, j int) bool { return verifiedProofs[i].Checkpoint.Size < verifiedProofs[j].Checkpoint.Size })
 	if err := c.advanceTrustedCheckpoints(ctx, verifiedProofs); err != nil {
-		return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: invalid trusted c2sp-tlog checkpoint evidence", err)
+		return nil, nil, logVerificationError(err, false)
 	}
 	sort.SliceStable(verified, func(i, j int) bool { return verified[i].index < verified[j].index })
 	migrationVerifier := c.verifyMigration
@@ -1137,6 +1148,19 @@ func logVerificationError(err error, transient bool) error {
 	var verificationErr *dnsid.VerificationError
 	if errors.As(err, &verificationErr) {
 		return err
+	}
+	var advanceErr *CheckpointAdvanceError
+	if errors.As(err, &advanceErr) {
+		code := dnsid.VerificationCodeInvalidEvidence
+		switch advanceErr.Kind {
+		case CheckpointAdvanceRollback:
+			code = dnsid.VerificationCodeLogRollback
+		case CheckpointAdvanceRootConflict:
+			code = dnsid.VerificationCodeLogFork
+		case CheckpointAdvanceConsistencyFailed:
+			code = dnsid.VerificationCodeLogInconsistent
+		}
+		return dnsid.NewVerificationError(code, false, "dnsid: c2sp-tlog checkpoint continuity failed", err)
 	}
 	var parseErr *dnsid.ParseError
 	var validationErr *dnsid.ValidationError
