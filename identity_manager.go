@@ -312,7 +312,11 @@ type TXTRecordRData struct {
 	TTL   time.Duration
 }
 
-// DNSResolver fetches DNSid TXT records.
+// DNSResolver fetches DNSid TXT records at an absolute name without a trailing dot.
+// NXDOMAIN and NODATA return no records and no error, with the response DNSSEC
+// state (UNKNOWN if unavailable). Wrapped *net.DNSError values with IsNotFound
+// are also normalized by VerifyDomain. Transport failures return an error;
+// known DNSSEC validation failures must report DNSSECStateFailed.
 //
 // DNSSECModeValidated and DNSSECModeRequired require a resolver that reports a
 // definitive DNSSEC state. The default netDNSResolver reports
@@ -346,6 +350,9 @@ func (r netDNSResolver) FetchTXT(ctx context.Context, name string) ([]TXTRecordR
 	resolver := &net.Resolver{PreferGo: true, Dial: capture.dial(baseDial)}
 	// DNSResolver names omit the root dot, but the wire query must not use search domains.
 	values, err := resolver.LookupTXT(ctx, strings.TrimSuffix(name, ".")+".")
+	if isDNSNotFound(err) {
+		return nil, DNSSECStateUnknown, nil
+	}
 	if err != nil {
 		return nil, DNSSECStateUnknown, err
 	}
@@ -1099,14 +1106,18 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 	name := "_dnsid." + normalized
 	dnsAcquiredAt := time.Now() // Lookup start is conservative even for injected resolvers.
 	rdatas, dnssec, err := m.dns.FetchTXT(ctx, name)
-	if err != nil {
+	if isDNSNotFound(err) {
+		rdatas, err = nil, nil
+	}
+	// A known validation failure takes precedence even when resolution also failed.
+	if err != nil && dnssec != DNSSECStateFailed {
 		return nil, NewVerificationError(VerificationCodeDNSResolution, true, fmt.Sprintf("dnsid: DNS lookup failed for %s", name), err)
 	}
 	if err := m.enforceDNSSECPolicy(dnssec); err != nil {
 		return nil, err
 	}
 	if len(rdatas) == 0 {
-		return nil, NewVerificationError(VerificationCodeRecordInvalid, false, fmt.Sprintf("dnsid: _dnsid TXT record not found at %s", name), nil)
+		return nil, NewVerificationError(VerificationCodeRecordNotFound, false, fmt.Sprintf("dnsid: _dnsid TXT record not found at %s", name), nil)
 	}
 	if len(rdatas) > 1 {
 		return nil, NewVerificationError(VerificationCodeRecordInvalid, false, fmt.Sprintf("dnsid: multiple _dnsid TXT records at %s (expected exactly one)", name), nil)

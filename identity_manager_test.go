@@ -555,8 +555,8 @@ func TestVerifyDomainDefaultManagerAllowsUnknownDNSSECState(t *testing.T) {
 	manager.dns = &testDNSResolver{state: DNSSECStateUnknown}
 	_, err = manager.VerifyDomain(context.Background(), "agent.example")
 	var verificationErr *VerificationError
-	if !errors.As(err, &verificationErr) || verificationErr.Code() != VerificationCodeRecordInvalid {
-		t.Fatalf("VerifyDomain error = %v, want record_invalid after DNSSEC UNKNOWN was accepted", err)
+	if !errors.As(err, &verificationErr) || verificationErr.Code() != VerificationCodeRecordNotFound {
+		t.Fatalf("VerifyDomain error = %v, want record_not_found after DNSSEC UNKNOWN was accepted", err)
 	}
 }
 
