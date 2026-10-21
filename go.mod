@@ -1,6 +1,6 @@
 module github.com/dnsid-ai/dnsid-go
 
-go 1.26.6
+go 1.26.10
 
 require (
 	github.com/WebDecoy/web-bot-auth v0.4.1
