@@ -993,7 +993,7 @@ type ManagedIssuanceStore interface {
 ```
 
 <a name="ManagedKeyRotationActivationError"></a>
-## type [ManagedKeyRotationActivationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L122-L125>)
+## type [ManagedKeyRotationActivationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L126-L129>)
 
 ManagedKeyRotationActivationError reports accepted registry submission with incomplete local activation, supersession, pause release, or persistence.
 
@@ -1005,7 +1005,7 @@ type ManagedKeyRotationActivationError struct {
 ```
 
 <a name="ManagedKeyRotationActivationError.Error"></a>
-### func \(\*ManagedKeyRotationActivationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L127>)
+### func \(\*ManagedKeyRotationActivationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L131>)
 
 ```go
 func (e *ManagedKeyRotationActivationError) Error() string
@@ -1014,7 +1014,7 @@ func (e *ManagedKeyRotationActivationError) Error() string
 
 
 <a name="ManagedKeyRotationActivationError.Unwrap"></a>
-### func \(\*ManagedKeyRotationActivationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L134>)
+### func \(\*ManagedKeyRotationActivationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L138>)
 
 ```go
 func (e *ManagedKeyRotationActivationError) Unwrap() error
@@ -1023,7 +1023,7 @@ func (e *ManagedKeyRotationActivationError) Unwrap() error
 
 
 <a name="ManagedKeyRotationOptions"></a>
-## type [ManagedKeyRotationOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L68-L76>)
+## type [ManagedKeyRotationOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L68-L78>)
 
 ManagedKeyRotationOptions configures a new managed operational\-key rotation. Store and ApplicationSigning are mandatory durability and safety boundaries.
 
@@ -1036,6 +1036,8 @@ type ManagedKeyRotationOptions struct {
     IdempotencyKey     string
     Store              ManagedKeyRotationStore
     ApplicationSigning ApplicationSigningController
+    // VerifyPublicationEvidence must fetch fresh, protocol-verified TXT/ku and log evidence.
+    VerifyPublicationEvidence func(context.Context, string) (*dnsid.VerifiedDomain, error)
 }
 ```
 
@@ -1062,7 +1064,7 @@ type ManagedKeyRotationState struct {
 ```
 
 <a name="ResumeManagedOperationalKeyRotation"></a>
-### func [ResumeManagedOperationalKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L231>)
+### func [ResumeManagedOperationalKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L238>)
 
 ```go
 func ResumeManagedOperationalKeyRotation(ctx context.Context, opts ResumeManagedKeyRotationOptions) (*ManagedKeyRotationState, error)
@@ -1071,7 +1073,7 @@ func ResumeManagedOperationalKeyRotation(ctx context.Context, opts ResumeManaged
 ResumeManagedOperationalKeyRotation retries only a persisted rotation's exact completed bytes and idempotency key, or finishes local reconciliation after an accepted submission.
 
 <a name="RotateManagedOperationalKey"></a>
-### func [RotateManagedOperationalKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L145>)
+### func [RotateManagedOperationalKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L149>)
 
 ```go
 func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOptions) (*ManagedKeyRotationState, error)
@@ -1109,7 +1111,7 @@ func (f ManagedKeyRotationStoreFunc) PersistManagedKeyRotation(ctx context.Conte
 PersistManagedKeyRotation calls f to persist state.
 
 <a name="ManagedKeyRotationSubmissionError"></a>
-## type [ManagedKeyRotationSubmissionError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L89-L95>)
+## type [ManagedKeyRotationSubmissionError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L93-L99>)
 
 ManagedKeyRotationSubmissionError reports a submission or persistence failure after exact completed entry bytes have been fixed.
 
@@ -1124,7 +1126,7 @@ type ManagedKeyRotationSubmissionError struct {
 ```
 
 <a name="ManagedKeyRotationSubmissionError.Error"></a>
-### func \(\*ManagedKeyRotationSubmissionError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L97>)
+### func \(\*ManagedKeyRotationSubmissionError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L101>)
 
 ```go
 func (e *ManagedKeyRotationSubmissionError) Error() string
@@ -1133,7 +1135,7 @@ func (e *ManagedKeyRotationSubmissionError) Error() string
 
 
 <a name="ManagedKeyRotationSubmissionError.ShouldRetrySameBytes"></a>
-### func \(\*ManagedKeyRotationSubmissionError\) [ShouldRetrySameBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L116>)
+### func \(\*ManagedKeyRotationSubmissionError\) [ShouldRetrySameBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L120>)
 
 ```go
 func (e *ManagedKeyRotationSubmissionError) ShouldRetrySameBytes() bool
@@ -1142,7 +1144,7 @@ func (e *ManagedKeyRotationSubmissionError) ShouldRetrySameBytes() bool
 ShouldRetrySameBytes reports whether recovery must resubmit the exact persisted bytes with the same idempotency key.
 
 <a name="ManagedKeyRotationSubmissionError.Transient"></a>
-### func \(\*ManagedKeyRotationSubmissionError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L112>)
+### func \(\*ManagedKeyRotationSubmissionError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L116>)
 
 ```go
 func (e *ManagedKeyRotationSubmissionError) Transient() bool
@@ -1151,7 +1153,7 @@ func (e *ManagedKeyRotationSubmissionError) Transient() bool
 Transient reports whether retrying the operation may succeed.
 
 <a name="ManagedKeyRotationSubmissionError.Unwrap"></a>
-### func \(\*ManagedKeyRotationSubmissionError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L104>)
+### func \(\*ManagedKeyRotationSubmissionError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L108>)
 
 ```go
 func (e *ManagedKeyRotationSubmissionError) Unwrap() error
@@ -1615,7 +1617,7 @@ type ResumeManagedIssuanceOptions struct {
 ```
 
 <a name="ResumeManagedKeyRotationOptions"></a>
-## type [ResumeManagedKeyRotationOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L79-L85>)
+## type [ResumeManagedKeyRotationOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L81-L89>)
 
 ResumeManagedKeyRotationOptions resumes a previously persisted rotation.
 
@@ -1626,6 +1628,8 @@ type ResumeManagedKeyRotationOptions struct {
     Rotation           *ManagedKeyRotationState
     Store              ManagedKeyRotationStore
     ApplicationSigning ApplicationSigningController
+    // VerifyPublicationEvidence must fetch fresh, protocol-verified TXT/ku and log evidence.
+    VerifyPublicationEvidence func(context.Context, string) (*dnsid.VerifiedDomain, error)
 }
 ```
 

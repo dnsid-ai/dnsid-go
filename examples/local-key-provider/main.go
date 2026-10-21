@@ -43,9 +43,7 @@ func main() {
 	printJSON(keyProvider.JWK())
 
 	set := jwk.NewSet()
-	for _, kid := range keyProvider.ListKeyIds() {
-		_ = set.AddKey(keyProvider.JWK(kid))
-	}
+	_ = set.AddKey(keyProvider.JWK())
 	fmt.Println("\npublic JWKS:")
 	printJSON(set)
 
