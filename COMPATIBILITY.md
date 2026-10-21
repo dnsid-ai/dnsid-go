@@ -10,22 +10,28 @@ rotation, revocation, transport, cache, and error guidance are documented in
 
 | | Version | Notes |
 |---|---|---|
-| **Minimum** | Go 1.26.6 | The `go` directive in [`go.mod`](go.mod). Building or `go get`ing with an older toolchain fails. |
+| **Minimum** | Go 1.26.10 | The `go` directive in [`go.mod`](go.mod). Building or `go get`ing with an older toolchain fails. |
 | **Maximum** | Latest stable | Go's [compatibility promise](https://go.dev/doc/go1compat) covers newer releases; we test against the current stable line. |
 
 CI tests the exact minimum toolchain and the latest stable Go release. The minimum changes only
-when the module adopts a newer language or standard-library requirement.
+when the module adopts a newer language or standard-library requirement, including security fixes.
+
+Go 1.26.10 and Go 1.27.3 block the compromised emSign intermediate keys
+([CVE-2026-111943](https://github.com/golang/go/issues/82345)). Use Go 1.26.10+
+on the 1.26 line or Go 1.27.3+ on the 1.27 line, then rebuild and redeploy
+applications. Updating this module or the OS CA bundle alone does not patch an
+existing binary.
 
 ## CI-validated Go versions
 
 [`.github/workflows/test.yml`](.github/workflows/test.yml) runs the full test suite (root module,
 including `log/c2sptlog`, plus the `key/aws` module) on a matrix of:
 
-- **`1.26.6`** — the minimum, pinned to the `go.mod` directive.
+- **`1.26.10`** — the minimum, pinned to the `go.mod` directive.
 - **`stable`** — the latest stable release resolved by `actions/setup-go` at run time.
 
-`oldstable` is deliberately excluded because it predates the 1.26.6 minimum and cannot build the
-module.
+The matrix uses an exact minimum rather than the moving `oldstable` alias, so it
+continues to test the security baseline when Go's supported release lines change.
 
 ## Module dependency versions
 
