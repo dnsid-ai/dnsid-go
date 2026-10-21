@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.43.0] - 2026-10-21
+
+### Bug Fixes
+
+- fix!: require Go 1.26.10 for compromised intermediate blocking ([#84](https://github.com/dnsid-ai/dnsid-go/pull/84))
+
+### Testing
+
+- ci: track main for SDK compliance workflow ([#82](https://github.com/dnsid-ai/dnsid-go/pull/82))
+
 ## [0.42.0] - 2026-10-19
 
 ### Bug Fixes
