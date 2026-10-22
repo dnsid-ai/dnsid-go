@@ -54,6 +54,8 @@ The application profiles build on this core: jose creates and verifies DNSid JWT
 
 Guides and account setup live at https://docs.dnsid.ai; full API reference is on pkg.go.dev.
 
+Copyright 2026 Known Systems AI, Inc.
+
 ## Constants
 
 <a name="AgentStatePending"></a>Typed lifecycle constants for callers that want the AgentState type.

@@ -34,6 +34,8 @@ A Provider signs with a single configured algorithm. Two KMS signing algorithms 
 
 See https://docs.dnsid.ai for DNSid guides and account setup.
 
+Copyright 2026 Known Systems AI, Inc.
+
 ## Index
 
 - [type Client](<#Client>)
