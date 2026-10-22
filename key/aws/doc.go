@@ -25,4 +25,6 @@
 // [Provider.State] and restore it through [Config.State].
 //
 // See https://docs.dnsid.ai for DNSid guides and account setup.
+//
+// Copyright 2026 Known Systems AI, Inc.
 package awskms

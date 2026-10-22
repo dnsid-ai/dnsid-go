@@ -67,4 +67,6 @@
 //
 // Guides and account setup live at https://docs.dnsid.ai; full API reference
 // is on pkg.go.dev.
+//
+// Copyright 2026 Known Systems AI, Inc.
 package dnsid
