@@ -23,6 +23,16 @@ type journal struct {
 	State   *c2sptlog.ManagedKeyRotationState `json:"state"`
 }
 
+// Self-checks use only the local identity's verified publication, not peer acceptance policy.
+type localPublication struct{ evidence *dnsid.VerifiedDomain }
+
+func (p *localPublication) VerifyDomain(_ context.Context, domain string) (*dnsid.VerifiedDomain, error) {
+	if p.evidence == nil || domain != p.evidence.Domain() {
+		return nil, fmt.Errorf("self-check requires the local identity")
+	}
+	return p.evidence, nil
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "rotation:", err, "\nRerun the same command to recover; do not delete the saved state.")
@@ -85,7 +95,13 @@ func run() error {
 		return fmt.Errorf("this example only rotates testnet identities")
 	}
 	// Recovery reopens the saved provider instead of selecting a deployment key.
-	manager, err := config.Construct(ctx, loaded, config.Dependencies{KeyProvider: provider})
+	restoring := saved.State != nil && saved.State.Activated
+	var manager *dnsid.IdentityManager
+	if restoring {
+		manager, err = dnsid.NewIdentityManager(loaded.Dnsid, provider)
+	} else {
+		manager, err = config.Construct(ctx, loaded, config.Dependencies{KeyProvider: provider})
+	}
 	if err != nil {
 		return err
 	}
@@ -97,7 +113,8 @@ func run() error {
 		return err
 	}
 	paused := true // Signing starts closed and opens only after rotation completes.
-	profile := jose.New(manager, manager.Domain(), provider, jose.Config{})
+	publication := &localPublication{}
+	profile := jose.New(publication, manager.Domain(), provider, jose.Config{})
 	sign := func() (string, error) {
 		if paused {
 			return "", fmt.Errorf("application signing is paused")
@@ -150,6 +167,7 @@ func run() error {
 		if key.Kid() != kid {
 			return fmt.Errorf("local key does not match publication")
 		}
+		publication.evidence = before
 		paused = false
 		oldMessage, err := sign()
 		if err != nil {
@@ -198,6 +216,10 @@ func run() error {
 		return fmt.Errorf("rotation unresolved; rerun the same command")
 	}
 	paused = false // The completed state is terminal; resume does not touch signing.
+	if restoring {
+		fmt.Println("saved rotation restored; no network checks")
+		return nil
+	}
 	observed, err := manager.VerifyLocalPublication(ctx)
 	if err != nil {
 		return err
@@ -209,6 +231,7 @@ func run() error {
 	if len(observed.KeySet().SigningKeys()) != 1 || key.Kid() != rotation.NewKid || provider.JWK(rotation.PreviousKid) != nil {
 		return fmt.Errorf("incorrect final key state")
 	}
+	publication.evidence = observed
 	signed, err := sign()
 	if err != nil {
 		return err

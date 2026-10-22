@@ -294,6 +294,12 @@ func TestVerifyLocalPublication_SkipsAcceptanceAndCache(t *testing.T) {
 		_, err := local.RefreshDomain(context.Background(), domain, VerifyDomainOpts{})
 		return err
 	}())
+	local.identity.PolicyFlags = []PolicyFlag{PolicyFlagMTLS}
+	record, err := local.CreateTXTRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.dns.records["_dnsid."+domain] = []TXTRecordRData{{Value: record.Serialize(), TTL: time.Hour}}
 	for range 2 {
 		vd, err := local.VerifyLocalPublication(context.Background())
 		if err != nil || vd.Domain() != domain || vd.CachedState() != "fresh" {

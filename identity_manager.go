@@ -997,8 +997,8 @@ func (m *IdentityManager) RefreshDomain(ctx context.Context, domain string, opts
 }
 
 // VerifyLocalPublication fully verifies new evidence for this manager's own
-// identity, as RefreshDomain does, without counterparty acceptance. The local
-// identity is not a counterparty. Use it to confirm the manager's own
+// identity, as RefreshDomain does, without application-peer or counterparty
+// acceptance checks. Use it to confirm the manager's own
 // publication, for example before activating a rotated operational key.
 func (m *IdentityManager) VerifyLocalPublication(ctx context.Context) (*VerifiedDomain, error) {
 	if m == nil || m.identity.Domain == "" {
@@ -1049,7 +1049,7 @@ func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts 
 		kind = identityRefresh
 		ctx = httputil.WithRevalidation(ctx)
 	} else if vd := m.cachedDomain(normalized); vd != nil {
-		return m.verifyCachedDomain(ctx, normalized, opts, vd)
+		return m.verifyCachedDomain(ctx, normalized, opts, vd, acceptance)
 	}
 	vd, err := m.coalesceVerification(ctx, normalized, kind, func(sharedCtx context.Context) (*VerifiedDomain, error) {
 		return m.verifyReusableDomain(sharedCtx, normalized)
@@ -1060,10 +1060,12 @@ func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts 
 	// The cache may have filled between the initial lookup and joining the
 	// coordinator. Treat that result as a cache hit, including status refresh.
 	if vd.cachedState == "cached" {
-		return m.verifyCachedDomain(ctx, normalized, opts, vd)
+		return m.verifyCachedDomain(ctx, normalized, opts, vd, acceptance)
 	}
-	if err := m.enforcePerCallPolicy(vd.record, normalized, opts); err != nil {
-		return nil, err
+	if acceptance {
+		if err := m.enforcePerCallPolicy(vd.record, normalized, opts); err != nil {
+			return nil, err
+		}
 	}
 	return vd, nil
 }
@@ -1101,9 +1103,11 @@ func (m *IdentityManager) enforceCounterpartyAcceptance(vd *VerifiedDomain) erro
 	return deny("governance ID is not in the configured allowlist")
 }
 
-func (m *IdentityManager) verifyCachedDomain(ctx context.Context, domain string, opts VerifyDomainOpts, vd *VerifiedDomain) (*VerifiedDomain, error) {
-	if err := m.enforcePerCallPolicy(vd.record, domain, opts); err != nil {
-		return nil, err
+func (m *IdentityManager) verifyCachedDomain(ctx context.Context, domain string, opts VerifyDomainOpts, vd *VerifiedDomain, acceptance bool) (*VerifiedDomain, error) {
+	if acceptance {
+		if err := m.enforcePerCallPolicy(vd.record, domain, opts); err != nil {
+			return nil, err
+		}
 	}
 	return m.refreshCachedStatusIfNeeded(ctx, vd)
 }

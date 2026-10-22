@@ -545,7 +545,7 @@ func (m *IdentityManager) EntityKeyURL() string
 EntityKeyURL returns the HTTPS URL where the draft 01 entity \(ek\) JWKS should be served. It returns an empty string when no entity KeyProvider is configured. Draft 01 defines no default path, so an unset EntityKeyURL returns an empty string.
 
 <a name="IdentityManager.EvictDomain"></a>
-### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1630>)
+### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1634>)
 
 ```go
 func (m *IdentityManager) EvictDomain(domain string)
@@ -806,7 +806,7 @@ VerifyDomainWithOptions performs core DNSid trust establishment with optional pe
 func (m *IdentityManager) VerifyLocalPublication(ctx context.Context) (*VerifiedDomain, error)
 ```
 
-VerifyLocalPublication fully verifies new evidence for this manager's own identity, as RefreshDomain does, without counterparty acceptance. The local identity is not a counterparty. Use it to confirm the manager's own publication, for example before activating a rotated operational key.
+VerifyLocalPublication fully verifies new evidence for this manager's own identity, as RefreshDomain does, without application\-peer or counterparty acceptance checks. Use it to confirm the manager's own publication, for example before activating a rotated operational key.
 
 <a name="IdentityManager.VerifyLogEvidence"></a>
 ### func \(\*IdentityManager\) [VerifyLogEvidence](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L469>)
