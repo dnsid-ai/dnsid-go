@@ -96,7 +96,7 @@ func run() error {
 	if err := registry.SetAuthToken(os.Getenv("DNSID_API_KEY")); err != nil {
 		return err
 	}
-	paused := true // Every restart begins closed, even after a completed rotation.
+	paused := true // Signing starts closed and opens only after rotation completes.
 	profile := jose.New(manager, manager.Domain(), provider, jose.Config{})
 	sign := func() (string, error) {
 		if paused {
@@ -127,18 +127,15 @@ func run() error {
 		paused = value // All signatures use sign(); no concurrent requests to drain.
 		return nil
 	})
-	verify := func(ctx context.Context, domain string) (*dnsid.VerifiedDomain, error) {
-		return manager.RefreshDomain(ctx, domain, dnsid.VerifyDomainOpts{})
-	}
 	resume := func() (*c2sptlog.ManagedKeyRotationState, error) {
 		return c2sptlog.ResumeManagedOperationalKeyRotation(ctx, c2sptlog.ResumeManagedKeyRotationOptions{
 			KeyProvider: provider, RegistryClient: registry, Rotation: saved.State,
-			Store: store, ApplicationSigning: signing, VerifyPublicationEvidence: verify,
+			Store: store, ApplicationSigning: signing, Publication: manager,
 		})
 	}
 	var rotation *c2sptlog.ManagedKeyRotationState
 	if saved.State == nil {
-		before, err := verify(ctx, manager.Domain())
+		before, err := manager.VerifyLocalPublication(ctx)
 		if err != nil {
 			return err
 		}
@@ -176,7 +173,7 @@ func run() error {
 		rotation, err = c2sptlog.RotateManagedOperationalKey(ctx, c2sptlog.ManagedKeyRotationOptions{
 			Domain: manager.Domain(), Client: client, KeyProvider: provider,
 			RegistryClient: registry, IdempotencyKey: hex.EncodeToString(nonce[:]),
-			Store: store, ApplicationSigning: signing, VerifyPublicationEvidence: verify,
+			Store: store, ApplicationSigning: signing, Publication: manager,
 		})
 		if err != nil {
 			return err
@@ -197,10 +194,11 @@ func run() error {
 			return err
 		}
 	}
-	if !rotation.Activated || paused {
+	if !rotation.Activated || rotation.ApplicationSigningPaused {
 		return fmt.Errorf("rotation unresolved; rerun the same command")
 	}
-	observed, err := verify(ctx, manager.Domain())
+	paused = false // The completed state is terminal; resume does not touch signing.
+	observed, err := manager.VerifyLocalPublication(ctx)
 	if err != nil {
 		return err
 	}

@@ -92,19 +92,33 @@ type fetchedStreamBundleSource struct {
 	requireBundle bool
 }
 
+// entryDiscoverySource reads one raw entry without a complete log scan.
+type entryDiscoverySource interface {
+	discoverEntry(context.Context, Reference, uint64) ([]byte, error)
+}
+
 func (s *fetchedStreamBundleSource) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (ProvenEntry, error) {
 	if s == nil || s.fallback == nil {
 		return ProvenEntry{}, fmt.Errorf("dnsid: reading one c2sp-tlog event requires the raw discovery source")
 	}
-	discovered, err := s.fallback.ReadEvent(ctx, ref)
+	reference, index, err := ParseFinalEventRef(ref)
 	if err != nil {
 		return ProvenEntry{}, err
 	}
-	event, err := LogEventFromEntry(discovered.Entry)
+	// The raw entry only names the domain bundle; the bundle proves the entry.
+	var discovered *ProvenEntry
+	var raw []byte
+	if source, ok := s.fallback.(entryDiscoverySource); ok {
+		raw, err = source.discoverEntry(ctx, reference, index)
+	} else {
+		var entry ProvenEntry
+		entry, err = s.fallback.ReadEvent(ctx, ref)
+		discovered, raw = &entry, entry.Entry
+	}
 	if err != nil {
 		return ProvenEntry{}, err
 	}
-	reference, _, err := ParseFinalEventRef(ref)
+	event, err := LogEventFromEntry(raw)
 	if err != nil {
 		return ProvenEntry{}, err
 	}
@@ -113,9 +127,19 @@ func (s *fetchedStreamBundleSource) ReadEvent(ctx context.Context, ref dnsidlog.
 		return ProvenEntry{}, err
 	}
 	if fallback {
-		return discovered, nil
+		if discovered != nil {
+			return *discovered, nil
+		}
+		return s.fallback.ReadEvent(ctx, ref)
 	}
-	return bundle.Source.ReadEvent(ctx, ref)
+	proven, err := bundle.Source.ReadEvent(ctx, ref)
+	if err != nil {
+		return ProvenEntry{}, err
+	}
+	if !bytes.Equal(proven.Entry, raw) {
+		return ProvenEntry{}, fmt.Errorf("dnsid: c2sp stream bundle entry does not match the log entry at index %d", index)
+	}
+	return proven, nil
 }
 
 func (s *fetchedStreamBundleSource) RebuildHistory(ctx context.Context, reference Reference, domain string) ([]ProvenEntry, error) {

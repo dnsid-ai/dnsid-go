@@ -140,6 +140,50 @@ func (s *ScanSource) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (Proven
 	return scan.provenEntry(index), nil
 }
 
+// discoverEntry returns the raw entry at index from its one entry bundle under
+// an authenticated checkpoint. It does not authenticate the entry itself; use
+// it only to select the per-domain stream bundle that proves the entry.
+func (s *ScanSource) discoverEntry(ctx context.Context, reference Reference, index uint64) ([]byte, error) {
+	ctx, cancel := dnsid.VerificationContext(ctx)
+	defer cancel()
+	if s == nil || s.fetcher == nil {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog scan source is required")
+	}
+	if err := reference.Validate(); err != nil {
+		return nil, err
+	}
+	checkpoint, err := s.fetch(ctx, reference.LogPrefix+"/checkpoint", s.maxCheckpointBytes)
+	if err != nil {
+		return nil, err
+	}
+	verified, err := s.policy.verifyCheckpoint(reference, checkpoint)
+	if err != nil {
+		return nil, err
+	}
+	treeSize := verified.Checkpoint.Size
+	if index >= treeSize {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog entry index %d outside checkpoint size %d", index, treeSize)
+	}
+	bundle := index / entriesPerC2spBundle
+	width := min(uint64(entriesPerC2spBundle), treeSize-bundle*entriesPerC2spBundle)
+	suffix := tileNumber(bundle)
+	if width < entriesPerC2spBundle {
+		suffix += ".p/" + strconv.FormatUint(width, 10)
+	}
+	bundleBytes, err := s.fetch(ctx, reference.LogPrefix+"/tile/entries/"+suffix, s.maxEntryBundleBytes)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := parseEntryBundle(bundleBytes)
+	if err != nil {
+		return nil, err
+	}
+	if uint64(len(decoded)) != width {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog entry bundle width %d, want %d", len(decoded), width)
+	}
+	return decoded[index%entriesPerC2spBundle], nil
+}
+
 // RebuildHistory implements Source by scanning the complete log once,
 // authenticating every entry against the signed checkpoint, and returning
 // the entries whose fqdn matches domain, each with a derived inclusion

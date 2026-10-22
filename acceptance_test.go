@@ -270,3 +270,37 @@ func (*delegatingLogReader) VerifyGovernanceRelationship(context.Context, string
 }
 
 var _ dnsidlog.LogReader = (*delegatingLogReader)(nil)
+
+func TestVerifyLocalPublication_SkipsAcceptanceAndCache(t *testing.T) {
+	const domain, gi = "bot.unrelated.example", "acme.example"
+	f := newCoalescingFixture(t, nil, nil)
+	entity, operational := publishDelegated(t, f, domain, gi)
+	registry := dnsidlog.NewLogRegistry()
+	if err := registry.Register("testlog", func(string) dnsidlog.LogReader { return &delegatingLogReader{} }); err != nil {
+		t.Fatal(err)
+	}
+	local, err := NewIdentityManager(Config{
+		Verification: VerificationConfig{TrustedEntities: []TrustedEntity{}},
+		Identity: &IdentityConfig{
+			Domain: domain, GovernanceID: gi, LogRef: "testlog:agent",
+			StatusURL: "https://" + domain + "/status", KeyURL: "https://" + domain + "/ku.json",
+			EntityKeyURL: "https://" + gi + "/" + domain + "/ek.json",
+		},
+	}, operational, WithEntityKeyProvider(entity), WithDNSResolver(f.dns), WithHTTPSFetcher(f.https), WithLogRegistry(registry))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNotAccepted(t, func() error {
+		_, err := local.RefreshDomain(context.Background(), domain, VerifyDomainOpts{})
+		return err
+	}())
+	for range 2 {
+		vd, err := local.VerifyLocalPublication(context.Background())
+		if err != nil || vd.Domain() != domain || vd.CachedState() != "fresh" {
+			t.Fatalf("VerifyLocalPublication = %v, %v", vd, err)
+		}
+	}
+	if _, err := acceptanceVerifier(t, f, VerificationConfig{}).VerifyLocalPublication(context.Background()); err == nil {
+		t.Fatal("verification-only manager verified a local publication")
+	}
+}

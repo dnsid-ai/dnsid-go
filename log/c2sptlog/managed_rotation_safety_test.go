@@ -12,18 +12,18 @@ import (
 func TestManagedRotationRejectsStalePublicationBeforeActivation(t *testing.T) {
 	ctx := context.Background()
 	client, provider, verify := managedRotationFixture(t)
-	stale, err := verify(ctx, "agent.example.com")
+	stale, err := verify(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	paused := false
 	rotation, err := RotateManagedOperationalKey(ctx, ManagedKeyRotationOptions{
 		Domain: "agent.example.com", Client: client, KeyProvider: provider,
-		RegistryClient:            &managedRotationRegistry{client: client, state: dnsid.SubmissionStateAccepted},
-		IdempotencyKey:            "stale-publication",
-		Store:                     ManagedKeyRotationStoreFunc(func(context.Context, *ManagedKeyRotationState) error { return nil }),
-		ApplicationSigning:        ApplicationSigningControllerFunc(func(_ context.Context, value bool) error { paused = value; return nil }),
-		VerifyPublicationEvidence: func(context.Context, string) (*dnsid.VerifiedDomain, error) { return stale, nil },
+		RegistryClient:     &managedRotationRegistry{client: client, state: dnsid.SubmissionStateAccepted},
+		IdempotencyKey:     "stale-publication",
+		Store:              ManagedKeyRotationStoreFunc(func(context.Context, *ManagedKeyRotationState) error { return nil }),
+		ApplicationSigning: ApplicationSigningControllerFunc(func(_ context.Context, value bool) error { paused = value; return nil }),
+		Publication:        publicationFunc(func(context.Context) (*dnsid.VerifiedDomain, error) { return stale, nil }),
 	})
 	var activationErr *ManagedKeyRotationActivationError
 	if !errors.As(err, &activationErr) || rotation.Activated || !paused {
@@ -43,7 +43,7 @@ func TestManagedRotationRecoveryRejectsUnrelatedProvider(t *testing.T) {
 	rotation, err := RotateManagedOperationalKey(ctx, ManagedKeyRotationOptions{
 		Domain: "agent.example.com", Client: client, KeyProvider: provider,
 		RegistryClient: registry, IdempotencyKey: "recovery-binding", Store: store,
-		VerifyPublicationEvidence: verify,
+		Publication: verify,
 		ApplicationSigning: ApplicationSigningControllerFunc(func(_ context.Context, paused bool) error {
 			if !paused {
 				return errors.New("interrupted before signing resumed")
@@ -62,7 +62,7 @@ func TestManagedRotationRecoveryRejectsUnrelatedProvider(t *testing.T) {
 			called := false
 			_, err := ResumeManagedOperationalKeyRotation(ctx, ResumeManagedKeyRotationOptions{
 				KeyProvider: dnsid.GenerateEd25519KeyProvider(), RegistryClient: registry,
-				Rotation: saved, Store: store, VerifyPublicationEvidence: verify,
+				Rotation: saved, Store: store, Publication: verify,
 				ApplicationSigning: ApplicationSigningControllerFunc(func(context.Context, bool) error { called = true; return nil }),
 			})
 			if err == nil || called || len(registry.submissions) != 1 {
@@ -129,7 +129,7 @@ func TestManagedRotationRecoveryBetweenActivationAndSupersession(t *testing.T) {
 			_, err := RotateManagedOperationalKey(ctx, ManagedKeyRotationOptions{
 				Domain: "agent.example.com", Client: client, KeyProvider: provider,
 				RegistryClient: registry, IdempotencyKey: "partial-activation",
-				Store: store, ApplicationSigning: signing, VerifyPublicationEvidence: verify,
+				Store: store, ApplicationSigning: signing, Publication: verify,
 			})
 			var activationErr *ManagedKeyRotationActivationError
 			if !errors.As(err, &activationErr) || saved.Activated || !paused || saved.Submission.State != dnsid.SubmissionStateAccepted {
@@ -145,7 +145,7 @@ func TestManagedRotationRecoveryBetweenActivationAndSupersession(t *testing.T) {
 			}
 			result, err := ResumeManagedOperationalKeyRotation(ctx, ResumeManagedKeyRotationOptions{
 				KeyProvider: provider, RegistryClient: registry, Rotation: saved,
-				Store: store, ApplicationSigning: signing, VerifyPublicationEvidence: verify,
+				Store: store, ApplicationSigning: signing, Publication: verify,
 			})
 			if unavailable {
 				if err == nil || !paused {
@@ -180,7 +180,7 @@ func TestManagedRotationRecoveryPersistsBeforeSubmissionOrActivation(t *testing.
 			rotation, err := RotateManagedOperationalKey(ctx, ManagedKeyRotationOptions{
 				Domain: "agent.example.com", Client: client, KeyProvider: provider,
 				RegistryClient: registry, IdempotencyKey: "persistence-retry",
-				Store: store, ApplicationSigning: signing, VerifyPublicationEvidence: verify,
+				Store: store, ApplicationSigning: signing, Publication: verify,
 			})
 			var submissionErr *ManagedKeyRotationSubmissionError
 			if !errors.As(err, &submissionErr) || rotation == nil {
@@ -192,7 +192,7 @@ func TestManagedRotationRecoveryPersistsBeforeSubmissionOrActivation(t *testing.
 			submissions := len(registry.submissions)
 			_, err = ResumeManagedOperationalKeyRotation(ctx, ResumeManagedKeyRotationOptions{
 				KeyProvider: provider, RegistryClient: registry, Rotation: rotation,
-				Store: store, ApplicationSigning: signing, VerifyPublicationEvidence: verify,
+				Store: store, ApplicationSigning: signing, Publication: verify,
 			})
 			active, _ := provider.JWK().KeyID()
 			if err == nil || active != rotation.PreviousKid || len(registry.submissions) != submissions {
@@ -201,10 +201,55 @@ func TestManagedRotationRecoveryPersistsBeforeSubmissionOrActivation(t *testing.
 			blocked = false
 			result, err := ResumeManagedOperationalKeyRotation(ctx, ResumeManagedKeyRotationOptions{
 				KeyProvider: provider, RegistryClient: registry, Rotation: rotation,
-				Store: store, ApplicationSigning: signing, VerifyPublicationEvidence: verify,
+				Store: store, ApplicationSigning: signing, Publication: verify,
 			})
 			if err != nil || !result.Activated || durable == nil || !durable.Activated || len(registry.submissions) != 1 || registry.prepareCalls != 1 {
 				t.Fatalf("persisted recovery failed: %v", err)
+			}
+		})
+	}
+}
+
+func TestManagedRotationResumeAfterActivationNeedsNoNetwork(t *testing.T) {
+	for _, paused := range []bool{true, false} {
+		t.Run(map[bool]string{true: "paused", false: "completed"}[paused], func(t *testing.T) {
+			ctx := context.Background()
+			client, provider, verify := managedRotationFixture(t)
+			registry := &managedRotationRegistry{client: client, state: dnsid.SubmissionStateAccepted}
+			completed, err := RotateManagedOperationalKey(ctx, ManagedKeyRotationOptions{
+				Domain: "agent.example.com", Client: client, KeyProvider: provider,
+				RegistryClient: registry, IdempotencyKey: "after-activation", Publication: verify,
+				Store:              ManagedKeyRotationStoreFunc(func(context.Context, *ManagedKeyRotationState) error { return nil }),
+				ApplicationSigning: ApplicationSigningControllerFunc(func(context.Context, bool) error { return nil }),
+			})
+			if err != nil || !completed.Activated || completed.ApplicationSigningPaused {
+				t.Fatalf("rotation did not complete: %v", err)
+			}
+			saved := cloneManagedRotation(completed)
+			saved.ApplicationSigningPaused = paused
+			var persisted int
+			var signing []bool
+			verified := false
+			result, err := ResumeManagedOperationalKeyRotation(ctx, ResumeManagedKeyRotationOptions{
+				KeyProvider: provider, RegistryClient: registry, Rotation: saved,
+				Store: ManagedKeyRotationStoreFunc(func(context.Context, *ManagedKeyRotationState) error { persisted++; return nil }),
+				ApplicationSigning: ApplicationSigningControllerFunc(func(_ context.Context, value bool) error {
+					signing = append(signing, value)
+					return nil
+				}),
+				Publication: publicationFunc(func(context.Context) (*dnsid.VerifiedDomain, error) {
+					verified = true
+					return nil, errors.New("offline")
+				}),
+			})
+			if err != nil || !result.Activated || result.ApplicationSigningPaused || verified || len(registry.submissions) != 1 {
+				t.Fatalf("resume = %#v, %v; verified=%v submissions=%d", result, err, verified, len(registry.submissions))
+			}
+			if paused && (persisted != 1 || len(signing) != 1 || signing[0]) {
+				t.Fatalf("paused resume: persisted=%d signing=%v", persisted, signing)
+			}
+			if !paused && (persisted != 0 || len(signing) != 0) {
+				t.Fatalf("terminal resume changed state: persisted=%d signing=%v", persisted, signing)
 			}
 		})
 	}

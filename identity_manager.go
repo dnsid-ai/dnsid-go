@@ -996,6 +996,17 @@ func (m *IdentityManager) RefreshDomain(ctx context.Context, domain string, opts
 	return m.verifyDomain(ctx, domain, opts, true, true)
 }
 
+// VerifyLocalPublication fully verifies new evidence for this manager's own
+// identity, as RefreshDomain does, without counterparty acceptance. The local
+// identity is not a counterparty. Use it to confirm the manager's own
+// publication, for example before activating a rotated operational key.
+func (m *IdentityManager) VerifyLocalPublication(ctx context.Context) (*VerifiedDomain, error) {
+	if m == nil || m.identity.Domain == "" {
+		return nil, NewArgumentError("dnsid: local publication verification requires a local identity", nil)
+	}
+	return m.verifyDomain(ctx, m.identity.Domain, VerifyDomainOpts{}, false, true)
+}
+
 // VerifyDomainWithOptions performs core DNSid trust establishment with optional
 // peer inputs, then enforces any configured VerificationConfig.TrustedEntities
 // acceptance policy. Acceptance runs on every successful path, including cache
@@ -1006,9 +1017,9 @@ func (m *IdentityManager) VerifyDomainWithOptions(ctx context.Context, domain st
 	return m.verifyDomain(ctx, domain, opts, true, false)
 }
 
-// verifyDomain is the shared per-invocation verification boundary. Only the
-// internal registry publication confirmation path passes acceptance=false;
-// there is no public bypass.
+// verifyDomain is the shared per-invocation verification boundary. Only
+// confirmation of the manager's own publication passes acceptance=false;
+// there is no public bypass for other domains.
 func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts VerifyDomainOpts, acceptance, refresh bool) (result *VerifiedDomain, err error) {
 	ctx, cancel := VerificationContext(ctx)
 	defer cancel()

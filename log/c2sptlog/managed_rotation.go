@@ -16,6 +16,7 @@ import (
 // ManagedKeyRotationState is the durable recovery record for one
 // registry-managed operational-key rotation. EntryBytes and IdempotencyKey
 // are immutable once first persisted and are reused verbatim on every retry.
+// Activated with ApplicationSigningPaused false is the terminal state.
 type ManagedKeyRotationState struct {
 	Domain                   string                  `json:"domain"`
 	LogReference             string                  `json:"log_reference"`
@@ -73,8 +74,9 @@ type ManagedKeyRotationOptions struct {
 	IdempotencyKey     string
 	Store              ManagedKeyRotationStore
 	ApplicationSigning ApplicationSigningController
-	// VerifyPublicationEvidence must fetch fresh, protocol-verified TXT/ku and log evidence.
-	VerifyPublicationEvidence func(context.Context, string) (*dnsid.VerifiedDomain, error)
+	// Publication confirms the new key's publication before activation.
+	// Pass the identity's *dnsid.IdentityManager.
+	Publication LocalPublicationVerifier
 }
 
 // ResumeManagedKeyRotationOptions resumes a previously persisted rotation.
@@ -84,8 +86,16 @@ type ResumeManagedKeyRotationOptions struct {
 	Rotation           *ManagedKeyRotationState
 	Store              ManagedKeyRotationStore
 	ApplicationSigning ApplicationSigningController
-	// VerifyPublicationEvidence must fetch fresh, protocol-verified TXT/ku and log evidence.
-	VerifyPublicationEvidence func(context.Context, string) (*dnsid.VerifiedDomain, error)
+	// Publication confirms the new key's publication before activation.
+	// Pass the identity's *dnsid.IdentityManager.
+	Publication LocalPublicationVerifier
+}
+
+// LocalPublicationVerifier fully verifies new evidence for the local
+// identity's own publication, without counterparty acceptance.
+// *dnsid.IdentityManager implements it.
+type LocalPublicationVerifier interface {
+	VerifyLocalPublication(context.Context) (*dnsid.VerifiedDomain, error)
 }
 
 // ManagedKeyRotationSubmissionError reports a submission or persistence
@@ -150,7 +160,7 @@ func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOpt
 	if err := validateManagedRotationDependencies(opts.KeyProvider, opts.RegistryClient, opts.Store, opts.ApplicationSigning); err != nil {
 		return nil, err
 	}
-	if opts.VerifyPublicationEvidence == nil {
+	if opts.Publication == nil {
 		return nil, dnsid.NewArgumentError("dnsid: managed rotation publication verifier is required", nil)
 	}
 	if opts.Client == nil {
@@ -229,12 +239,20 @@ func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOpt
 	if err := opts.ApplicationSigning.SetApplicationSigningPaused(ctx, true); err != nil {
 		return rotation, &ManagedKeyRotationSubmissionError{Rotation: cloneManagedRotation(rotation), State: dnsid.SubmissionStatePrepared, TransientFailure: true, RetrySameBytes: true, Err: err}
 	}
-	return submitManagedRotation(ctx, opts.KeyProvider, opts.RegistryClient, rotation, opts.Store, opts.ApplicationSigning, opts.VerifyPublicationEvidence)
+	return submitManagedRotation(ctx, opts.KeyProvider, opts.RegistryClient, rotation, opts.Store, opts.ApplicationSigning, opts.Publication)
 }
 
-// ResumeManagedOperationalKeyRotation retries only a persisted rotation's
-// exact completed bytes and idempotency key, or finishes local reconciliation
-// after an accepted submission.
+// ResumeManagedOperationalKeyRotation continues a persisted rotation from its
+// saved state:
+//   - not accepted: pause signing and resubmit the exact saved bytes with the
+//     same idempotency key;
+//   - accepted, not activated: pause signing, verify the new publication, then
+//     activate the new key and resume signing;
+//   - activated, signing paused: resume signing without network calls;
+//   - activated, signing resumed: return the state unchanged. This state is
+//     terminal. Archive it; the next rotation starts with a new state.
+//
+// Every state first validates the provider against the saved keys.
 func ResumeManagedOperationalKeyRotation(ctx context.Context, opts ResumeManagedKeyRotationOptions) (*ManagedKeyRotationState, error) {
 	if err := validateManagedRotationDependencies(opts.KeyProvider, opts.RegistryClient, opts.Store, opts.ApplicationSigning); err != nil {
 		return nil, err
@@ -246,11 +264,18 @@ func ResumeManagedOperationalKeyRotation(ctx context.Context, opts ResumeManaged
 	if err := validatePersistedManagedRotation(rotation); err != nil {
 		return nil, dnsid.NewValidationError("dnsid: persisted managed key rotation state failed integrity validation", err)
 	}
-	if opts.VerifyPublicationEvidence == nil {
+	if opts.Publication == nil {
 		return rotation, dnsid.NewArgumentError("dnsid: managed rotation publication verifier is required", nil)
 	}
 	if err := validateManagedProvider(opts.KeyProvider, rotation); err != nil {
 		return rotation, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(rotation), Err: err}
+	}
+	if rotation.Activated {
+		if !rotation.ApplicationSigningPaused {
+			return rotation, nil
+		}
+		// Publication was verified before activation was saved; only signing remains.
+		return releaseManagedSigning(ctx, rotation, opts.Store, opts.ApplicationSigning)
 	}
 	if rotation.Submission != nil && rotation.Submission.State == dnsid.SubmissionStateRejected {
 		return rotation, &ManagedKeyRotationSubmissionError{Rotation: cloneManagedRotation(rotation), State: dnsid.SubmissionStateRejected, RetrySameBytes: false, Err: fmt.Errorf("registry rejected the prepared KEY_ROTATION: %s", rotation.Submission.ErrorCode)}
@@ -267,12 +292,12 @@ func ResumeManagedOperationalKeyRotation(ctx context.Context, opts ResumeManaged
 		return rotation, &ManagedKeyRotationSubmissionError{Rotation: cloneManagedRotation(rotation), State: state, TransientFailure: true, RetrySameBytes: true, Err: err}
 	}
 	if rotation.Submission != nil && rotation.Submission.State == dnsid.SubmissionStateAccepted {
-		return finishManagedRotation(ctx, opts.KeyProvider, rotation, opts.Store, opts.ApplicationSigning, opts.VerifyPublicationEvidence)
+		return finishManagedRotation(ctx, opts.KeyProvider, rotation, opts.Store, opts.ApplicationSigning, opts.Publication)
 	}
-	return submitManagedRotation(ctx, opts.KeyProvider, opts.RegistryClient, rotation, opts.Store, opts.ApplicationSigning, opts.VerifyPublicationEvidence)
+	return submitManagedRotation(ctx, opts.KeyProvider, opts.RegistryClient, rotation, opts.Store, opts.ApplicationSigning, opts.Publication)
 }
 
-func submitManagedRotation(ctx context.Context, provider dnsid.KeyProvider, registry dnsid.RegistryPreparedEventClient, rotation *ManagedKeyRotationState, store ManagedKeyRotationStore, signing ApplicationSigningController, verify func(context.Context, string) (*dnsid.VerifiedDomain, error)) (*ManagedKeyRotationState, error) {
+func submitManagedRotation(ctx context.Context, provider dnsid.KeyProvider, registry dnsid.RegistryPreparedEventClient, rotation *ManagedKeyRotationState, store ManagedKeyRotationStore, signing ApplicationSigningController, publication LocalPublicationVerifier) (*ManagedKeyRotationState, error) {
 	result, err := registry.SubmitPreparedEvent(ctx, rotation.Domain, append([]byte(nil), rotation.EntryBytes...), rotation.IdempotencyKey)
 	if err != nil {
 		state, transient, retry := managedSubmissionFailure(err)
@@ -298,12 +323,12 @@ func submitManagedRotation(ctx context.Context, provider dnsid.KeyProvider, regi
 		return next, nil
 	}
 
-	return finishManagedRotation(ctx, provider, next, store, signing, verify)
+	return finishManagedRotation(ctx, provider, next, store, signing, publication)
 }
 
-func finishManagedRotation(ctx context.Context, provider dnsid.KeyProvider, next *ManagedKeyRotationState, store ManagedKeyRotationStore, signing ApplicationSigningController, verify func(context.Context, string) (*dnsid.VerifiedDomain, error)) (*ManagedKeyRotationState, error) {
+func finishManagedRotation(ctx context.Context, provider dnsid.KeyProvider, next *ManagedKeyRotationState, store ManagedKeyRotationStore, signing ApplicationSigningController, publication LocalPublicationVerifier) (*ManagedKeyRotationState, error) {
 	recoverable := next
-	if err := verifyManagedPublication(ctx, next, verify); err != nil {
+	if err := verifyManagedPublication(ctx, next, publication); err != nil {
 		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
 	}
 	if err := reconcileManagedRotation(provider, next); err != nil {
@@ -315,14 +340,17 @@ func finishManagedRotation(ctx context.Context, provider dnsid.KeyProvider, next
 	if err := persistManagedRotation(ctx, store, activated); err != nil {
 		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
 	}
-	recoverable = activated
+	return releaseManagedSigning(ctx, activated, store, signing)
+}
+
+func releaseManagedSigning(ctx context.Context, activated *ManagedKeyRotationState, store ManagedKeyRotationStore, signing ApplicationSigningController) (*ManagedKeyRotationState, error) {
 	if err := signing.SetApplicationSigningPaused(ctx, false); err != nil {
-		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
+		return activated, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(activated), Err: err}
 	}
 	completed := cloneManagedRotation(activated)
 	completed.ApplicationSigningPaused = false
 	if err := persistManagedRotation(ctx, store, completed); err != nil {
-		return recoverable, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(recoverable), Err: err}
+		return activated, &ManagedKeyRotationActivationError{Rotation: cloneManagedRotation(activated), Err: err}
 	}
 	return completed, nil
 }
@@ -472,18 +500,18 @@ func validateManagedSubmission(rotation *ManagedKeyRotationState, result *dnsid.
 	return nil
 }
 
-func verifyManagedPublication(ctx context.Context, rotation *ManagedKeyRotationState, verify func(context.Context, string) (*dnsid.VerifiedDomain, error)) error {
+func verifyManagedPublication(ctx context.Context, rotation *ManagedKeyRotationState, publication LocalPublicationVerifier) error {
 	if rotation.Submission == nil || rotation.Submission.State != dnsid.SubmissionStateAccepted {
 		return dnsid.NewValidationError("dnsid: activation requires saved acceptance", nil)
 	}
 	if err := validateManagedSubmission(rotation, rotation.Submission); err != nil {
 		return err
 	}
-	observed, err := verify(ctx, rotation.Domain)
+	observed, err := publication.VerifyLocalPublication(ctx)
 	if err != nil {
 		return err
 	}
-	if observed == nil || observed.Domain() != rotation.Domain || observed.Record() == nil || observed.Record().LogRef != rotation.LogReference || observed.KeySet() == nil || observed.LogReader() == nil {
+	if observed == nil || observed.CachedState() != "fresh" || observed.Domain() != rotation.Domain || observed.Record() == nil || observed.Record().LogRef != rotation.LogReference || observed.KeySet() == nil || observed.LogReader() == nil {
 		return dnsid.NewValidationError("dnsid: current signed publication does not match managed rotation", nil)
 	}
 	key, err := observed.KeySet().CurrentOperationalSigningKey(observed.Record().Version)

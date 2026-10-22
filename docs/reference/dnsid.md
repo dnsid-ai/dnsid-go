@@ -545,7 +545,7 @@ func (m *IdentityManager) EntityKeyURL() string
 EntityKeyURL returns the HTTPS URL where the draft 01 entity \(ek\) JWKS should be served. It returns an empty string when no entity KeyProvider is configured. Draft 01 defines no default path, so an unset EntityKeyURL returns an empty string.
 
 <a name="IdentityManager.EvictDomain"></a>
-### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1619>)
+### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1630>)
 
 ```go
 func (m *IdentityManager) EvictDomain(domain string)
@@ -791,13 +791,22 @@ status: ACTIVE
 </details>
 
 <a name="IdentityManager.VerifyDomainWithOptions"></a>
-### func \(\*IdentityManager\) [VerifyDomainWithOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1005>)
+### func \(\*IdentityManager\) [VerifyDomainWithOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1016>)
 
 ```go
 func (m *IdentityManager) VerifyDomainWithOptions(ctx context.Context, domain string, opts VerifyDomainOpts) (*VerifiedDomain, error)
 ```
 
 VerifyDomainWithOptions performs core DNSid trust establishment with optional peer inputs, then enforces any configured VerificationConfig.TrustedEntities acceptance policy. Acceptance runs on every successful path, including cache hits; verified protocol evidence is cached before acceptance, and denials are never cached. A denial is reported as a permanent VerificationCodeCounterpartyNotAccepted error.
+
+<a name="IdentityManager.VerifyLocalPublication"></a>
+### func \(\*IdentityManager\) [VerifyLocalPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1003>)
+
+```go
+func (m *IdentityManager) VerifyLocalPublication(ctx context.Context) (*VerifiedDomain, error)
+```
+
+VerifyLocalPublication fully verifies new evidence for this manager's own identity, as RefreshDomain does, without counterparty acceptance. The local identity is not a counterparty. Use it to confirm the manager's own publication, for example before activating a rotated operational key.
 
 <a name="IdentityManager.VerifyLogEvidence"></a>
 ### func \(\*IdentityManager\) [VerifyLogEvidence](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L469>)
