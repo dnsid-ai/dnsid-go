@@ -524,7 +524,7 @@ func validateManagedProvider(provider dnsid.KeyProvider, rotation *ManagedKeyRot
 	}
 	newActive := kid == rotation.NewKid && thumb == rotation.NewThumbprint
 	previousActive := kid == rotation.PreviousKid && thumb == rotation.PreviousThumbprint
-	if (!previousActive && !(accepted && newActive)) || (rotation.Activated && !newActive) {
+	if (!previousActive && (!accepted || !newActive)) || (rotation.Activated && !newActive) {
 		return dnsid.NewValidationError("dnsid: active provider does not match saved rotation", nil)
 	}
 	newKid, newThumb, _, err := managedRotationKey(provider.JWK(rotation.NewKid))

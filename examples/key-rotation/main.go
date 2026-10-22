@@ -229,7 +229,7 @@ func run() error {
 	_, _, err = profile.VerifyJWS(ctx, oldMessage)
 	var rejected *dnsid.VerificationError
 	if !errors.As(err, &rejected) || rejected.Code() != dnsid.VerificationCodeKeyNotFound {
-		return fmt.Errorf("expected old-key rejection after refresh, got %v", err)
+		return errors.Join(errors.New("expected old-key rejection after refresh"), err)
 	}
 	fmt.Printf("rotation verified: %s -> %s\nnew key signs and verifies; old key is absent from live JWKS and provider\n", rotation.PreviousKid, rotation.NewKid)
 	return nil
