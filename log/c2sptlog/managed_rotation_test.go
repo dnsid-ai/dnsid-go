@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -14,6 +15,16 @@ import (
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
+
+type rotationSource struct{ memorySource }
+
+func (s rotationSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (ProvenEntry, error) {
+	_, index, err := ParseFinalEventRef(ref)
+	if err != nil || index >= uint64(len(s.entries)) {
+		return ProvenEntry{}, fmt.Errorf("missing event %s", ref)
+	}
+	return s.entries[index], nil
+}
 
 type managedRotationRegistry struct {
 	client                    *Client
@@ -88,6 +99,11 @@ func (r *managedRotationRegistry) SubmitPreparedEvent(_ context.Context, _ strin
 		result.Index = &index
 		result.KeyID = r.newKid
 		result.LogRef = string(r.client.ref.FinalEventRef(index))
+		source := r.client.source.(rotationSource)
+		if len(source.entries) == 1 {
+			source.entries = append(source.entries, ProvenEntry{Index: index, Entry: append([]byte(nil), entry...)})
+			r.client.source = source
+		}
 		if r.badFinalReference {
 			result.LogRef = string(r.client.ref.FinalEventRef(2))
 		}
@@ -95,7 +111,13 @@ func (r *managedRotationRegistry) SubmitPreparedEvent(_ context.Context, _ strin
 	return result, nil
 }
 
-func managedRotationFixture(t *testing.T) (*Client, dnsid.KeyProvider) {
+type publicationFunc func(context.Context) (*dnsid.VerifiedDomain, error)
+
+func (f publicationFunc) VerifyLocalPublication(ctx context.Context) (*dnsid.VerifiedDomain, error) {
+	return f(ctx)
+}
+
+func managedRotationFixture(t *testing.T) (*Client, dnsid.KeyProvider, publicationFunc) {
 	t.Helper()
 	lr := "c2sp-tlog:testnet:https://log.example#instance_AAAAAAAAAAAAAAAAAAAAAA"
 	writer, err := New(lr)
@@ -128,18 +150,52 @@ func managedRotationFixture(t *testing.T) (*Client, dnsid.KeyProvider) {
 		t.Fatalf("issuance bytes: %v", err)
 	}
 	client, err := New(lr,
-		WithSource(memorySource{complete: true, entries: []ProvenEntry{{Index: 0, Entry: entry}}}),
+		WithSource(rotationSource{memorySource{complete: true, entries: []ProvenEntry{{Index: 0, Entry: entry}}}}),
 		WithPolicy(Policy{Now: func() time.Time { return time.Unix(1782259201, 0).UTC() }}),
 		withProofVerifySkipped(),
 	)
 	if err != nil {
 		t.Fatalf("New client: %v", err)
 	}
-	return client, operational
+	verify := func(ctx context.Context) (*dnsid.VerifiedDomain, error) {
+		const domain = "agent.example.com"
+		publisher, err := dnsid.NewIdentityManager(dnsid.Config{Identity: &dnsid.IdentityConfig{
+			Domain: domain, GovernanceID: "example.com", LogRef: lr,
+			EntityKeyURL: "https://example.com/ek", KeyURL: "https://" + domain + "/ku", StatusURL: "https://" + domain + "/su",
+		}}, operational, dnsid.WithEntityKeyProvider(entity))
+		if err != nil {
+			return nil, err
+		}
+		record, err := publisher.CreateTXTRecord()
+		if err != nil {
+			return nil, err
+		}
+		_, current, _, err := client.currentLifecycleState(ctx, domain)
+		if err != nil {
+			return nil, err
+		}
+		ek, _ := json.Marshal(map[string]any{"keys": []jwk.Key{entity.JWK()}})
+		ku, _ := json.Marshal(map[string]any{"keys": []jwk.Key{current}})
+		status, _ := json.Marshal(dnsid.AgentStatus{State: dnsid.AgentStateActive, LastTransitionAt: time.Now().UTC()})
+		logs := dnsidlog.NewLogRegistry()
+		if err := logs.Register(Method, func(string) dnsidlog.LogReader { return client }); err != nil {
+			return nil, err
+		}
+		verifier, err := dnsid.NewVerifier(
+			dnsid.WithDNSResolver(factoryDNSResolver{"_dnsid." + domain: {{Value: record.Serialize(), TTL: time.Minute}}}),
+			dnsid.WithHTTPSFetcher(factoryHTTPSFetcher{record.EntityKeyURI: ek, record.KeyURI: ku, record.StatusURI: status}),
+			dnsid.WithLogRegistry(logs),
+		)
+		if err != nil {
+			return nil, err
+		}
+		return verifier.RefreshDomain(ctx, domain, dnsid.VerifyDomainOpts{})
+	}
+	return client, operational, verify
 }
 
 func TestManagedOperationalKeyRotationAccepted(t *testing.T) {
-	client, provider := managedRotationFixture(t)
+	client, provider, verify := managedRotationFixture(t)
 	var persisted []*ManagedKeyRotationState
 	var pauses []bool
 	signingPaused := false
@@ -147,6 +203,7 @@ func TestManagedOperationalKeyRotationAccepted(t *testing.T) {
 	registry.persistedBeforeSubmission = func() bool { return len(persisted) > 0 }
 	registry.applicationPaused = func() bool { return signingPaused }
 	rotation, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
+		Publication:    verify,
 		Domain:         "agent.example.com",
 		Client:         client,
 		KeyProvider:    provider,
@@ -186,12 +243,13 @@ func TestManagedOperationalKeyRotationAccepted(t *testing.T) {
 }
 
 func TestManagedOperationalKeyRotationPendingResumeReusesExactBytes(t *testing.T) {
-	client, provider := managedRotationFixture(t)
+	client, provider, verify := managedRotationFixture(t)
 	registry := &managedRotationRegistry{client: client, state: dnsid.SubmissionStatePending}
 	persist := func(_ context.Context, _ *ManagedKeyRotationState) error { return nil }
 	pause := func(_ context.Context, _ bool) error { return nil }
 	rotation, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
-		Domain: "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1", Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
+		Publication: verify,
+		Domain:      "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1", Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
 	})
 	if err != nil {
 		t.Fatalf("RotateManagedOperationalKey: %v", err)
@@ -202,6 +260,7 @@ func TestManagedOperationalKeyRotationPendingResumeReusesExactBytes(t *testing.T
 	first := append([]byte(nil), rotation.EntryBytes...)
 	registry.state = dnsid.SubmissionStateAccepted
 	rotation, err = ResumeManagedOperationalKeyRotation(context.Background(), ResumeManagedKeyRotationOptions{
+		Publication: verify,
 		KeyProvider: provider, RegistryClient: registry, Rotation: rotation, Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
 	})
 	if err != nil {
@@ -213,12 +272,13 @@ func TestManagedOperationalKeyRotationPendingResumeReusesExactBytes(t *testing.T
 }
 
 func TestManagedOperationalKeyRotationIndeterminateResumeReusesExactBytes(t *testing.T) {
-	client, provider := managedRotationFixture(t)
+	client, provider, verify := managedRotationFixture(t)
 	registry := &managedRotationRegistry{client: client, state: dnsid.SubmissionStateIndeterminate}
 	persist := func(context.Context, *ManagedKeyRotationState) error { return nil }
 	pause := func(context.Context, bool) error { return nil }
 	rotation, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
-		Domain: "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1", Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
+		Publication: verify,
+		Domain:      "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1", Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
 	})
 	if err != nil {
 		t.Fatalf("RotateManagedOperationalKey: %v", err)
@@ -226,6 +286,7 @@ func TestManagedOperationalKeyRotationIndeterminateResumeReusesExactBytes(t *tes
 	first := append([]byte(nil), rotation.EntryBytes...)
 	registry.state = dnsid.SubmissionStateAccepted
 	rotation, err = ResumeManagedOperationalKeyRotation(context.Background(), ResumeManagedKeyRotationOptions{
+		Publication: verify,
 		KeyProvider: provider, RegistryClient: registry, Rotation: rotation, Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
 	})
 	if err != nil {
@@ -237,7 +298,7 @@ func TestManagedOperationalKeyRotationIndeterminateResumeReusesExactBytes(t *tes
 }
 
 func TestManagedOperationalKeyRotationTransportFailurePersistsIndeterminateState(t *testing.T) {
-	client, provider := managedRotationFixture(t)
+	client, provider, verify := managedRotationFixture(t)
 	var persisted []*ManagedKeyRotationState
 	registry := &managedRotationRegistry{client: client, state: dnsid.SubmissionStateAccepted, submitErr: errors.New("connection reset")}
 	persist := func(_ context.Context, state *ManagedKeyRotationState) error {
@@ -245,7 +306,8 @@ func TestManagedOperationalKeyRotationTransportFailurePersistsIndeterminateState
 		return nil
 	}
 	rotation, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
-		Domain: "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1",
+		Publication: verify,
+		Domain:      "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1",
 		Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(func(context.Context, bool) error { return nil }),
 	})
 	var submissionErr *ManagedKeyRotationSubmissionError
@@ -257,6 +319,7 @@ func TestManagedOperationalKeyRotationTransportFailurePersistsIndeterminateState
 	}
 	first := append([]byte(nil), rotation.EntryBytes...)
 	rotation, err = ResumeManagedOperationalKeyRotation(context.Background(), ResumeManagedKeyRotationOptions{
+		Publication: verify,
 		KeyProvider: provider, RegistryClient: registry, Rotation: rotation, Store: ManagedKeyRotationStoreFunc(persist),
 		ApplicationSigning: ApplicationSigningControllerFunc(func(context.Context, bool) error { return nil }),
 	})
@@ -266,7 +329,7 @@ func TestManagedOperationalKeyRotationTransportFailurePersistsIndeterminateState
 }
 
 func TestManagedOperationalKeyRotationResumesAfterActivationPersistenceFailure(t *testing.T) {
-	client, provider := managedRotationFixture(t)
+	client, provider, verify := managedRotationFixture(t)
 	registry := &managedRotationRegistry{client: client, state: dnsid.SubmissionStateAccepted}
 	failActivatedPersist := true
 	persist := func(_ context.Context, state *ManagedKeyRotationState) error {
@@ -277,7 +340,8 @@ func TestManagedOperationalKeyRotationResumesAfterActivationPersistenceFailure(t
 	}
 	pause := func(context.Context, bool) error { return nil }
 	rotation, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
-		Domain: "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1", Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
+		Publication: verify,
+		Domain:      "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1", Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
 	})
 	var activationErr *ManagedKeyRotationActivationError
 	if !errors.As(err, &activationErr) || rotation.Activated || rotation.Submission == nil || rotation.Submission.State != dnsid.SubmissionStateAccepted {
@@ -285,21 +349,23 @@ func TestManagedOperationalKeyRotationResumesAfterActivationPersistenceFailure(t
 	}
 	failActivatedPersist = false
 	rotation, err = ResumeManagedOperationalKeyRotation(context.Background(), ResumeManagedKeyRotationOptions{
+		Publication: verify,
 		KeyProvider: provider, RegistryClient: registry, Rotation: rotation, Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
 	})
 	if err != nil || !rotation.Activated || rotation.ApplicationSigningPaused {
 		t.Fatalf("resumed rotation/error = %#v/%v", rotation, err)
 	}
-	if len(registry.submissions) != 2 || !bytes.Equal(registry.submissions[0], registry.submissions[1]) {
-		t.Fatalf("recovery did not replay exact bytes")
+	if len(registry.submissions) != 1 {
+		t.Fatalf("accepted recovery resubmitted the event")
 	}
 }
 
 func TestManagedOperationalKeyRotationRejectsAcceptedReferenceMismatch(t *testing.T) {
-	client, provider := managedRotationFixture(t)
+	client, provider, verify := managedRotationFixture(t)
 	registry := &managedRotationRegistry{client: client, state: dnsid.SubmissionStateAccepted, badFinalReference: true}
 	_, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
-		Domain: "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1",
+		Publication: verify,
+		Domain:      "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1",
 		Store:              ManagedKeyRotationStoreFunc(func(context.Context, *ManagedKeyRotationState) error { return nil }),
 		ApplicationSigning: ApplicationSigningControllerFunc(func(context.Context, bool) error { return nil }),
 	})
@@ -314,18 +380,20 @@ func TestManagedOperationalKeyRotationRejectsAcceptedReferenceMismatch(t *testin
 }
 
 func TestManagedOperationalKeyRotationRejectsTamperedPersistedBytes(t *testing.T) {
-	client, provider := managedRotationFixture(t)
+	client, provider, verify := managedRotationFixture(t)
 	registry := &managedRotationRegistry{client: client, state: dnsid.SubmissionStatePending}
 	persist := func(context.Context, *ManagedKeyRotationState) error { return nil }
 	pause := func(context.Context, bool) error { return nil }
 	rotation, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
-		Domain: "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1", Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
+		Publication: verify,
+		Domain:      "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1", Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
 	})
 	if err != nil {
 		t.Fatalf("RotateManagedOperationalKey: %v", err)
 	}
 	rotation.EntryBytes[0] ^= 1
 	_, err = ResumeManagedOperationalKeyRotation(context.Background(), ResumeManagedKeyRotationOptions{
+		Publication: verify,
 		KeyProvider: provider, RegistryClient: registry, Rotation: rotation, Store: ManagedKeyRotationStoreFunc(persist), ApplicationSigning: ApplicationSigningControllerFunc(pause),
 	})
 	if err == nil || len(registry.submissions) != 1 {
@@ -334,10 +402,11 @@ func TestManagedOperationalKeyRotationRejectsTamperedPersistedBytes(t *testing.T
 }
 
 func TestManagedOperationalKeyRotationRequiresDurabilityHooks(t *testing.T) {
-	client, provider := managedRotationFixture(t)
+	client, provider, verify := managedRotationFixture(t)
 	registry := &managedRotationRegistry{client: client, state: dnsid.SubmissionStateAccepted}
 	_, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
-		Domain: "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1",
+		Publication: verify,
+		Domain:      "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: "rotation-1",
 	})
 	if err == nil || registry.prepareCalls != 0 || len(registry.submissions) != 0 {
 		t.Fatalf("missing hooks error/calls = %v/%d/%d", err, registry.prepareCalls, len(registry.submissions))

@@ -1,5 +1,8 @@
 # Local Key Provider Example
 
+This demonstrates local provider state only, not an authorized DNSid rotation.
+For a published identity, use the [testnet key-rotation example](../key-rotation/).
+
 Demonstrates the Go SDK `LocalKeyProvider` flow matching the TypeScript example:
 
 - load `./keys.json`, or create it with a new Ed25519 private JWK

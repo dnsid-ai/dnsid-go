@@ -353,7 +353,7 @@ func NewFromIdentityManagerKeyProvider(manager identityManagerWithKeyProvider, c
 NewFromIdentityManagerKeyProvider constructs a JOSE profile from a manager that exposes its KeyProvider.
 
 <a name="Profile.CreateJWS"></a>
-### func \(\*Profile\) [CreateJWS](<https://github.com/dnsid-ai/dnsid-go/blob/main/jose/jose.go#L436>)
+### func \(\*Profile\) [CreateJWS](<https://github.com/dnsid-ai/dnsid-go/blob/main/jose/jose.go#L439>)
 
 ```go
 func (p *Profile) CreateJWS(payload []byte) (string, error)
@@ -371,7 +371,7 @@ func (p *Profile) CreateJWT(opts JWTOptions) (string, error)
 CreateJWT produces a DNSid JOSE\-profile JWT signed by this profile's active key.
 
 <a name="Profile.VerifyJWS"></a>
-### func \(\*Profile\) [VerifyJWS](<https://github.com/dnsid-ai/dnsid-go/blob/main/jose/jose.go#L470>)
+### func \(\*Profile\) [VerifyJWS](<https://github.com/dnsid-ai/dnsid-go/blob/main/jose/jose.go#L473>)
 
 ```go
 func (p *Profile) VerifyJWS(ctx context.Context, compact string, opts ...dnsid.VerifyDomainOpts) ([]byte, *dnsid.VerifiedDomain, error)

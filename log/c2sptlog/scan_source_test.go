@@ -240,3 +240,31 @@ func itoa(value int) string {
 	}
 	panic("test fixture width")
 }
+
+func TestScanSourceDiscoverEntryReadsOneEntryBundle(t *testing.T) {
+	entries := [][]byte{[]byte(`{"not":"dnsid"}`), []byte(issuanceEntry)}
+	policy, resources := scanFixture(t, entries)
+	var paths []string
+	transport := scanHTTPClient(resources).Transport
+	source, err := NewScanSource(policy, ScanSourceConfig{Transport: scanRoundTripper(func(req *http.Request) (*http.Response, error) {
+		paths = append(paths, req.URL.Path)
+		return transport.RoundTrip(req)
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := ParseReference("c2sp-tlog:testnet:http://dnsid-ledger:8080/log#identity-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := source.discoverEntry(context.Background(), reference, 1)
+	if err != nil || !bytes.Equal(entry, entries[1]) {
+		t.Fatalf("discoverEntry = %q, %v", entry, err)
+	}
+	if len(paths) != 2 || !strings.HasSuffix(paths[0], "/checkpoint") || !strings.Contains(paths[1], "/tile/entries/") {
+		t.Fatalf("fetched %v, want checkpoint and one entry bundle", paths)
+	}
+	if _, err := source.discoverEntry(context.Background(), reference, 2); err == nil {
+		t.Fatal("discoverEntry read past the checkpoint")
+	}
+}

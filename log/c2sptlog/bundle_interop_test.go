@@ -538,3 +538,69 @@ func applyBundleVectorMutation(object map[string]any, path, appendText string, v
 	}
 	return nil
 }
+
+type discoveringSource struct {
+	basicSource
+	entry      []byte
+	fullScans  int
+	discovered int
+}
+
+func (s *discoveringSource) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (ProvenEntry, error) {
+	s.fullScans++
+	return s.basicSource.ReadEvent(ctx, ref)
+}
+
+func (s *discoveringSource) discoverEntry(context.Context, Reference, uint64) ([]byte, error) {
+	s.discovered++
+	return append([]byte(nil), s.entry...), nil
+}
+
+func TestFetchedStreamBundleSourceReadEventUsesBundleWithoutFullScan(t *testing.T) {
+	vector := loadStreamBundleVector(t)
+	verifier, err := note.NewVerifier(vector.Trust.BundleVerifierKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trust := StreamBundleTrust{
+		PolicyDocument:    []byte(vector.Policy),
+		BundleVerifier:    verifier,
+		Now:               func() time.Time { return time.Unix(vector.Trust.Now, 0).UTC() },
+		MaxBundleLifetime: time.Duration(vector.Trust.MaxBundleLifetime) * time.Millisecond,
+		MaxCheckpointAge:  time.Duration(vector.Trust.CheckpointFreshness) * time.Millisecond,
+	}
+	bundle, err := VerifyStreamBundle(context.Background(), []byte(vector.Bundle), trust)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Source.entries) < 2 {
+		t.Fatal("vector needs two bundled entries")
+	}
+	policy, err := ParsePolicy([]byte(vector.Policy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := bundle.Source.entries[0]
+	for name, hint := range map[string][]byte{"match": target.Entry, "mismatch": bundle.Source.entries[1].Entry} {
+		t.Run(name, func(t *testing.T) {
+			fallback := &discoveringSource{entry: hint}
+			source := &fetchedStreamBundleSource{
+				fallback: fallback, requireBundle: true, trust: trust,
+				fetcher: &testBoundedFetcher{fetch: func(context.Context, string, int64) ([]byte, error) {
+					return []byte(vector.Bundle), nil
+				}},
+			}
+			client, err := New(bundle.Reference.String(), WithSource(source), WithPolicy(policy))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.ReadEvent(context.Background(), bundle.Reference.FinalEventRef(target.Index))
+			if (err != nil) != (name == "mismatch") {
+				t.Fatalf("ReadEvent error = %v", err)
+			}
+			if fallback.fullScans != 0 || fallback.discovered != 1 {
+				t.Fatalf("fullScans=%d discovered=%d", fallback.fullScans, fallback.discovered)
+			}
+		})
+	}
+}

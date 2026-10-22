@@ -996,6 +996,17 @@ func (m *IdentityManager) RefreshDomain(ctx context.Context, domain string, opts
 	return m.verifyDomain(ctx, domain, opts, true, true)
 }
 
+// VerifyLocalPublication fully verifies new evidence for this manager's own
+// identity, as RefreshDomain does, without application-peer or counterparty
+// acceptance checks. Use it to confirm the manager's own
+// publication, for example before activating a rotated operational key.
+func (m *IdentityManager) VerifyLocalPublication(ctx context.Context) (*VerifiedDomain, error) {
+	if m == nil || m.identity.Domain == "" {
+		return nil, NewArgumentError("dnsid: local publication verification requires a local identity", nil)
+	}
+	return m.verifyDomain(ctx, m.identity.Domain, VerifyDomainOpts{}, false, true)
+}
+
 // VerifyDomainWithOptions performs core DNSid trust establishment with optional
 // peer inputs, then enforces any configured VerificationConfig.TrustedEntities
 // acceptance policy. Acceptance runs on every successful path, including cache
@@ -1006,9 +1017,9 @@ func (m *IdentityManager) VerifyDomainWithOptions(ctx context.Context, domain st
 	return m.verifyDomain(ctx, domain, opts, true, false)
 }
 
-// verifyDomain is the shared per-invocation verification boundary. Only the
-// internal registry publication confirmation path passes acceptance=false;
-// there is no public bypass.
+// verifyDomain is the shared per-invocation verification boundary. Only
+// confirmation of the manager's own publication passes acceptance=false;
+// there is no public bypass for other domains.
 func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts VerifyDomainOpts, acceptance, refresh bool) (result *VerifiedDomain, err error) {
 	ctx, cancel := VerificationContext(ctx)
 	defer cancel()
@@ -1038,7 +1049,7 @@ func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts 
 		kind = identityRefresh
 		ctx = httputil.WithRevalidation(ctx)
 	} else if vd := m.cachedDomain(normalized); vd != nil {
-		return m.verifyCachedDomain(ctx, normalized, opts, vd)
+		return m.verifyCachedDomain(ctx, normalized, opts, vd, acceptance)
 	}
 	vd, err := m.coalesceVerification(ctx, normalized, kind, func(sharedCtx context.Context) (*VerifiedDomain, error) {
 		return m.verifyReusableDomain(sharedCtx, normalized)
@@ -1049,10 +1060,12 @@ func (m *IdentityManager) verifyDomain(ctx context.Context, domain string, opts 
 	// The cache may have filled between the initial lookup and joining the
 	// coordinator. Treat that result as a cache hit, including status refresh.
 	if vd.cachedState == "cached" {
-		return m.verifyCachedDomain(ctx, normalized, opts, vd)
+		return m.verifyCachedDomain(ctx, normalized, opts, vd, acceptance)
 	}
-	if err := m.enforcePerCallPolicy(vd.record, normalized, opts); err != nil {
-		return nil, err
+	if acceptance {
+		if err := m.enforcePerCallPolicy(vd.record, normalized, opts); err != nil {
+			return nil, err
+		}
 	}
 	return vd, nil
 }
@@ -1090,9 +1103,11 @@ func (m *IdentityManager) enforceCounterpartyAcceptance(vd *VerifiedDomain) erro
 	return deny("governance ID is not in the configured allowlist")
 }
 
-func (m *IdentityManager) verifyCachedDomain(ctx context.Context, domain string, opts VerifyDomainOpts, vd *VerifiedDomain) (*VerifiedDomain, error) {
-	if err := m.enforcePerCallPolicy(vd.record, domain, opts); err != nil {
-		return nil, err
+func (m *IdentityManager) verifyCachedDomain(ctx context.Context, domain string, opts VerifyDomainOpts, vd *VerifiedDomain, acceptance bool) (*VerifiedDomain, error) {
+	if acceptance {
+		if err := m.enforcePerCallPolicy(vd.record, domain, opts); err != nil {
+			return nil, err
+		}
 	}
 	return m.refreshCachedStatusIfNeeded(ctx, vd)
 }

@@ -338,9 +338,12 @@ func randomJTI() (string, error) {
 }
 
 func verifyJWTSignature(header *jwsProtectedHeader, parts *compactJWSParts, keySet jwk.Set) error {
-	candidates, err := jwtVerificationCandidates(header, keySet)
-	if err != nil || !verifySignature(header, parts, candidates) {
-		return dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: invalid signature: signature verification failed", err)
+	key, ok := joseutil.LookupJWKByKid(keySet, header.kid)
+	if header.kid == "" || !ok || !joseutil.SigningKeyEligible(key) {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeKeyNotFound, false, fmt.Sprintf("dnsid: JWT kid %q not found in issuer JWKS", header.kid), nil)
+	}
+	if !joseutil.JWKMatchesAlg(key, header.alg) || !verifySignature(header, parts, []jwk.Key{key}) {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: invalid signature: signature verification failed", nil)
 	}
 	return nil
 }
@@ -490,10 +493,10 @@ func (p *Profile) VerifyJWS(ctx context.Context, compact string, opts ...dnsid.V
 		return nil, nil, err
 	}
 	key, ok := joseutil.LookupJWKByKid(vd.KeySet().Raw(), kid)
-	if !ok || !joseutil.SigningKeyEligible(key) || !joseutil.JWKMatchesAlg(key, header.alg) {
+	if !ok || !joseutil.SigningKeyEligible(key) {
 		return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeKeyNotFound, false, fmt.Sprintf("dnsid: JWS kid %q not found for %s", kid, domain), nil)
 	}
-	if !verifySignature(header, parts, []jwk.Key{key}) {
+	if !joseutil.JWKMatchesAlg(key, header.alg) || !verifySignature(header, parts, []jwk.Key{key}) {
 		return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeSignatureInvalid, false, "dnsid: invalid JWS signature", nil)
 	}
 	if err := ctx.Err(); err != nil {
@@ -630,14 +633,6 @@ func marshalJWTClaims(tok jwxjwt.Token) ([]byte, error) {
 		}
 	}
 	return json.Marshal(payload)
-}
-
-func jwtVerificationCandidates(header *jwsProtectedHeader, set jwk.Set) ([]jwk.Key, error) {
-	key, ok := joseutil.LookupJWKByKid(set, header.kid)
-	if header.kid == "" || !ok || !joseutil.SigningKeyEligible(key) || !joseutil.JWKMatchesAlg(key, header.alg) {
-		return nil, fmt.Errorf("JWT kid not found or algorithm mismatch")
-	}
-	return []jwk.Key{key}, nil
 }
 
 func verifySignature(header *jwsProtectedHeader, parts *compactJWSParts, keys []jwk.Key) bool {

@@ -92,6 +92,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
 - [type ContextTrustedC2spCheckpointStore](<#ContextTrustedC2spCheckpointStore>)
 - [type DnsidManagedVerificationConfig](<#DnsidManagedVerificationConfig>)
 - [type GlobalCandidateSource](<#GlobalCandidateSource>)
+- [type LocalPublicationVerifier](<#LocalPublicationVerifier>)
 - [type ManagedIssuanceActivationController](<#ManagedIssuanceActivationController>)
 - [type ManagedIssuanceActivationControllerFunc](<#ManagedIssuanceActivationControllerFunc>)
   - [func \(f ManagedIssuanceActivationControllerFunc\) SetManagedIssuanceActivationBlocked\(ctx context.Context, blocked bool\) error](<#ManagedIssuanceActivationControllerFunc.SetManagedIssuanceActivationBlocked>)
@@ -353,7 +354,7 @@ type Appender interface {
 ```
 
 <a name="ApplicationSigningController"></a>
-## type [ApplicationSigningController](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L51-L53>)
+## type [ApplicationSigningController](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L52-L54>)
 
 ApplicationSigningController pauses or resumes new application signatures.
 
@@ -364,7 +365,7 @@ type ApplicationSigningController interface {
 ```
 
 <a name="ApplicationSigningControllerFunc"></a>
-## type [ApplicationSigningControllerFunc](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L56>)
+## type [ApplicationSigningControllerFunc](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L57>)
 
 ApplicationSigningControllerFunc adapts a function to ApplicationSigningController.
 
@@ -373,7 +374,7 @@ type ApplicationSigningControllerFunc func(context.Context, bool) error
 ```
 
 <a name="ApplicationSigningControllerFunc.SetApplicationSigningPaused"></a>
-### func \(ApplicationSigningControllerFunc\) [SetApplicationSigningPaused](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L59>)
+### func \(ApplicationSigningControllerFunc\) [SetApplicationSigningPaused](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L60>)
 
 ```go
 func (f ApplicationSigningControllerFunc) SetApplicationSigningPaused(ctx context.Context, paused bool) error
@@ -809,6 +810,17 @@ type GlobalCandidateSource interface {
 }
 ```
 
+<a name="LocalPublicationVerifier"></a>
+## type [LocalPublicationVerifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L97-L99>)
+
+LocalPublicationVerifier fully verifies new evidence for the local identity's own publication, without counterparty acceptance. \*dnsid.IdentityManager implements it.
+
+```go
+type LocalPublicationVerifier interface {
+    VerifyLocalPublication(context.Context) (*dnsid.VerifiedDomain, error)
+}
+```
+
 <a name="ManagedIssuanceActivationController"></a>
 ## type [ManagedIssuanceActivationController](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_issuance.go#L47-L49>)
 
@@ -993,7 +1005,7 @@ type ManagedIssuanceStore interface {
 ```
 
 <a name="ManagedKeyRotationActivationError"></a>
-## type [ManagedKeyRotationActivationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L122-L125>)
+## type [ManagedKeyRotationActivationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L136-L139>)
 
 ManagedKeyRotationActivationError reports accepted registry submission with incomplete local activation, supersession, pause release, or persistence.
 
@@ -1005,7 +1017,7 @@ type ManagedKeyRotationActivationError struct {
 ```
 
 <a name="ManagedKeyRotationActivationError.Error"></a>
-### func \(\*ManagedKeyRotationActivationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L127>)
+### func \(\*ManagedKeyRotationActivationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L141>)
 
 ```go
 func (e *ManagedKeyRotationActivationError) Error() string
@@ -1014,7 +1026,7 @@ func (e *ManagedKeyRotationActivationError) Error() string
 
 
 <a name="ManagedKeyRotationActivationError.Unwrap"></a>
-### func \(\*ManagedKeyRotationActivationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L134>)
+### func \(\*ManagedKeyRotationActivationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L148>)
 
 ```go
 func (e *ManagedKeyRotationActivationError) Unwrap() error
@@ -1023,7 +1035,7 @@ func (e *ManagedKeyRotationActivationError) Unwrap() error
 
 
 <a name="ManagedKeyRotationOptions"></a>
-## type [ManagedKeyRotationOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L68-L76>)
+## type [ManagedKeyRotationOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L69-L80>)
 
 ManagedKeyRotationOptions configures a new managed operational\-key rotation. Store and ApplicationSigning are mandatory durability and safety boundaries.
 
@@ -1036,13 +1048,16 @@ type ManagedKeyRotationOptions struct {
     IdempotencyKey     string
     Store              ManagedKeyRotationStore
     ApplicationSigning ApplicationSigningController
+    // Publication confirms the new key's publication before activation.
+    // Pass the identity's *dnsid.IdentityManager.
+    Publication LocalPublicationVerifier
 }
 ```
 
 <a name="ManagedKeyRotationState"></a>
-## type [ManagedKeyRotationState](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L19-L32>)
+## type [ManagedKeyRotationState](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L20-L33>)
 
-ManagedKeyRotationState is the durable recovery record for one registry\-managed operational\-key rotation. EntryBytes and IdempotencyKey are immutable once first persisted and are reused verbatim on every retry.
+ManagedKeyRotationState is the durable recovery record for one registry\-managed operational\-key rotation. EntryBytes and IdempotencyKey are immutable once first persisted and are reused verbatim on every retry. Activated with ApplicationSigningPaused false is the terminal state.
 
 ```go
 type ManagedKeyRotationState struct {
@@ -1062,16 +1077,23 @@ type ManagedKeyRotationState struct {
 ```
 
 <a name="ResumeManagedOperationalKeyRotation"></a>
-### func [ResumeManagedOperationalKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L231>)
+### func [ResumeManagedOperationalKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L256>)
 
 ```go
 func ResumeManagedOperationalKeyRotation(ctx context.Context, opts ResumeManagedKeyRotationOptions) (*ManagedKeyRotationState, error)
 ```
 
-ResumeManagedOperationalKeyRotation retries only a persisted rotation's exact completed bytes and idempotency key, or finishes local reconciliation after an accepted submission.
+ResumeManagedOperationalKeyRotation continues a persisted rotation from its saved state:
+
+- not accepted: pause signing and resubmit the exact saved bytes with the same idempotency key;
+- accepted, not activated: pause signing, verify the new publication, then activate the new key and resume signing;
+- activated, signing paused: resume signing without network calls;
+- activated, signing resumed: return the state unchanged. This state is terminal. Archive it; the next rotation starts with a new state.
+
+Every state first validates the provider against the saved keys.
 
 <a name="RotateManagedOperationalKey"></a>
-### func [RotateManagedOperationalKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L145>)
+### func [RotateManagedOperationalKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L159>)
 
 ```go
 func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOptions) (*ManagedKeyRotationState, error)
@@ -1080,7 +1102,7 @@ func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOpt
 RotateManagedOperationalKey prepares and submits one registry\-managed C2SP KEY\_ROTATION. The registry exclusively owns publication and append recovery; this function activates locally only after an accepted result is bound to the exact persisted bytes and final event reference.
 
 <a name="ManagedKeyRotationStore"></a>
-## type [ManagedKeyRotationStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L35-L37>)
+## type [ManagedKeyRotationStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L36-L38>)
 
 ManagedKeyRotationStore durably saves each recoverable rotation state.
 
@@ -1091,7 +1113,7 @@ type ManagedKeyRotationStore interface {
 ```
 
 <a name="ManagedKeyRotationStoreFunc"></a>
-## type [ManagedKeyRotationStoreFunc](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L40>)
+## type [ManagedKeyRotationStoreFunc](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L41>)
 
 ManagedKeyRotationStoreFunc adapts a function to ManagedKeyRotationStore.
 
@@ -1100,7 +1122,7 @@ type ManagedKeyRotationStoreFunc func(context.Context, *ManagedKeyRotationState)
 ```
 
 <a name="ManagedKeyRotationStoreFunc.PersistManagedKeyRotation"></a>
-### func \(ManagedKeyRotationStoreFunc\) [PersistManagedKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L43>)
+### func \(ManagedKeyRotationStoreFunc\) [PersistManagedKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L44>)
 
 ```go
 func (f ManagedKeyRotationStoreFunc) PersistManagedKeyRotation(ctx context.Context, state *ManagedKeyRotationState) error
@@ -1109,7 +1131,7 @@ func (f ManagedKeyRotationStoreFunc) PersistManagedKeyRotation(ctx context.Conte
 PersistManagedKeyRotation calls f to persist state.
 
 <a name="ManagedKeyRotationSubmissionError"></a>
-## type [ManagedKeyRotationSubmissionError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L89-L95>)
+## type [ManagedKeyRotationSubmissionError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L103-L109>)
 
 ManagedKeyRotationSubmissionError reports a submission or persistence failure after exact completed entry bytes have been fixed.
 
@@ -1124,7 +1146,7 @@ type ManagedKeyRotationSubmissionError struct {
 ```
 
 <a name="ManagedKeyRotationSubmissionError.Error"></a>
-### func \(\*ManagedKeyRotationSubmissionError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L97>)
+### func \(\*ManagedKeyRotationSubmissionError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L111>)
 
 ```go
 func (e *ManagedKeyRotationSubmissionError) Error() string
@@ -1133,7 +1155,7 @@ func (e *ManagedKeyRotationSubmissionError) Error() string
 
 
 <a name="ManagedKeyRotationSubmissionError.ShouldRetrySameBytes"></a>
-### func \(\*ManagedKeyRotationSubmissionError\) [ShouldRetrySameBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L116>)
+### func \(\*ManagedKeyRotationSubmissionError\) [ShouldRetrySameBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L130>)
 
 ```go
 func (e *ManagedKeyRotationSubmissionError) ShouldRetrySameBytes() bool
@@ -1142,7 +1164,7 @@ func (e *ManagedKeyRotationSubmissionError) ShouldRetrySameBytes() bool
 ShouldRetrySameBytes reports whether recovery must resubmit the exact persisted bytes with the same idempotency key.
 
 <a name="ManagedKeyRotationSubmissionError.Transient"></a>
-### func \(\*ManagedKeyRotationSubmissionError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L112>)
+### func \(\*ManagedKeyRotationSubmissionError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L126>)
 
 ```go
 func (e *ManagedKeyRotationSubmissionError) Transient() bool
@@ -1151,7 +1173,7 @@ func (e *ManagedKeyRotationSubmissionError) Transient() bool
 Transient reports whether retrying the operation may succeed.
 
 <a name="ManagedKeyRotationSubmissionError.Unwrap"></a>
-### func \(\*ManagedKeyRotationSubmissionError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L104>)
+### func \(\*ManagedKeyRotationSubmissionError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L118>)
 
 ```go
 func (e *ManagedKeyRotationSubmissionError) Unwrap() error
@@ -1615,7 +1637,7 @@ type ResumeManagedIssuanceOptions struct {
 ```
 
 <a name="ResumeManagedKeyRotationOptions"></a>
-## type [ResumeManagedKeyRotationOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L79-L85>)
+## type [ResumeManagedKeyRotationOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L83-L92>)
 
 ResumeManagedKeyRotationOptions resumes a previously persisted rotation.
 
@@ -1626,6 +1648,9 @@ type ResumeManagedKeyRotationOptions struct {
     Rotation           *ManagedKeyRotationState
     Store              ManagedKeyRotationStore
     ApplicationSigning ApplicationSigningController
+    // Publication confirms the new key's publication before activation.
+    // Pass the identity's *dnsid.IdentityManager.
+    Publication LocalPublicationVerifier
 }
 ```
 
@@ -1650,7 +1675,7 @@ func NewScanSource(policy Policy, config ScanSourceConfig) (*ScanSource, error)
 NewScanSource constructs a bounded C2SP network scanner. It is SSRF\-resistant unless the caller supplies a custom Transport.
 
 <a name="ScanSource.FetchEntriesThrough"></a>
-### func \(\*ScanSource\) [FetchEntriesThrough](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L182>)
+### func \(\*ScanSource\) [FetchEntriesThrough](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L226>)
 
 ```go
 func (s *ScanSource) FetchEntriesThrough(ctx context.Context, reference Reference, treeSize uint64) ([][]byte, error)
@@ -1677,7 +1702,7 @@ func (s *ScanSource) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (Proven
 ReadEvent implements Source by running a full authenticated scan and returning the entry at the reference's index. It returns an error if the index is outside the scanned checkpoint size.
 
 <a name="ScanSource.RebuildCompleteHistory"></a>
-### func \(\*ScanSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L157>)
+### func \(\*ScanSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L201>)
 
 ```go
 func (s *ScanSource) RebuildCompleteHistory(ctx context.Context, reference Reference, domain string) (CompleteHistoryResult, error)
@@ -1686,7 +1711,7 @@ func (s *ScanSource) RebuildCompleteHistory(ctx context.Context, reference Refer
 RebuildCompleteHistory implements CompleteSource by binding the returned candidates to the exact authenticated full\-scan checkpoint.
 
 <a name="ScanSource.RebuildHistory"></a>
-### func \(\*ScanSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L147>)
+### func \(\*ScanSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L191>)
 
 ```go
 func (s *ScanSource) RebuildHistory(ctx context.Context, reference Reference, domain string) ([]ProvenEntry, error)
@@ -1795,7 +1820,7 @@ type StreamBundleSource struct {
 ```
 
 <a name="StreamBundleSource.ReadEvent"></a>
-### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L223>)
+### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L247>)
 
 ```go
 func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (ProvenEntry, error)
@@ -1804,7 +1829,7 @@ func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (
 ReadEvent implements Source over the bundle's entries. It returns an error if ref does not address this bundle's reference or names an index the bundle does not contain.
 
 <a name="StreamBundleSource.RebuildCompleteHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L255>)
+### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L279>)
 
 ```go
 func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference Reference, domain string) (CompleteHistoryResult, error)
@@ -1813,7 +1838,7 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 RebuildCompleteHistory implements CompleteSource: a verified bundle's trusted\-index completeness assertion and entries share one checkpoint.
 
 <a name="StreamBundleSource.RebuildHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L242>)
+### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L266>)
 
 ```go
 func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Reference, domain string) ([]ProvenEntry, error)
@@ -2002,7 +2027,7 @@ type VerifiedStreamBundle struct {
 ```
 
 <a name="VerifyStreamBundle"></a>
-### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L281>)
+### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L305>)
 
 ```go
 func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrust) (*VerifiedStreamBundle, error)

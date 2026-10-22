@@ -112,6 +112,14 @@ func TestJWTES256RoundTripAndHeaderRejections(t *testing.T) {
 		})
 	}
 
+	t.Run("unknown kid", func(t *testing.T) {
+		_, err := verifyJWT(tokenStr, jwksForKey(dnsid.GenerateES256KeyProvider()), testJWTConfig(), VerifyJWTOptions{})
+		var verr *dnsid.VerificationError
+		if !errors.As(err, &verr) || verr.Code() != dnsid.VerificationCodeKeyNotFound {
+			t.Fatalf("verifyJWT unknown kid err = %v, want KeyNotFound", err)
+		}
+	})
+
 	t.Run("DER signature", func(t *testing.T) {
 		parts := strings.Split(tokenStr, ".")
 		signingInput := []byte(parts[0] + "." + parts[1])
