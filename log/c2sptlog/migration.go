@@ -109,7 +109,7 @@ func (c *Client) RebuildHistoryThrough(ctx context.Context, domain string, final
 		references = append(references, c.ref.FinalEventRef(event.index))
 	}
 	references[len(references)-1] = finalRef
-	evidence := dnsidlog.LoggedStateEvidence{LogReference: dnsidlog.LogRef(c.ref.String()), LoggedState: dnsidlog.AgentStateActive, HistoryStart: references[0], HistoryEnd: finalRef, CompleteThrough: strconv.FormatUint(history.CompleteThrough, 10), CompletenessMode: history.CompletenessMode, Checkpoint: append([]byte(nil), history.Checkpoint...), FreshnessTime: checkpoint.CheckpointFreshnessTime, PriorEvidence: priorEvidence}
+	evidence := dnsidlog.LoggedStateEvidence{LogReference: dnsidlog.LogRef(c.ref.String()), LoggedState: dnsidlog.AgentStateActive, HistoryStart: c.ref.FinalEventRef(verified[0].index), HistoryEnd: finalRef, CompleteThrough: strconv.FormatUint(history.CompleteThrough, 10), CompletenessMode: history.CompletenessMode, Checkpoint: append([]byte(nil), history.Checkpoint...), FreshnessTime: checkpoint.CheckpointFreshnessTime, PriorEvidence: priorEvidence}
 	result = MigrationVerificationResult{EntityKey: entity, ActiveOperationalKey: operational, PriorHistory: events, PriorHistoryReferences: references, PriorEvidence: &evidence, FinalOccurrence: &ProvenEntry{Index: index, Entry: append([]byte(nil), occurrence.Entry...), Proof: append([]byte(nil), occurrence.Proof...)}}
 	limits := migrationLimitsForContext(ctx, c.migrationLimits)
 	if len(events) > limits.MaxHistoryEvents {

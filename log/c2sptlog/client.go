@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/internal/jsonutil"
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	formatlog "github.com/transparency-dev/formats/log"
@@ -489,7 +490,7 @@ func (c *Client) KeyTimestamp(ctx context.Context, domain, keyThumbprint string)
 		}
 		err = logVerificationError(err, false)
 	}()
-	verified, events, err := c.rebuildVerifiedHistory(ctx, domain)
+	_, events, err := c.rebuildVerifiedHistory(ctx, domain)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -503,10 +504,8 @@ func (c *Client) KeyTimestamp(ctx context.Context, domain, keyThumbprint string)
 	if snapshot.ActiveKeyThumbprint != keyThumbprint {
 		return time.Time{}, fmt.Errorf("dnsid: no active c2sp-tlog key binding for %q", keyThumbprint)
 	}
-	for _, item := range verified {
-		if bindsKey(item.event, keyThumbprint) {
-			return item.event.Timestamp, nil
-		}
+	if !snapshot.KeyBoundAt.IsZero() {
+		return snapshot.KeyBoundAt, nil
 	}
 	return time.Time{}, fmt.Errorf("dnsid: no c2sp-tlog key binding for %q", keyThumbprint)
 }
@@ -888,6 +887,9 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 	if proof.Index != wantIndex {
 		return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog proof index %d does not match final ref index %d", proof.Index, wantIndex)
 	}
+	if proof.LogTime.IsZero() && !c.policy.skipProofVerify {
+		return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: lifecycle verification requires an accepted checkpoint timestamp")
+	}
 	if !proof.LogTime.IsZero() && parsed.event.Timestamp.After(proof.LogTime) {
 		return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog event timestamp is after accepted log timestamp")
 	}
@@ -978,6 +980,9 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 			verifiedProofs = append(verifiedProofs, proof)
 		}
 		if err := c.validateEntryMetadata(entry.Entry); err != nil {
+			if errors.Is(err, jsonutil.ErrNestingLimit) {
+				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: c2sp-tlog verification resource limit exceeded", err)
+			}
 			if !globalCandidates {
 				return nil, nil, err
 			}
@@ -992,6 +997,9 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 				return nil, nil, fmt.Errorf("dnsid: supplied bundle event is for another domain")
 			}
 			continue
+		}
+		if proof.LogTime.IsZero() && !c.policy.skipProofVerify {
+			return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: lifecycle verification requires an accepted checkpoint timestamp", nil)
 		}
 		if !proof.LogTime.IsZero() && parsed.event.Timestamp.After(proof.LogTime) {
 			parsed.validationError = fmt.Errorf("dnsid: event timestamp is after accepted log timestamp")
@@ -1091,20 +1099,6 @@ func (c *Client) validateChain(event dnsidlog.LogEvent, chain Chain) error {
 		return fmt.Errorf("dnsid: c2sp-tlog write requires lifecycle chain fields")
 	}
 	return nil
-}
-
-func bindsKey(event dnsidlog.LogEvent, thumbprint string) bool {
-	switch event.Type {
-	case dnsidlog.LogEventIssuance:
-		return event.InitialOperationalThumbprint == thumbprint
-	case dnsidlog.LogEventMigration:
-		// A migration-in genesis re-anchors the operational key in the new log.
-		return event.InitialOperationalThumbprint == thumbprint
-	case dnsidlog.LogEventKeyRotation:
-		return event.NewOperationalThumbprint == thumbprint
-	default:
-		return false
-	}
 }
 
 func (c *Client) validateEntryMetadata(entry []byte) error {

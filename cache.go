@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
@@ -107,6 +108,8 @@ type VerifiedDomain struct {
 	logReader                dnsidlog.LogReader
 	expiry                   time.Time
 	cachedState              string
+	// Shared by cache snapshots so deletion also fences delayed status workers.
+	cacheInvalidated *atomic.Bool
 }
 
 // Domain returns the verified identity domain in normalized FQDN form.
@@ -310,6 +313,7 @@ func cloneVerifiedDomain(v *VerifiedDomain) *VerifiedDomain {
 		logReader:                v.logReader,
 		expiry:                   v.expiry,
 		cachedState:              v.cachedState,
+		cacheInvalidated:         v.cacheInvalidated,
 	}
 }
 
@@ -573,6 +577,9 @@ func (c *IdentityCache) get(domain string, context *IdentityManager) *VerifiedDo
 			copy.cachedState = "cached"
 			return copy
 		}
+		if existing != nil && existing.cacheInvalidated != nil {
+			existing.cacheInvalidated.Store(true)
+		}
 		delete(c.entries, key)
 		return nil
 	}
@@ -595,19 +602,34 @@ func (c *IdentityCache) put(vd *VerifiedDomain, context *IdentityManager) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key := identityCacheKey{copy.domain, context}
+	if copy.cacheInvalidated != nil && copy.cacheInvalidated.Load() {
+		return
+	}
 	// An older lookup or status refresh must not replace a newer acquisition.
 	if current := c.entries[key]; current != nil && !copy.acquiredAt.IsZero() && copy.acquiredAt.Before(current.acquiredAt) {
 		return
 	}
 	if copy.expiry.IsZero() || !time.Now().Before(copy.expiry) || copy.dnsTTL <= 0 {
 		if context != nil && !copy.acquiredAt.IsZero() {
+			if current := c.entries[key]; current != nil && current.cacheInvalidated != nil {
+				current.cacheInvalidated.Store(true)
+			}
 			delete(c.entries, key)
 		}
 		return
 	}
-	// ponytail: bounded cache; arbitrary eviction, use an LRU only if hit rates require it.
-	if len(c.entries) >= 1024 {
-		for key := range c.entries {
+	if copy.cacheInvalidated == nil {
+		copy.cacheInvalidated = &atomic.Bool{}
+	}
+	if current := c.entries[key]; current != nil && current.cacheInvalidated != nil && current.cacheInvalidated != copy.cacheInvalidated {
+		current.cacheInvalidated.Store(true)
+	}
+	// shortcut: bounded cache with arbitrary eviction; use LRU if hit rates require it.
+	if c.entries[key] == nil && len(c.entries) >= 1024 {
+		for key, entry := range c.entries {
+			if entry.cacheInvalidated != nil {
+				entry.cacheInvalidated.Store(true)
+			}
 			delete(c.entries, key)
 			break
 		}
@@ -626,6 +648,10 @@ func (c *IdentityCache) evict(domain string, context *IdentityManager) {
 		return
 	}
 	c.mu.Lock()
-	delete(c.entries, identityCacheKey{domain, context})
+	key := identityCacheKey{domain, context}
+	if current := c.entries[key]; current != nil && current.cacheInvalidated != nil {
+		current.cacheInvalidated.Store(true)
+	}
+	delete(c.entries, key)
 	c.mu.Unlock()
 }

@@ -183,13 +183,16 @@ func (p Policy) acceptedCheckpointTime(cp *formatlog.Checkpoint, n *note.Note) (
 		if err != nil {
 			continue
 		}
+		if _, err := p.validateWitnessTime(ts); err != nil {
+			return time.Time{}, err
+		}
 		times = append(times, ts)
 	}
 	if len(times) < p.WitnessQuorum {
 		return time.Time{}, fmt.Errorf("dnsid: c2sp-tlog witness quorum not satisfied")
 	}
 	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
-	acceptedAt := times[p.WitnessQuorum-1]
+	acceptedAt := times[0]
 	return p.validateWitnessTime(acceptedAt)
 }
 

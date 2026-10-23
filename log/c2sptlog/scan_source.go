@@ -13,6 +13,7 @@ import (
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 
+	"github.com/dnsid-ai/dnsid-go/internal/jsonutil"
 	"github.com/dnsid-ai/dnsid-go/internal/netguard"
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	formatproof "github.com/transparency-dev/formats/proof"
@@ -205,7 +206,11 @@ func (s *ScanSource) RebuildCompleteHistory(ctx context.Context, reference Refer
 	}
 	entries := make([]ProvenEntry, 0)
 	for index, entry := range scan.entries {
-		if !candidateFQDN(entry, domain) {
+		matches, err := candidateFQDN(entry, domain)
+		if err != nil {
+			return CompleteHistoryResult{}, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: c2sp-tlog verification resource limit exceeded", err)
+		}
+		if !matches {
 			continue
 		}
 		entries = append(entries, scan.provenEntry(uint64(index)))
@@ -371,13 +376,16 @@ func merkleLevels(entries [][]byte) [][]tlog.Hash {
 	return levels
 }
 
-func candidateFQDN(entry []byte, domain string) bool {
+func candidateFQDN(entry []byte, domain string) (bool, error) {
 	payload, err := payloadObjectFromEntry(entry)
+	if errors.Is(err, jsonutil.ErrNestingLimit) {
+		return false, err
+	}
 	if err != nil {
-		return false
+		return false, nil
 	}
 	fqdn, ok := payload["fqdn"].(string)
-	return ok && strings.EqualFold(fqdn, domain)
+	return ok && strings.EqualFold(fqdn, domain), nil
 }
 
 func parseEntryBundle(data []byte) ([][]byte, error) {

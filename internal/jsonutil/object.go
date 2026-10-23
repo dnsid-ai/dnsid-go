@@ -3,10 +3,14 @@ package jsonutil
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"unicode/utf8"
 )
+
+// ErrNestingLimit distinguishes resource exhaustion from malformed JSON noise.
+var ErrNestingLimit = errors.New("JSON nesting limit exceeded")
 
 // DecodeObject rejects duplicate members at every depth and invalid UTF-8.
 func DecodeObject(data []byte, useNumber bool) (map[string]any, error) {
@@ -33,7 +37,7 @@ func DecodeObject(data []byte, useNumber bool) (map[string]any, error) {
 
 func decodeValue(d *json.Decoder, depth int) (any, error) {
 	if depth > 64 {
-		return nil, fmt.Errorf("JSON nesting limit exceeded")
+		return nil, ErrNestingLimit
 	}
 	token, err := d.Token()
 	if err != nil {

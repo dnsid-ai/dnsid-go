@@ -416,12 +416,15 @@ func (c *Client) preparedSignerKeys(ctx context.Context, prepared *PreparedEvent
 		keys[SignerEntity] = event.InitialEntityPublicKey
 		keys[SignerOperationalCountersignature] = event.InitialOperationalPublicKey
 	case dnsidlog.LogEventKeyRotation:
-		_, operational, state, err := c.currentLifecycleState(ctx, event.Domain)
+		entity, operational, state, err := c.currentLifecycleState(ctx, event.Domain)
 		if err != nil {
 			return nil, err
 		}
 		if event.NewOperationalThumbprint == state["entity_thumb"] {
 			return nil, fmt.Errorf("dnsid: operational key must remain distinct from entity key")
+		}
+		if err := validateResolvedKeyIDs(entity, operational, event.NewOperationalPublicKey); err != nil {
+			return nil, err
 		}
 		keys[SignerPreviousOperational] = operational
 		keys[SignerNewOperational] = event.NewOperationalPublicKey
@@ -443,6 +446,13 @@ func (c *Client) preparedSignerKeys(ctx context.Context, prepared *PreparedEvent
 			return nil, err
 		}
 		keys[SignerEntity] = entity
+	}
+	resolved := make([]jwk.Key, 0, len(keys))
+	for _, key := range keys {
+		resolved = append(resolved, key)
+	}
+	if err := validateResolvedKeyIDs(resolved...); err != nil {
+		return nil, err
 	}
 	return keys, nil
 }

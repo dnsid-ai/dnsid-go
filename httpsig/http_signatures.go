@@ -694,6 +694,11 @@ func httpTargetURI(req *http.Request) (string, error) {
 	u := *req.URL
 	u.Scheme = scheme
 	u.Host = authority
+	u.User = nil
+	u.Fragment, u.RawFragment = "", ""
+	if u.Path == "" {
+		u.Path = "/"
+	}
 	return u.String(), nil
 }
 

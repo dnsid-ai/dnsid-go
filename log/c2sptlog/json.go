@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"unicode/utf16"
@@ -38,7 +39,22 @@ func writeCanonicalJSON(buf *bytes.Buffer, value any) error {
 			return err
 		}
 	case json.Number:
-		buf.WriteString(value.String())
+		number, err := value.Float64()
+		if err != nil {
+			return err
+		}
+		return writeCanonicalJSON(buf, number)
+	case float64:
+		if value == 0 {
+			buf.WriteByte('0')
+			break
+		}
+		// encoding/json uses the ECMAScript exponent thresholds and spelling.
+		number, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		buf.Write(number)
 	case int:
 		buf.WriteString(strconv.Itoa(value))
 	case int64:
@@ -117,9 +133,14 @@ func rejectUnsupportedJSON(v any) error {
 	case nil, string, bool:
 		return nil
 	case json.Number:
-		i, err := x.Int64()
-		if err != nil || strconv.FormatInt(i, 10) != x.String() || i < -maxJSONInteger || i > maxJSONInteger {
-			return fmt.Errorf("dnsid: unsupported non-canonical JSON number %q in c2sp-tlog event", x.String())
+		number, err := x.Float64()
+		if err != nil {
+			return fmt.Errorf("dnsid: invalid JSON number %q in c2sp-tlog event: %w", x.String(), err)
+		}
+		return rejectUnsupportedJSON(number)
+	case float64:
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return fmt.Errorf("dnsid: non-finite JSON number in c2sp-tlog event")
 		}
 		return nil
 	case int:
