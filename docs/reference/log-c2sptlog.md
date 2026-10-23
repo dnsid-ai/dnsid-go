@@ -276,7 +276,7 @@ func EntryBytes(event dnsidlog.LogEvent) ([]byte, error)
 EntryBytes returns the canonical entry bytes for event, including its signatures, without any stream context. It returns an error if the event has no signatures or exceeds the maximum entry size. Use Client.EntryBytes for stream\-contextualized entries.
 
 <a name="EventID"></a>
-## func [EventID](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/event.go#L727>)
+## func [EventID](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/event.go#L728>)
 
 ```go
 func EventID(signedBytes []byte) string
