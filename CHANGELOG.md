@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.44.1] - 2026-10-23
+
+### Bug Fixes
+
+- fix: treat c2sp-tlog kid as a label, not a key selector ([#90](https://github.com/dnsid-ai/dnsid-go/pull/90))
+
+### Other
+
+- perf: overlap history retrieval and avoid deep cache lookup copies ([#92](https://github.com/dnsid-ai/dnsid-go/pull/92))
+
 ## [0.44.0] - 2026-10-23
 
 ### Bug Fixes
