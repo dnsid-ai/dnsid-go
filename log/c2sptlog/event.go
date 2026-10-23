@@ -588,7 +588,8 @@ func validateEmbeddedSignatureKids(event dnsidlog.LogEvent) error {
 			return fmt.Errorf("dnsid: c2sp-tlog KEY_ROTATION new_op kid does not match new_ku")
 		}
 	}
-	return validateResolvedKeyIDs(event.InitialEntityPublicKey, event.InitialOperationalPublicKey, event.NewOperationalPublicKey)
+	// kid is a label; distinct keys may share one (method section 9).
+	return nil
 }
 
 func validateResolvedKeyIDs(keys ...jwk.Key) error {

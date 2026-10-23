@@ -57,9 +57,6 @@ func verifyLifecycleVerifiedWithMigration(ctx context.Context, indexed []verifie
 			if !candidateAuthorizedByCurrentHistory(event, canonical, auth.entity, auth.operational) {
 				continue
 			}
-			if err := validateResolvedKeyIDs(auth.entity, auth.operational, event.InitialEntityPublicKey, event.InitialOperationalPublicKey, event.NewOperationalPublicKey); err != nil {
-				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: ambiguous authenticated key identifiers", err)
-			}
 			item.authorityEntity, item.authorityOperational = auth.entity, auth.operational
 			if terminal {
 				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeTerminalState, false, "dnsid: authenticated c2sp-tlog lifecycle event after terminal state", nil)
@@ -275,9 +272,6 @@ func candidateAuthorizedByCurrentHistory(event dnsidlog.LogEvent, canonical []by
 func validateMigrationResult(event dnsidlog.LogEvent, migration MigrationVerificationResult) error {
 	if migration.EntityKey == nil || migration.ActiveOperationalKey == nil || len(migration.PriorHistory) == 0 {
 		return invalidMigration("dnsid: inbound MIGRATION prior history and keys are required", nil)
-	}
-	if err := validateResolvedKeyIDs(migration.EntityKey, migration.ActiveOperationalKey); err != nil {
-		return invalidMigration("dnsid: ambiguous migration key identifiers", err)
 	}
 	entityThumb, err := thumbprint(migration.EntityKey)
 	if err != nil {
