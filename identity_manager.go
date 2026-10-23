@@ -1747,6 +1747,11 @@ func isDomainName(value string) bool {
 	if value == "" || strings.Contains(value, ":") || strings.Contains(value, "/") {
 		return false
 	}
+	// An all-numeric top label is an IPv4 literal, not a domain name (RFC 1123 section 2.1).
+	top := value[strings.LastIndexByte(value, '.')+1:]
+	if strings.Trim(top, "0123456789") == "" {
+		return false
+	}
 	return hostnameRegex.MatchString(value)
 }
 
