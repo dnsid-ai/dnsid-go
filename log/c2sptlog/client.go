@@ -146,6 +146,13 @@ type Client struct {
 	migrationLimits  MigrationVerificationLimits
 	trustedScope     string
 	trustedLogPrefix string
+	preloaded        *preloadedHistory
+}
+
+type preloadedHistory struct {
+	ctx     context.Context
+	domain  string
+	entries []ProvenEntry
 }
 
 // New constructs a Client bound to the parsed lr value. It returns an error
@@ -915,6 +922,22 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 	return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog final event is not in verified lifecycle")
 }
 
+// PreloadHistory retrieves history while the caller fetches the operational key.
+// The returned reader reuses these entries until ctx is canceled; callers must
+// cancel ctx when their verification ends. Proofs and lifecycle are verified on use.
+func (c *Client) PreloadHistory(ctx context.Context, domain string) (dnsidlog.LogReader, error) {
+	if ctx == nil || c == nil || c.source == nil {
+		return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog context and source are required", nil)
+	}
+	entries, err := c.source.RebuildHistory(ctx, c.ref, domain)
+	if err != nil {
+		return nil, logVerificationError(err, true)
+	}
+	reader := *c
+	reader.preloaded = &preloadedHistory{ctx: ctx, domain: domain, entries: entries}
+	return &reader, nil
+}
+
 // RebuildHistory returns domain's verified lifecycle events in log order.
 // Each event's inclusion proof, signature chain, and logical
 // stream-chain metadata are verified; with a GlobalCandidateSource, invalid
@@ -931,9 +954,14 @@ func (c *Client) rebuildVerifiedHistory(ctx context.Context, domain string) (ver
 	if c == nil || c.source == nil {
 		return nil, nil, dnsid.NewArgumentError("dnsid: c2sp-tlog source is required", nil)
 	}
-	entries, err := c.source.RebuildHistory(ctx, c.ref, domain)
-	if err != nil {
-		return nil, nil, logVerificationError(err, true)
+	var entries []ProvenEntry
+	if history := c.preloaded; history != nil && history.domain == domain && history.ctx.Err() == nil {
+		entries = history.entries
+	} else {
+		entries, err = c.source.RebuildHistory(ctx, c.ref, domain)
+		if err != nil {
+			return nil, nil, logVerificationError(err, true)
+		}
 	}
 	return c.verifyHistoryEntries(ctx, domain, entries, nil)
 }

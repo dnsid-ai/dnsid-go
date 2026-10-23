@@ -1191,32 +1191,68 @@ func (m *IdentityManager) verifyReusableDomain(ctx context.Context, normalized s
 	identityResults := make(chan identityResult, 1)
 	statusResults := make(chan statusResult, 1)
 	go func() {
+		reader, readerErr := m.logReaderFor(rec.LogRef)
+		originalReader := reader
+		preloadDone := make(chan error, 1)
+		go func() {
+			if readerErr == nil {
+				if preloader, ok := reader.(interface {
+					PreloadHistory(context.Context, string) (dnsidlog.LogReader, error)
+				}); ok {
+					reader, readerErr = preloader.PreloadHistory(workCtx, normalized)
+					readerErr = logVerificationError(readerErr)
+				}
+			}
+			if readerErr != nil {
+				cancel()
+			}
+			preloadDone <- readerErr
+		}()
+		var result identityResult
+		defer func() {
+			if result.err != nil {
+				cancel()
+			}
+			if preloadDone != nil {
+				if err := <-preloadDone; err != nil && errors.Is(result.err, context.Canceled) {
+					result.err = err
+				}
+			}
+			identityResults <- result
+		}()
 		kuSet, runtimeCert, err := m.fetchJWKSForDomain(workCtx, rec.KeyURI, normalized)
 		if err != nil {
-			identityResults <- identityResult{err: jwksVerificationError(fmt.Sprintf("dnsid: fetching ku JWKS for %s", normalized), err)}
+			result.err = jwksVerificationError(fmt.Sprintf("dnsid: fetching ku JWKS for %s", normalized), err)
 			return
 		}
 		kuOpKey, err := singleDraft01SigningKey(kuSet)
 		if err != nil {
-			identityResults <- identityResult{err: NewVerificationError(VerificationCodeRecordInvalid, false,
-				fmt.Sprintf("dnsid: ku endpoint must serve exactly one current key: %v", err), nil)}
+			result.err = NewVerificationError(VerificationCodeRecordInvalid, false,
+				fmt.Sprintf("dnsid: ku endpoint must serve exactly one current key: %v", err), nil)
 			return
 		}
 		operationalKeyThumbprint, err := (&JWK{key: kuOpKey}).Thumbprint()
 		if err != nil {
-			identityResults <- identityResult{err: NewVerificationError(VerificationCodeRecordInvalid, false, "dnsid: ku key thumbprint failed", err)}
+			result.err = NewVerificationError(VerificationCodeRecordInvalid, false, "dnsid: ku key thumbprint failed", err)
 			return
 		}
 		if err := rejectIfEKKUCollide(signingKeyThumbprint, operationalKeyThumbprint); err != nil {
-			identityResults <- identityResult{err: err}
+			result.err = err
+			return
+		}
+		readerErr = <-preloadDone
+		preloadDone = nil
+		if readerErr != nil {
+			result.err = readerErr
 			return
 		}
 		vd := &VerifiedDomain{domain: normalized, record: rec, keySet: NewJWKS(kuSet), recordSigningKeySet: NewJWKS(set), signingKey: signingJWK, signingKeyThumbprint: signingKeyThumbprint, dnssecState: dnssec, dnsTTL: rdatas[0].TTL, jwksTLSCertificate: runtimeCert, ekTLSCertificate: jwksCert, operationalKeyThumbprint: operationalKeyThumbprint, kuKey: kuOpKey}
-		if err := m.enforceRecordPolicy(workCtx, rec, normalized, signingKeyThumbprint, operationalKeyThumbprint, vd); err != nil {
-			identityResults <- identityResult{err: err}
+		if err := m.enforceRecordPolicy(workCtx, reader, rec, normalized, signingKeyThumbprint, operationalKeyThumbprint, vd); err != nil {
+			result.err = err
 			return
 		}
-		identityResults <- identityResult{vd: vd}
+		vd.logReader = originalReader // Do not retain preloaded entries in the identity cache.
+		result.vd = vd
 	}()
 	go func() {
 		status, cert, err := m.fetchAgentStatus(workCtx, rec.StatusURI)
@@ -1398,11 +1434,7 @@ func (m *IdentityManager) enforceDNSSECPolicy(state DNSSECState) error {
 	}
 }
 
-func (m *IdentityManager) enforceRecordPolicy(ctx context.Context, rec *TXTRecord, domain, signingKeyThumbprint, operationalKeyThumbprint string, vd *VerifiedDomain) error {
-	reader, err := m.logReaderFor(rec.LogRef)
-	if err != nil {
-		return err
-	}
+func (m *IdentityManager) enforceRecordPolicy(ctx context.Context, reader dnsidlog.LogReader, rec *TXTRecord, domain, signingKeyThumbprint, operationalKeyThumbprint string, vd *VerifiedDomain) error {
 	if vd != nil {
 		vd.logReader = reader
 	}

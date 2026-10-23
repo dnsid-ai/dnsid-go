@@ -541,7 +541,7 @@ func NewIdentityCache(_ time.Duration) *IdentityCache {
 	return &IdentityCache{entries: make(map[identityCacheKey]*VerifiedDomain)}
 }
 
-// Get returns a deep copy of the cached entry for domain with CachedState
+// Get returns a shallow snapshot of the cached entry for domain with CachedState
 // "cached", or nil when the domain is absent or the entry has expired.
 // Expired entries are evicted on access. Get is safe for concurrent use and
 // returns nil on a nil receiver.
@@ -573,9 +573,9 @@ func (c *IdentityCache) get(domain string, context *IdentityManager) *VerifiedDo
 		if existing != nil && (existing.expiry.IsZero() || time.Now().Before(existing.expiry)) {
 			// Another goroutine refreshed it during the unlock gap: it's a
 			// valid cache hit now, so return the fresh entry instead of nil.
-			copy := cloneVerifiedDomain(existing)
+			copy := *existing
 			copy.cachedState = "cached"
-			return copy
+			return &copy
 		}
 		if existing != nil && existing.cacheInvalidated != nil {
 			existing.cacheInvalidated.Store(true)
@@ -583,10 +583,10 @@ func (c *IdentityCache) get(domain string, context *IdentityManager) *VerifiedDo
 		delete(c.entries, key)
 		return nil
 	}
-	copy := cloneVerifiedDomain(vd)
+	copy := *vd
 	c.mu.RUnlock()
 	copy.cachedState = "cached"
-	return copy
+	return &copy
 }
 
 // Put stores a deep copy with its original absolute expiry. Zero-TTL,
