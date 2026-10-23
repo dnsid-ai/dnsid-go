@@ -423,7 +423,7 @@ Evict removes the entry for domain, if present. The domain must already be in no
 func (c *IdentityCache) Get(domain string) *VerifiedDomain
 ```
 
-Get returns a deep copy of the cached entry for domain with CachedState "cached", or nil when the domain is absent or the entry has expired. Expired entries are evicted on access. Get is safe for concurrent use and returns nil on a nil receiver.
+Get returns a shallow snapshot of the cached entry for domain with CachedState "cached", or nil when the domain is absent or the entry has expired. Expired entries are evicted on access. Get is safe for concurrent use and returns nil on a nil receiver.
 
 <a name="IdentityCache.Put"></a>
 ### func \(\*IdentityCache\) [Put](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L595>)
@@ -547,7 +547,7 @@ func (m *IdentityManager) EntityKeyURL() string
 EntityKeyURL returns the HTTPS URL where the draft 01 entity \(ek\) JWKS should be served. It returns an empty string when no entity KeyProvider is configured. Draft 01 defines no default path, so an unset EntityKeyURL returns an empty string.
 
 <a name="IdentityManager.EvictDomain"></a>
-### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1644>)
+### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1676>)
 
 ```go
 func (m *IdentityManager) EvictDomain(domain string)
