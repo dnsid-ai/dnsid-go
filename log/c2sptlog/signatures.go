@@ -23,6 +23,7 @@ func verifyLifecycleVerifiedWithMigration(ctx context.Context, indexed []verifie
 	var currentOperationalThumb string
 	started := false
 	terminal := false
+	sawMigration := false
 	seen := make(map[string][]byte, len(indexed))
 	type authority struct{ entity, operational jwk.Key }
 	postStates := make(map[string]authority, len(indexed))
@@ -56,6 +57,9 @@ func verifyLifecycleVerifiedWithMigration(ctx context.Context, indexed []verifie
 			if !candidateAuthorizedByCurrentHistory(event, canonical, auth.entity, auth.operational) {
 				continue
 			}
+			if err := validateResolvedKeyIDs(auth.entity, auth.operational, event.InitialEntityPublicKey, event.InitialOperationalPublicKey, event.NewOperationalPublicKey); err != nil {
+				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: ambiguous authenticated key identifiers", err)
+			}
 			item.authorityEntity, item.authorityOperational = auth.entity, auth.operational
 			if terminal {
 				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeTerminalState, false, "dnsid: authenticated c2sp-tlog lifecycle event after terminal state", nil)
@@ -81,23 +85,31 @@ func verifyLifecycleVerifiedWithMigration(ctx context.Context, indexed []verifie
 				continue
 			}
 			if event.Type == dnsidlog.LogEventMigration {
+				sawMigration = true
 				if verifyMigration == nil {
-					return nil, nil, invalidMigration("dnsid: inbound MIGRATION requires verified prior-log history", nil)
+					continue
 				}
 				if event.PreviousLog == "" || event.NewLog == "" || event.FinalEntryRef == "" || event.PreviousLog == event.NewLog || (currentLog != "" && event.NewLog != currentLog) {
-					return nil, nil, invalidMigration("dnsid: inbound MIGRATION log references are invalid", nil)
+					continue
 				}
 				if method, _, err := dnsidlog.ParseLogRef(event.PreviousLog); err != nil {
-					return nil, nil, invalidMigration("dnsid: inbound MIGRATION previous log reference is invalid", err)
+					continue
 				} else if method == Method {
 					previous, _, err := ParseFinalEventRef(dnsidlog.LogRef(event.FinalEntryRef))
 					if err != nil || previous.String() != event.PreviousLog {
-						return nil, nil, invalidMigration("dnsid: inbound MIGRATION cutoff does not belong to the previous log", err)
+						continue
 					}
 				}
 				migration, err := verifyMigration(ctx, event)
 				if err != nil {
 					return nil, nil, invalidMigration("dnsid: inbound MIGRATION prior history verification failed", err)
+				}
+				if migration.EntityKey == nil {
+					return nil, nil, invalidMigration("dnsid: verified migration entity key is required", nil)
+				}
+				entityKid, _ := migration.EntityKey.KeyID()
+				if event.InitialEntityKid == "" || event.InitialEntityKid != entityKid || verifyEventSignature(migration.EntityKey, canonical, event.InitialEntitySignature) != nil {
+					continue
 				}
 				if err := validateMigrationResult(event, migration); err != nil {
 					return nil, nil, err
@@ -109,13 +121,6 @@ func verifyLifecycleVerifiedWithMigration(ctx context.Context, indexed []verifie
 				event.InitialEntityThumbprint, _ = thumbprint(entityKey)
 				event.InitialOperationalPublicKey = currentOperationalKey
 				event.InitialOperationalThumbprint = currentOperationalThumb
-				entityKid, _ := entityKey.KeyID()
-				if event.InitialEntityKid == "" || event.InitialEntityKid != entityKid {
-					return nil, nil, invalidMigration("dnsid: inbound MIGRATION signature kid does not match the verified entity key", nil)
-				}
-				if err := verifyEventSignature(entityKey, canonical, event.InitialEntitySignature); err != nil {
-					return nil, nil, invalidMigration("dnsid: inbound MIGRATION entity signature is invalid", err)
-				}
 				if item.parseError != nil {
 					return nil, nil, invalidMigration("dnsid: invalid authenticated migration payload", item.parseError)
 				}
@@ -220,6 +225,9 @@ func verifyLifecycleVerifiedWithMigration(ctx context.Context, indexed []verifie
 		nextSeq++
 	}
 	if len(out) == 0 {
+		if sawMigration {
+			return nil, nil, invalidMigration("dnsid: no authenticated c2sp-tlog migration genesis", nil)
+		}
 		return nil, nil, fmt.Errorf("dnsid: no valid c2sp-tlog lifecycle events")
 	}
 	if err := ctx.Err(); err != nil {
@@ -267,6 +275,9 @@ func candidateAuthorizedByCurrentHistory(event dnsidlog.LogEvent, canonical []by
 func validateMigrationResult(event dnsidlog.LogEvent, migration MigrationVerificationResult) error {
 	if migration.EntityKey == nil || migration.ActiveOperationalKey == nil || len(migration.PriorHistory) == 0 {
 		return invalidMigration("dnsid: inbound MIGRATION prior history and keys are required", nil)
+	}
+	if err := validateResolvedKeyIDs(migration.EntityKey, migration.ActiveOperationalKey); err != nil {
+		return invalidMigration("dnsid: ambiguous migration key identifiers", err)
 	}
 	entityThumb, err := thumbprint(migration.EntityKey)
 	if err != nil {

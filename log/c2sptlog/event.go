@@ -208,7 +208,7 @@ func payloadObjectFromEntry(entry []byte) (map[string]any, error) {
 		return nil, err
 	}
 	if !bytes.Equal(entry, canonical) {
-		return nil, fmt.Errorf("dnsid: c2sp-tlog entry is not canonical JCS")
+		return nil, fmt.Errorf("dnsid: c2sp-tlog entry has non-canonical JCS encoding")
 	}
 	return payload, nil
 }
@@ -587,6 +587,25 @@ func validateEmbeddedSignatureKids(event dnsidlog.LogEvent) error {
 		if event.NewOperationalKid != newKid {
 			return fmt.Errorf("dnsid: c2sp-tlog KEY_ROTATION new_op kid does not match new_ku")
 		}
+	}
+	return validateResolvedKeyIDs(event.InitialEntityPublicKey, event.InitialOperationalPublicKey, event.NewOperationalPublicKey)
+}
+
+func validateResolvedKeyIDs(keys ...jwk.Key) error {
+	resolved := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if key == nil {
+			continue
+		}
+		kid, _ := key.KeyID()
+		thumb, err := thumbprint(key)
+		if err != nil {
+			return err
+		}
+		if prior, exists := resolved[kid]; exists && prior != thumb {
+			return fmt.Errorf("dnsid: duplicate c2sp-tlog kid %q maps to different keys", kid)
+		}
+		resolved[kid] = thumb
 	}
 	return nil
 }

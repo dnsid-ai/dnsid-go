@@ -238,7 +238,7 @@ func VerificationContext(ctx context.Context) (context.Context, context.CancelFu
 VerificationContext preserves a caller deadline, or supplies the finite SDK default. Nested verification operations must pass the returned context to their children.
 
 <a name="AgentDetail"></a>
-## type [AgentState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L22>)
+## type [AgentState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L23>)
 
 AgentState is the canonical typed lifecycle state, defined in the log package \(which this package imports\). Re\-exported here so callers can use dnsid.AgentState without importing the log package directly.
 
@@ -247,7 +247,7 @@ type AgentState = dnsidlog.AgentState
 ```
 
 <a name="AgentStates"></a>
-### func [AgentStates](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L43>)
+### func [AgentStates](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L44>)
 
 ```go
 func AgentStates() []AgentState
@@ -256,7 +256,7 @@ func AgentStates() []AgentState
 AgentStates returns a copy of the six canonical lifecycle states in order.
 
 <a name="ParseAgentState"></a>
-### func [ParseAgentState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L38>)
+### func [ParseAgentState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L39>)
 
 ```go
 func ParseAgentState(s string) (AgentState, error)
@@ -265,7 +265,7 @@ func ParseAgentState(s string) (AgentState, error)
 ParseAgentState converts a raw string into the typed AgentState, returning an error if the value is not one of the six canonical lifecycle states. This allows callers that hold string values \(e.g. from JSON or databases\) to safely convert to the typed constant.
 
 <a name="AgentStatus"></a>
-## type [AgentStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L48-L52>)
+## type [AgentStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L49-L53>)
 
 AgentStatus is the protocol status document fetched from su=.
 
@@ -278,7 +278,7 @@ type AgentStatus struct {
 ```
 
 <a name="AgentStatus.Validate"></a>
-### func \(\*AgentStatus\) [Validate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L59>)
+### func \(\*AgentStatus\) [Validate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L60>)
 
 ```go
 func (s *AgentStatus) Validate() error
@@ -388,7 +388,7 @@ type HTTPSFetcher interface {
 ```
 
 <a name="IdentityCache"></a>
-## type [IdentityCache](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L524-L532>)
+## type [IdentityCache](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L528-L536>)
 
 IdentityCache caches domains in manager\-private verification namespaces. Direct Get/Put/Evict calls use the standalone namespace; managers sharing this backend never consume each other's results. Capacity eviction is global.
 
@@ -399,7 +399,7 @@ type IdentityCache struct {
 ```
 
 <a name="NewIdentityCache"></a>
-### func [NewIdentityCache](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L536>)
+### func [NewIdentityCache](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L540>)
 
 ```go
 func NewIdentityCache(_ time.Duration) *IdentityCache
@@ -408,7 +408,7 @@ func NewIdentityCache(_ time.Duration) *IdentityCache
 NewIdentityCache constructs a bounded, empty cache. The legacy defaultTTL parameter is ignored: only the original absolute evidence expiry is used.
 
 <a name="IdentityCache.Evict"></a>
-### func \(\*IdentityCache\) [Evict](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L622>)
+### func \(\*IdentityCache\) [Evict](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L644>)
 
 ```go
 func (c *IdentityCache) Evict(domain string)
@@ -417,7 +417,7 @@ func (c *IdentityCache) Evict(domain string)
 Evict removes the entry for domain, if present. The domain must already be in normalized form \(see NormalizeFQDN\); IdentityManager.EvictDomain normalizes for you. Evict is safe for concurrent use and is a no\-op on a nil receiver.
 
 <a name="IdentityCache.Get"></a>
-### func \(\*IdentityCache\) [Get](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L544>)
+### func \(\*IdentityCache\) [Get](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L548>)
 
 ```go
 func (c *IdentityCache) Get(domain string) *VerifiedDomain
@@ -426,7 +426,7 @@ func (c *IdentityCache) Get(domain string) *VerifiedDomain
 Get returns a deep copy of the cached entry for domain with CachedState "cached", or nil when the domain is absent or the entry has expired. Expired entries are evicted on access. Get is safe for concurrent use and returns nil on a nil receiver.
 
 <a name="IdentityCache.Put"></a>
-### func \(\*IdentityCache\) [Put](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L588>)
+### func \(\*IdentityCache\) [Put](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L595>)
 
 ```go
 func (c *IdentityCache) Put(vd *VerifiedDomain)
@@ -475,7 +475,7 @@ type IdentityManager struct {
 ```
 
 <a name="NewIdentityManager"></a>
-### func [NewIdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L733>)
+### func [NewIdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L734>)
 
 ```go
 func NewIdentityManager(cfg Config, kp KeyProvider, opts ...IdentityManagerOption) (*IdentityManager, error)
@@ -484,7 +484,7 @@ func NewIdentityManager(cfg Config, kp KeyProvider, opts ...IdentityManagerOptio
 NewIdentityManager constructs the DNSid SDK facade. A nil cfg.Identity with a nil KeyProvider yields a verification\-only manager. A non\-nil cfg.Identity requires a KeyProvider and enables acting as the configured local identity \(record creation, JWKS publication, lifecycle events\). Configuration is validated and snapshotted before any network work; it returns an \*ArgumentError for invalid configuration, a KeyProvider or entity KeyProvider without identity, identity without a KeyProvider, or Config.Transport settings whose only SDK\-managed consumers were all injected.
 
 <a name="NewVerifier"></a>
-### func [NewVerifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L802>)
+### func [NewVerifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L803>)
 
 ```go
 func NewVerifier(opts ...IdentityManagerOption) (*IdentityManager, error)
@@ -502,7 +502,7 @@ func (m *IdentityManager) AwaitRegistryManagedPublication(ctx context.Context, c
 AwaitRegistryManagedPublication waits for registry\-managed DNS publication, then verifies the record observed through DNS. Required log authorization, such as C2SP ISSUANCE consent, must be completed before or concurrently with this wait through the bound log package.
 
 <a name="IdentityManager.BuildUnsignedTXTRecord"></a>
-### func \(\*IdentityManager\) [BuildUnsignedTXTRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L851>)
+### func \(\*IdentityManager\) [BuildUnsignedTXTRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L852>)
 
 ```go
 func (m *IdentityManager) BuildUnsignedTXTRecord() (*TXTRecord, error)
@@ -520,7 +520,7 @@ func (m *IdentityManager) CanonicalizeLogEvent(event dnsidlog.LogEvent) ([]byte,
 CanonicalizeLogEvent returns the log\-method\-specific bytes covered by every lifecycle\-event signature. It requires a bound log reader, but not a write\-capable log or access to any private key.
 
 <a name="IdentityManager.CreateTXTRecord"></a>
-### func \(\*IdentityManager\) [CreateTXTRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L881>)
+### func \(\*IdentityManager\) [CreateTXTRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L882>)
 
 ```go
 func (m *IdentityManager) CreateTXTRecord() (*TXTRecord, error)
@@ -529,7 +529,7 @@ func (m *IdentityManager) CreateTXTRecord() (*TXTRecord, error)
 CreateTXTRecord builds and signs this identity's \_dnsid TXT record with the entity key.
 
 <a name="IdentityManager.Domain"></a>
-### func \(\*IdentityManager\) [Domain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L689>)
+### func \(\*IdentityManager\) [Domain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L690>)
 
 ```go
 func (m *IdentityManager) Domain() string
@@ -538,7 +538,7 @@ func (m *IdentityManager) Domain() string
 Domain returns this manager's local DNSid identity domain, or an empty string when the manager was constructed for verify\-only use.
 
 <a name="IdentityManager.EntityKeyURL"></a>
-### func \(\*IdentityManager\) [EntityKeyURL](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L718>)
+### func \(\*IdentityManager\) [EntityKeyURL](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L719>)
 
 ```go
 func (m *IdentityManager) EntityKeyURL() string
@@ -547,7 +547,7 @@ func (m *IdentityManager) EntityKeyURL() string
 EntityKeyURL returns the HTTPS URL where the draft 01 entity \(ek\) JWKS should be served. It returns an empty string when no entity KeyProvider is configured. Draft 01 defines no default path, so an unset EntityKeyURL returns an empty string.
 
 <a name="IdentityManager.EvictDomain"></a>
-### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1634>)
+### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1644>)
 
 ```go
 func (m *IdentityManager) EvictDomain(domain string)
@@ -565,7 +565,7 @@ func (m *IdentityManager) GenerateIssuanceEvent(ctx context.Context) (dnsidlog.L
 GenerateIssuanceEvent builds a draft 01 ISSUANCE event, signs it with the entity key, countersigns it with the operational key, and writes it locally.
 
 <a name="IdentityManager.GetEntityKeySet"></a>
-### func \(\*IdentityManager\) [GetEntityKeySet](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L822>)
+### func \(\*IdentityManager\) [GetEntityKeySet](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L823>)
 
 ```go
 func (m *IdentityManager) GetEntityKeySet() *JWKS
@@ -574,7 +574,7 @@ func (m *IdentityManager) GetEntityKeySet() *JWKS
 GetEntityKeySet returns the current active entity \(ek\) public signing key for publication. Draft 01 live endpoints expose exactly one current key. It returns nil when no entity KeyProvider is configured.
 
 <a name="IdentityManager.GetKeySet"></a>
-### func \(\*IdentityManager\) [GetKeySet](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L808>)
+### func \(\*IdentityManager\) [GetKeySet](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L809>)
 
 ```go
 func (m *IdentityManager) GetKeySet() *JWKS
@@ -583,7 +583,7 @@ func (m *IdentityManager) GetKeySet() *JWKS
 GetKeySet returns the current active operational \(ku\) public signing key for publication. Draft 01 live endpoints expose exactly one current key.
 
 <a name="IdentityManager.KeyProvider"></a>
-### func \(\*IdentityManager\) [KeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L697>)
+### func \(\*IdentityManager\) [KeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L698>)
 
 ```go
 func (m *IdentityManager) KeyProvider() KeyProvider
@@ -601,7 +601,7 @@ func (m *IdentityManager) LoadDomainLog(ctx context.Context, vd *VerifiedDomain)
 LoadDomainLog rebuilds the verified lifecycle event history for a verified domain through the log reader bound during verification. It returns a \*VerificationError with VerificationCodeLogError when vd carries no log reader or history reconstruction fails.
 
 <a name="IdentityManager.OperationalKeyURL"></a>
-### func \(\*IdentityManager\) [OperationalKeyURL](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L707>)
+### func \(\*IdentityManager\) [OperationalKeyURL](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L708>)
 
 ```go
 func (m *IdentityManager) OperationalKeyURL() string
@@ -619,7 +619,7 @@ func (m *IdentityManager) PublishClientControlledRecord(ctx context.Context, cli
 PublishClientControlledRecord signs registry\-prepared canonical TXT content when the client controls the accountable\-entity key.
 
 <a name="IdentityManager.RefreshDomain"></a>
-### func \(\*IdentityManager\) [RefreshDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L995>)
+### func \(\*IdentityManager\) [RefreshDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L996>)
 
 ```go
 func (m *IdentityManager) RefreshDomain(ctx context.Context, domain string, opts VerifyDomainOpts) (*VerifiedDomain, error)
@@ -655,7 +655,7 @@ func (m *IdentityManager) SignLogEvent(event dnsidlog.LogEvent, role LogSignerRo
 SignLogEvent adds one lifecycle signature without writing the event. This supports split signing where the accountable entity and operational key are held by different SDK instances or machines.
 
 <a name="IdentityManager.VerifyDomain"></a>
-### func \(\*IdentityManager\) [VerifyDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L984>)
+### func \(\*IdentityManager\) [VerifyDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L985>)
 
 ```go
 func (m *IdentityManager) VerifyDomain(ctx context.Context, domain string) (*VerifiedDomain, error)
@@ -793,7 +793,7 @@ status: ACTIVE
 </details>
 
 <a name="IdentityManager.VerifyDomainWithOptions"></a>
-### func \(\*IdentityManager\) [VerifyDomainWithOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1016>)
+### func \(\*IdentityManager\) [VerifyDomainWithOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1017>)
 
 ```go
 func (m *IdentityManager) VerifyDomainWithOptions(ctx context.Context, domain string, opts VerifyDomainOpts) (*VerifiedDomain, error)
@@ -802,7 +802,7 @@ func (m *IdentityManager) VerifyDomainWithOptions(ctx context.Context, domain st
 VerifyDomainWithOptions performs core DNSid trust establishment with optional peer inputs, then enforces any configured VerificationConfig.TrustedEntities acceptance policy. Acceptance runs on every successful path, including cache hits; verified protocol evidence is cached before acceptance, and denials are never cached. A denial is reported as a permanent VerificationCodeCounterpartyNotAccepted error.
 
 <a name="IdentityManager.VerifyLocalPublication"></a>
-### func \(\*IdentityManager\) [VerifyLocalPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1003>)
+### func \(\*IdentityManager\) [VerifyLocalPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1004>)
 
 ```go
 func (m *IdentityManager) VerifyLocalPublication(ctx context.Context) (*VerifiedDomain, error)
@@ -829,7 +829,7 @@ func (m *IdentityManager) WriteSignedEvent(ctx context.Context, event dnsidlog.L
 WriteSignedEvent writes an event without adding or replacing signatures. It rejects events missing signatures required by the shared lifecycle role model. Log bindings perform method\-specific cryptographic validation.
 
 <a name="IdentityManagerOption"></a>
-## type [IdentityManagerOption](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L609>)
+## type [IdentityManagerOption](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L610>)
 
 IdentityManagerOption configures IdentityManager.
 
@@ -838,7 +838,7 @@ type IdentityManagerOption func(*IdentityManager)
 ```
 
 <a name="WithDNSResolver"></a>
-### func [WithDNSResolver](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L621>)
+### func [WithDNSResolver](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L622>)
 
 ```go
 func WithDNSResolver(r DNSResolver) IdentityManagerOption
@@ -847,7 +847,7 @@ func WithDNSResolver(r DNSResolver) IdentityManagerOption
 WithDNSResolver overrides the built\-in resolver. Resolvers used with DNSSECModeValidated or DNSSECModeRequired must report definitive DNSSEC states rather than DNSSECStateUnknown.
 
 <a name="WithEntityKeyProvider"></a>
-### func [WithEntityKeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L614>)
+### func [WithEntityKeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L615>)
 
 ```go
 func WithEntityKeyProvider(kp KeyProvider) IdentityManagerOption
@@ -856,7 +856,7 @@ func WithEntityKeyProvider(kp KeyProvider) IdentityManagerOption
 WithEntityKeyProvider configures the accountable\-entity key used to sign identity records and lifecycle events. Verification\-only managers do not need an entity key provider.
 
 <a name="WithHTTPClient"></a>
-### func [WithHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L673>)
+### func [WithHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L674>)
 
 ```go
 func WithHTTPClient(client *http.Client) IdentityManagerOption
@@ -865,7 +865,7 @@ func WithHTTPClient(client *http.Client) IdentityManagerOption
 WithHTTPClient bases SDK\-managed HTTPS fetches on client, preserving its TLS and timeout configuration while wrapping its transport with the SDK's SSRF\-safe, DNS\-rebinding\-resistant dialer. The client is caller\-owned transport: Config.Transport does not apply to it.
 
 <a name="WithHTTPSFetcher"></a>
-### func [WithHTTPSFetcher](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L637>)
+### func [WithHTTPSFetcher](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L638>)
 
 ```go
 func WithHTTPSFetcher(f HTTPSFetcher) IdentityManagerOption
@@ -874,7 +874,7 @@ func WithHTTPSFetcher(f HTTPSFetcher) IdentityManagerOption
 WithHTTPSFetcher replaces the SDK\-managed HTTPS JSON fetcher. The supplied fetcher becomes responsible for the transport\-level protections the default provides \(HTTPS\-only URLs, host allow\-listing, SSRF\-safe dialing, and response size limits\) and must be safe for concurrent use. Config.Transport does not apply to an injected fetcher.
 
 <a name="WithIdentityCache"></a>
-### func [WithIdentityCache](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L651>)
+### func [WithIdentityCache](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L652>)
 
 ```go
 func WithIdentityCache(cache *IdentityCache) IdentityManagerOption
@@ -883,7 +883,7 @@ func WithIdentityCache(cache *IdentityCache) IdentityManagerOption
 WithIdentityCache shares a bounded storage backend, not verification results. Each manager uses a private namespace even when the backend is injected. The supplied cache is retained by the manager and must not be nil.
 
 <a name="WithLogRegistry"></a>
-### func [WithLogRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L665>)
+### func [WithLogRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L666>)
 
 ```go
 func WithLogRegistry(r *dnsidlog.LogRegistry) IdentityManagerOption
@@ -1022,7 +1022,7 @@ type VerificationConfig struct {
 ```
 
 <a name="VerificationError"></a>
-## type [VerifiedDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L80-L110>)
+## type [VerifiedDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L81-L113>)
 
 VerifiedDomain is the result of successful DNSid domain verification.
 
@@ -1042,7 +1042,7 @@ func VerifyIdentity(ctx context.Context, resolver IdentityResolver, domain strin
 VerifyIdentity resolves an application signer with trusted current\-peer evidence. Resolvers without the options API cannot authenticate an mtls identity.
 
 <a name="VerifiedDomain.CachedState"></a>
-### func \(\*VerifiedDomain\) [CachedState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L279>)
+### func \(\*VerifiedDomain\) [CachedState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L282>)
 
 ```go
 func (v *VerifiedDomain) CachedState() string
@@ -1060,7 +1060,7 @@ func (v *VerifiedDomain) CheckFreshness(acquiredAfter time.Time) error
 CheckFreshness checks DNS, key\-age, and identity TLS evidence at the current time. acquiredAfter is the start of this invocation's identity resolution: zero\-TTL evidence is usable only if freshly verified within that invocation. It does not repeat acceptance, current\-peer, or operational\-key checks.
 
 <a name="VerifiedDomain.DNSSECState"></a>
-### func \(\*VerifiedDomain\) [DNSSECState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L169>)
+### func \(\*VerifiedDomain\) [DNSSECState](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L172>)
 
 ```go
 func (v *VerifiedDomain) DNSSECState() DNSSECState
@@ -1069,7 +1069,7 @@ func (v *VerifiedDomain) DNSSECState() DNSSECState
 DNSSECState returns the resolver's DNSSEC validation result for the \_dnsid lookup. It returns DNSSECStateUnknown on a nil receiver.
 
 <a name="VerifiedDomain.DNSTTL"></a>
-### func \(\*VerifiedDomain\) [DNSTTL](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L197>)
+### func \(\*VerifiedDomain\) [DNSTTL](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L200>)
 
 ```go
 func (v *VerifiedDomain) DNSTTL() time.Duration
@@ -1078,7 +1078,7 @@ func (v *VerifiedDomain) DNSTTL() time.Duration
 DNSTTL returns the TTL of the \_dnsid TXT record as reported by the resolver, or 0 on a nil receiver.
 
 <a name="VerifiedDomain.Domain"></a>
-### func \(\*VerifiedDomain\) [Domain](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L114>)
+### func \(\*VerifiedDomain\) [Domain](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L117>)
 
 ```go
 func (v *VerifiedDomain) Domain() string
@@ -1087,7 +1087,7 @@ func (v *VerifiedDomain) Domain() string
 Domain returns the verified identity domain in normalized FQDN form. It returns an empty string on a nil receiver.
 
 <a name="VerifiedDomain.Expiry"></a>
-### func \(\*VerifiedDomain\) [Expiry](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L269>)
+### func \(\*VerifiedDomain\) [Expiry](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L272>)
 
 ```go
 func (v *VerifiedDomain) Expiry() time.Time
@@ -1096,7 +1096,7 @@ func (v *VerifiedDomain) Expiry() time.Time
 Expiry returns the cache\-reuse deadline: the minimum of the DNS TTL, the ka= key\-age deadline, and identity TLS certificate expiries. Fresh zero\-TTL evidence may still be used by its acquiring operation; use CheckFreshness to check operation validity. The zero time means no bound or a nil receiver.
 
 <a name="VerifiedDomain.JWKSCertificate"></a>
-### func \(\*VerifiedDomain\) [JWKSCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L206>)
+### func \(\*VerifiedDomain\) [JWKSCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L209>)
 
 ```go
 func (v *VerifiedDomain) JWKSCertificate() *tls.Certificate
@@ -1105,7 +1105,7 @@ func (v *VerifiedDomain) JWKSCertificate() *tls.Certificate
 JWKSCertificate returns a copy of the TLS certificate presented by the runtime \(ku\) JWKS endpoint, or nil when unavailable.
 
 <a name="VerifiedDomain.JWKSLeafCertificate"></a>
-### func \(\*VerifiedDomain\) [JWKSLeafCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L215>)
+### func \(\*VerifiedDomain\) [JWKSLeafCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L218>)
 
 ```go
 func (v *VerifiedDomain) JWKSLeafCertificate() *x509.Certificate
@@ -1114,7 +1114,7 @@ func (v *VerifiedDomain) JWKSLeafCertificate() *x509.Certificate
 JWKSLeafCertificate returns a copy of the leaf certificate presented by the runtime \(ku\) JWKS endpoint, or nil when unavailable.
 
 <a name="VerifiedDomain.KeyBoundAt"></a>
-### func \(\*VerifiedDomain\) [KeyBoundAt](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L243>)
+### func \(\*VerifiedDomain\) [KeyBoundAt](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L246>)
 
 ```go
 func (v *VerifiedDomain) KeyBoundAt() time.Time
@@ -1123,7 +1123,7 @@ func (v *VerifiedDomain) KeyBoundAt() time.Time
 KeyBoundAt returns when the operational key was introduced according to the lifecycle log. It is set only when the record carries a ka= key\-age policy; otherwise, and on a nil receiver, it returns the zero time.
 
 <a name="VerifiedDomain.KeySet"></a>
-### func \(\*VerifiedDomain\) [KeySet](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L132>)
+### func \(\*VerifiedDomain\) [KeySet](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L135>)
 
 ```go
 func (v *VerifiedDomain) KeySet() *JWKS
@@ -1132,7 +1132,7 @@ func (v *VerifiedDomain) KeySet() *JWKS
 KeySet returns a deep copy of the agent runtime \(ku\) JWKS — the key set the agent signs with at runtime — or nil on a nil receiver.
 
 <a name="VerifiedDomain.LastStatusCheckAt"></a>
-### func \(\*VerifiedDomain\) [LastStatusCheckAt](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L188>)
+### func \(\*VerifiedDomain\) [LastStatusCheckAt](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L191>)
 
 ```go
 func (v *VerifiedDomain) LastStatusCheckAt() time.Time
@@ -1141,7 +1141,7 @@ func (v *VerifiedDomain) LastStatusCheckAt() time.Time
 LastStatusCheckAt returns when the agent status was last fetched, which may be later than VerifiedAt for entries refreshed from the cache. It returns the zero time on a nil receiver.
 
 <a name="VerifiedDomain.LogReader"></a>
-### func \(\*VerifiedDomain\) [LogReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L258>)
+### func \(\*VerifiedDomain\) [LogReader](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L261>)
 
 ```go
 func (v *VerifiedDomain) LogReader() dnsidlog.LogReader
@@ -1150,7 +1150,7 @@ func (v *VerifiedDomain) LogReader() dnsidlog.LogReader
 LogReader returns the lifecycle log reader bound to the record's lr= reference during verification, or nil on a nil receiver.
 
 <a name="VerifiedDomain.Record"></a>
-### func \(\*VerifiedDomain\) [Record](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L123>)
+### func \(\*VerifiedDomain\) [Record](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L126>)
 
 ```go
 func (v *VerifiedDomain) Record() *TXTRecord
@@ -1159,7 +1159,7 @@ func (v *VerifiedDomain) Record() *TXTRecord
 Record returns a deep copy of the verified \_dnsid TXT record, or nil on a nil receiver. Mutating the returned record does not affect the cached entry.
 
 <a name="VerifiedDomain.RecordSigningKeySet"></a>
-### func \(\*VerifiedDomain\) [RecordSigningKeySet](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L141>)
+### func \(\*VerifiedDomain\) [RecordSigningKeySet](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L144>)
 
 ```go
 func (v *VerifiedDomain) RecordSigningKeySet() *JWKS
@@ -1168,7 +1168,7 @@ func (v *VerifiedDomain) RecordSigningKeySet() *JWKS
 RecordSigningKeySet returns a deep copy of the accountable\-entity \(ek\) JWKS that verified the record signature, or nil on a nil receiver.
 
 <a name="VerifiedDomain.RequiresLogCheck"></a>
-### func \(\*VerifiedDomain\) [RequiresLogCheck](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L252>)
+### func \(\*VerifiedDomain\) [RequiresLogCheck](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L255>)
 
 ```go
 func (v *VerifiedDomain) RequiresLogCheck() bool
@@ -1177,7 +1177,7 @@ func (v *VerifiedDomain) RequiresLogCheck() bool
 RequiresLogCheck reports whether the verified record carries the logchk policy signal. Applications decide which operations require fresh evidence.
 
 <a name="VerifiedDomain.SigningKey"></a>
-### func \(\*VerifiedDomain\) [SigningKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L150>)
+### func \(\*VerifiedDomain\) [SigningKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L153>)
 
 ```go
 func (v *VerifiedDomain) SigningKey() *JWK
@@ -1186,7 +1186,7 @@ func (v *VerifiedDomain) SigningKey() *JWK
 SigningKey returns a deep copy of the entity key that produced the record's sg= signature, or nil on a nil receiver.
 
 <a name="VerifiedDomain.Status"></a>
-### func \(\*VerifiedDomain\) [Status](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L160>)
+### func \(\*VerifiedDomain\) [Status](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L163>)
 
 ```go
 func (v *VerifiedDomain) Status() *AgentStatus
@@ -1195,7 +1195,7 @@ func (v *VerifiedDomain) Status() *AgentStatus
 Status returns a copy of the agent status document fetched from the su= endpoint, or nil on a nil receiver. Verification only succeeds for ACTIVE agents, so the returned status always reports State "ACTIVE".
 
 <a name="VerifiedDomain.StatusCertificate"></a>
-### func \(\*VerifiedDomain\) [StatusCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L224>)
+### func \(\*VerifiedDomain\) [StatusCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L227>)
 
 ```go
 func (v *VerifiedDomain) StatusCertificate() *tls.Certificate
@@ -1204,7 +1204,7 @@ func (v *VerifiedDomain) StatusCertificate() *tls.Certificate
 StatusCertificate returns a copy of the TLS certificate presented by the status \(su\) endpoint, or nil when unavailable.
 
 <a name="VerifiedDomain.StatusLeafCertificate"></a>
-### func \(\*VerifiedDomain\) [StatusLeafCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L233>)
+### func \(\*VerifiedDomain\) [StatusLeafCertificate](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L236>)
 
 ```go
 func (v *VerifiedDomain) StatusLeafCertificate() *x509.Certificate
@@ -1213,7 +1213,7 @@ func (v *VerifiedDomain) StatusLeafCertificate() *x509.Certificate
 StatusLeafCertificate returns a copy of the leaf certificate presented by the status \(su\) endpoint, or nil when unavailable.
 
 <a name="VerifiedDomain.VerifiedAt"></a>
-### func \(\*VerifiedDomain\) [VerifiedAt](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L178>)
+### func \(\*VerifiedDomain\) [VerifiedAt](<https://github.com/dnsid-ai/dnsid-go/blob/main/cache.go#L181>)
 
 ```go
 func (v *VerifiedDomain) VerifiedAt() time.Time

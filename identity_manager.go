@@ -595,14 +595,15 @@ type verificationWorkKey struct {
 }
 
 type inFlightVerification struct {
-	startedAt   time.Time
-	superseded  bool
-	invalidated error
-	done        chan struct{}
-	cancel      context.CancelFunc
-	waiters     int
-	result      *VerifiedDomain
-	err         error
+	startedAt        time.Time
+	acquisitionFloor time.Time
+	superseded       bool
+	invalidated      error
+	done             chan struct{}
+	cancel           context.CancelFunc
+	waiters          int
+	result           *VerifiedDomain
+	err              error
 }
 
 // IdentityManagerOption configures IdentityManager.
@@ -1291,13 +1292,21 @@ func (m *IdentityManager) coalesceVerification(ctx context.Context, domain strin
 		calls[key] = call
 		go func() {
 			result, err := work(sharedCtx)
+			if err == nil {
+				err = sharedCtx.Err()
+			}
 			cancel()
 
 			m.inFlightMu.Lock()
 			if err == nil && call.invalidated != nil {
 				result, err = nil, call.invalidated
 			}
-			if err == nil && !call.superseded {
+			if err == nil && result != nil && !call.superseded && !result.acquiredAt.Before(call.acquisitionFloor) {
+				for otherKey, other := range calls {
+					if otherKey.domain == domain && result.acquiredAt.After(other.acquisitionFloor) {
+						other.acquisitionFloor = result.acquiredAt
+					}
+				}
 				if kind != statusRefresh {
 					for otherKey, other := range calls {
 						if otherKey.domain == domain && other.startedAt.Before(call.startedAt) {
@@ -1326,12 +1335,12 @@ func (m *IdentityManager) coalesceVerification(ctx context.Context, domain strin
 		return cloneVerifiedDomain(call.result), call.err
 	case <-ctx.Done():
 		m.inFlightMu.Lock()
-		if calls[key] == call {
-			call.waiters--
-			if call.waiters == 0 {
+		call.waiters--
+		if call.waiters == 0 {
+			if calls[key] == call {
 				delete(calls, key)
-				call.cancel()
 			}
+			call.cancel()
 		}
 		m.inFlightMu.Unlock()
 		return nil, ctx.Err()
@@ -1546,6 +1555,7 @@ func (m *IdentityManager) invalidateNonActiveDomain(domain string, err error) {
 	for key, call := range m.verifying {
 		if key.domain == domain {
 			call.superseded, call.invalidated = true, err
+			delete(m.verifying, key)
 		}
 	}
 }
@@ -1633,7 +1643,15 @@ func (m *IdentityManager) fetchAgentStatus(ctx context.Context, statusURL string
 // normalization are ignored.
 func (m *IdentityManager) EvictDomain(domain string) {
 	if d, err := NormalizeFQDN(domain); err == nil {
+		m.inFlightMu.Lock()
+		defer m.inFlightMu.Unlock()
 		m.cache.evict(d, m)
+		for key, call := range m.verifying {
+			if key.domain == d {
+				call.superseded = true
+				delete(m.verifying, key)
+			}
+		}
 	}
 }
 

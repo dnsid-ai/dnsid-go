@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
@@ -102,10 +103,10 @@ func (r Reference) Validate() (err error) {
 	if u.User != nil {
 		return fmt.Errorf("dnsid: c2sp-tlog log prefix must not contain userinfo")
 	}
-	if u.RawQuery != "" || u.Fragment != "" {
+	if strings.ContainsAny(r.LogPrefix, "?#") {
 		return fmt.Errorf("dnsid: c2sp-tlog log prefix must not contain query or fragment")
 	}
-	if u.Scheme != strings.ToLower(u.Scheme) {
+	if !strings.HasPrefix(r.LogPrefix, u.Scheme+"://") {
 		return fmt.Errorf("dnsid: c2sp-tlog log prefix scheme must be lowercase")
 	}
 	if strings.Contains(u.EscapedPath(), "/./") || strings.Contains(u.EscapedPath(), "/../") || strings.HasSuffix(u.EscapedPath(), "/.") || strings.HasSuffix(u.EscapedPath(), "/..") {
@@ -120,6 +121,11 @@ func (r Reference) Validate() (err error) {
 	if u.Scheme != "https" && u.Scheme != "http" {
 		return fmt.Errorf("dnsid: c2sp-tlog log prefix must use http or https")
 	}
+	for _, char := range u.Hostname() {
+		if char > 127 {
+			return fmt.Errorf("dnsid: c2sp-tlog log prefix host must be ASCII")
+		}
+	}
 	if u.Hostname() != strings.ToLower(u.Hostname()) {
 		return fmt.Errorf("dnsid: c2sp-tlog log prefix host must be lowercase")
 	}
@@ -132,7 +138,17 @@ func (r Reference) Validate() (err error) {
 	if r.StreamID == "" {
 		return fmt.Errorf("dnsid: c2sp-tlog stream id is required")
 	}
-	return nil
+	for i := 0; i < len(r.StreamID); i++ {
+		if isUnreserved(r.StreamID[i]) {
+			continue
+		}
+		if r.StreamID[i] != '%' || i+2 >= len(r.StreamID) || !strings.ContainsRune("0123456789abcdefABCDEF", rune(r.StreamID[i+1])) || !strings.ContainsRune("0123456789abcdefABCDEF", rune(r.StreamID[i+2])) {
+			return fmt.Errorf("dnsid: c2sp-tlog stream id must contain only unreserved or percent-encoded characters")
+		}
+		i += 2
+	}
+	_, err = r.Origin()
+	return err
 }
 
 func validPrivateScope(scope string) bool {
@@ -205,7 +221,11 @@ func (r Reference) Origin() (origin string, err error) {
 	if strings.Contains(host, ":") && u.Port() != "" {
 		host = net.JoinHostPort(u.Hostname(), u.Port())
 	}
-	return host + path, nil
+	origin = host + path
+	if strings.ContainsRune(origin, '+') || strings.IndexFunc(origin, unicode.IsSpace) >= 0 {
+		return "", fmt.Errorf("dnsid: c2sp-tlog origin is not a valid signed-note key name")
+	}
+	return origin, nil
 }
 
 // FinalEventRef returns the reference of the entry at index in this stream,

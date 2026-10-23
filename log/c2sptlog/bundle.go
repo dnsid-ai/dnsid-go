@@ -655,7 +655,7 @@ func bundleUint(object map[string]any, field string) (uint64, error) {
 		return 0, fmt.Errorf("dnsid: c2sp stream bundle field %q must be an integer", field)
 	}
 	value, err := number.Int64()
-	if err != nil || value < 0 {
+	if err != nil || value < 0 || value > maxJSONInteger {
 		return 0, fmt.Errorf("dnsid: c2sp stream bundle field %q must be a non-negative integer", field)
 	}
 	return uint64(value), nil

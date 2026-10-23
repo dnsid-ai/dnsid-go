@@ -384,7 +384,9 @@ func TestRebuildHistoryIgnoresCandidateWithInvalidProof(t *testing.T) {
 	client, err := New(
 		"c2sp-tlog:testnet:http://dnsid-ledger:8080/log#identity-01",
 		WithSource(source),
-		WithPolicy(Policy{LogVerifier: verifier}),
+		WithPolicy(Policy{LogVerifier: verifier, CheckpointTime: func(*formatlog.Checkpoint, *note.Note) (time.Time, error) {
+			return time.Unix(1782172801, 0).UTC(), nil
+		}}),
 	)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1578,7 +1580,7 @@ func TestVerifyProofSingleEntryAndNegatives(t *testing.T) {
 	}
 }
 
-func TestAcceptedCheckpointTimeUsesQuorumThreshold(t *testing.T) {
+func TestAcceptedCheckpointTimeUsesMinimumQuorumTime(t *testing.T) {
 	_, logVKey, err := note.GenerateKey(rand.Reader, "log")
 	if err != nil {
 		t.Fatalf("GenerateKey log: %v", err)
@@ -1619,8 +1621,8 @@ func TestAcceptedCheckpointTimeUsesQuorumThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("acceptedCheckpointTime: %v", err)
 	}
-	if !got.Equal(t2) {
-		t.Fatalf("acceptedCheckpointTime = %s, want quorum threshold %s", got, t2)
+	if !got.Equal(t1) {
+		t.Fatalf("acceptedCheckpointTime = %s, want minimum quorum time %s", got, t1)
 	}
 }
 

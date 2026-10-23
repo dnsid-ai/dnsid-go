@@ -19,6 +19,9 @@ import (
 func TestScanSourceRebuildsSelectedHistoryFromAuthenticatedGlobalScan(t *testing.T) {
 	entries := [][]byte{[]byte(`{"not":"dnsid"}`), []byte(issuanceEntry)}
 	policy, resources := scanFixture(t, entries)
+	policy.CheckpointTime = func(*formatlog.Checkpoint, *note.Note) (time.Time, error) {
+		return time.Unix(1782172801, 0).UTC(), nil
+	}
 	httpClient := scanHTTPClient(resources)
 	source, err := NewScanSource(policy, ScanSourceConfig{
 		Transport:   httpClient.Transport,

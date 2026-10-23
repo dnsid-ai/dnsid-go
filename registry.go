@@ -1748,7 +1748,7 @@ func (m *IdentityManager) AwaitRegistryManagedPublication(ctx context.Context, c
 	}
 
 published:
-	m.cache.evict(m.identity.Domain, m)
+	m.EvictDomain(m.identity.Domain)
 	// Publication confirmation is control-plane: full protocol verification
 	// without counterparty acceptance. Public VerifyDomain(localDomain) still
 	// enforces the configured policy.
