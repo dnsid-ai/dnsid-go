@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.44.0] - 2026-10-23
+
+### Bug Fixes
+
+- fix!: verify publication and persist managed rotation recovery ([#86](https://github.com/dnsid-ai/dnsid-go/pull/86))
+- fix: formal verification findings ([#89](https://github.com/dnsid-ai/dnsid-go/pull/89))
+
+### Chores
+
+- chore: standardize legal entity naming ([#88](https://github.com/dnsid-ai/dnsid-go/pull/88))
+
 ## [0.43.0] - 2026-10-21
 
 ### Bug Fixes
