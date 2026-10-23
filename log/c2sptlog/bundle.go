@@ -81,6 +81,8 @@ type StreamBundleSource struct {
 	completeThrough     uint64
 	completenessMode    string
 	checkpointFreshness time.Time
+	expires             time.Time
+	now                 func() time.Time
 }
 
 // fetchedStreamBundleSource retrieves the current domain bundle from the
@@ -506,6 +508,7 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if !checkTime.Before(expires) {
 		return nil, fmt.Errorf("dnsid: stream bundle expired during verification")
 	}
+	source.expires, source.now = expires, trust.Now
 	return &VerifiedStreamBundle{
 		Reference:           reference,
 		FQDN:                fqdn,

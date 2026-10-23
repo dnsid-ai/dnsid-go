@@ -146,6 +146,26 @@ type Client struct {
 	migrationLimits  MigrationVerificationLimits
 	trustedScope     string
 	trustedLogPrefix string
+	preloaded        *preloadedHistory
+}
+
+type preloadedHistory struct {
+	ctx     context.Context
+	domain  string
+	entries []ProvenEntry
+	expires time.Time
+	now     func() time.Time
+}
+
+func (h *preloadedHistory) checkExpiry() error {
+	now := time.Now
+	if h.now != nil {
+		now = h.now
+	}
+	if !h.expires.IsZero() && !now().Before(h.expires) {
+		return fmt.Errorf("dnsid: preloaded c2sp stream bundle expired")
+	}
+	return nil
 }
 
 // New constructs a Client bound to the parsed lr value. It returns an error
@@ -915,6 +935,57 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 	return dnsidlog.LogEvent{}, fmt.Errorf("dnsid: c2sp-tlog final event is not in verified lifecycle")
 }
 
+// PreloadHistory retrieves history while the caller fetches the operational key.
+// The returned reader reuses entries until ctx is canceled or their bundle expires;
+// callers must cancel ctx when verification ends. Proofs and lifecycle are verified
+// on use. Custom sources are not preloaded because their freshness bounds are unknown.
+func (c *Client) PreloadHistory(ctx context.Context, domain string) (dnsidlog.LogReader, error) {
+	if ctx == nil || c == nil || c.source == nil {
+		return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog context and source are required", nil)
+	}
+	history := &preloadedHistory{ctx: ctx, domain: domain}
+	ctx, cancel := dnsid.VerificationContext(ctx)
+	defer cancel()
+	source := c.source
+	if fetched, ok := source.(*fetchedStreamBundleSource); ok {
+		bundle, fallback, err := fetched.load(ctx, c.ref, domain)
+		if err != nil {
+			return nil, logVerificationError(err, true)
+		}
+		source = fetched.fallback
+		if !fallback {
+			source = bundle.Source
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	switch s := source.(type) {
+	case *StreamBundleSource:
+		if s == nil {
+			return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog source is required", nil)
+		}
+		history.expires, history.now = s.expires, s.now
+	case *ScanSource:
+	default:
+		return c, nil
+	}
+	entries, err := source.RebuildHistory(ctx, c.ref, domain)
+	if err != nil {
+		return nil, logVerificationError(err, true)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := history.checkExpiry(); err != nil {
+		return nil, logVerificationError(err, false)
+	}
+	history.entries = entries
+	reader := *c
+	reader.preloaded = history
+	return &reader, nil
+}
+
 // RebuildHistory returns domain's verified lifecycle events in log order.
 // Each event's inclusion proof, signature chain, and logical
 // stream-chain metadata are verified; with a GlobalCandidateSource, invalid
@@ -931,11 +1002,27 @@ func (c *Client) rebuildVerifiedHistory(ctx context.Context, domain string) (ver
 	if c == nil || c.source == nil {
 		return nil, nil, dnsid.NewArgumentError("dnsid: c2sp-tlog source is required", nil)
 	}
-	entries, err := c.source.RebuildHistory(ctx, c.ref, domain)
-	if err != nil {
-		return nil, nil, logVerificationError(err, true)
+	var entries []ProvenEntry
+	history := c.preloaded
+	if history != nil && history.domain == domain && history.ctx.Err() == nil {
+		if err := history.checkExpiry(); err != nil {
+			return nil, nil, err
+		}
+		entries = history.entries
+	} else {
+		history = nil
+		entries, err = c.source.RebuildHistory(ctx, c.ref, domain)
+		if err != nil {
+			return nil, nil, logVerificationError(err, true)
+		}
 	}
-	return c.verifyHistoryEntries(ctx, domain, entries, nil)
+	verifiedResult, eventResult, err = c.verifyHistoryEntries(ctx, domain, entries, nil)
+	if err == nil && history != nil {
+		if err := history.checkExpiry(); err != nil {
+			return nil, nil, err
+		}
+	}
+	return verifiedResult, eventResult, err
 }
 
 func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entries []ProvenEntry, requiredCheckpoint *VerifiedProof) (verifiedResult []verifiedEvent, eventResult []dnsidlog.LogEvent, err error) {
