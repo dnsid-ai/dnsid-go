@@ -544,6 +544,9 @@ func validateLifecycleFields(event dnsidlog.LogEvent) error {
 		if err := validateSigningJWK(event.NewEntityPublicKey, "new_ek"); err != nil {
 			return err
 		}
+		if hasPrivateJWKMember(event.NewEntityPublicKey) {
+			return fmt.Errorf("dnsid: new_ek JWK must be public")
+		}
 		thumb, err := thumbprint(event.NewEntityPublicKey)
 		if err != nil || thumb != event.NewEntityThumbprint {
 			return fmt.Errorf("dnsid: c2sp-tlog new_ek_thumb does not match new_ek")

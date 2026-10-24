@@ -548,6 +548,8 @@ func TestEntityKeyRotationStructuralValidation(t *testing.T) {
 		{"missing new_ek_thumb", func(p map[string]any) { delete(p, "new_ek_thumb") }},
 		{"missing new_ek", func(p map[string]any) { delete(p, "new_ek") }},
 		{"new_ek private", func(p map[string]any) { newEK(p)["d"] = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A" }},
+		{"new_ek stray private member", func(p map[string]any) { newEK(p)["qi"] = "AQAB" }},
+		{"new_ek symmetric member", func(p map[string]any) { newEK(p)["k"] = "AQAB" }},
 		{"new_ek missing kid", func(p map[string]any) { delete(newEK(p), "kid") }},
 		{"new_ek missing alg", func(p map[string]any) { delete(newEK(p), "alg") }},
 		{"new_ek wrong alg", func(p map[string]any) { newEK(p)["alg"] = "ES256" }},
@@ -1019,4 +1021,118 @@ func TestEntityKeyRotationAfterMigrationGenesisES256(t *testing.T) {
 		t.Fatalf("RebuildHistory after revocation: %v", err)
 	}
 	ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventMigration, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventRevocation)
+}
+
+// Amendment 3: a new_ek carrying any private member is never used to verify
+// new_ae, so the rotation is unauthenticated noise and is skipped.
+func TestEntityKeyRotationPrivateNewKeyIsSkipped(t *testing.T) {
+	for _, alg := range []string{"EdDSA", "ES256"} {
+		for _, member := range []string{"d", "p", "q", "dp", "dq", "qi", "k"} {
+			t.Run(alg+" "+member, func(t *testing.T) {
+				e1, o1 := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
+				e2 := dnsid.GenerateEd25519KeyProvider()
+				if alg == "ES256" {
+					e2 = dnsid.GenerateES256KeyProvider()
+				}
+				stream := newEKRStream(t)
+				stream.issue(e1, o1)
+				event, _ := entityRotation(t, e1.JWK(), e2.JWK(), nil, nil)
+				event.Domain, event.Timestamp = "agent.example", stream.ts()
+				chain, err := stream.client.ChainForWrite(context.Background(), event)
+				if err != nil {
+					t.Fatal(err)
+				}
+				payload, err := payloadFromEventWithChain(event, false, &stream.client.ref, chainFieldsFromChain(event, chain))
+				if err != nil {
+					t.Fatal(err)
+				}
+				value := base64.RawURLEncoding.EncodeToString(append([]byte{1}, make([]byte, 31)...))
+				payload["new_ek"].(map[string]any)[member] = value
+				canonical, err := canonicalJSON(payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, prevSig := ekrSign(t, e1, canonical)
+				_, newSig := ekrSign(t, e2, canonical)
+				payload["sigs"] = map[string]any{
+					"prev_ae": map[string]any{"kid": ekrKid(e1.JWK()), "sig": prevSig},
+					"new_ae":  map[string]any{"kid": ekrKid(e2.JWK()), "sig": newSig},
+				}
+				entry, err := canonicalJSON(payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				stream.appendEntry(entry)
+				history, err := stream.client.RebuildHistory(context.Background(), "agent.example")
+				if err != nil {
+					t.Fatalf("RebuildHistory = %v, want private new_ek rotation skipped", err)
+				}
+				ekrWantTypes(t, history, dnsidlog.LogEventIssuance)
+				ekrWantCurrentEntity(t, stream, e1.JWK())
+			})
+		}
+	}
+}
+
+// Amendment 3: authenticated rotations that fail structural validation are
+// fatal invalid evidence, never ignored.
+func TestEntityKeyRotationAuthenticatedMalformedIsFatal(t *testing.T) {
+	cases := map[string]func(payload map[string]any, other jwk.Key){
+		"thumb mismatch":       func(p map[string]any, other jwk.Key) { p["new_ek_thumb"] = ekrThumb(t, other) },
+		"thumb unchanged":      func(p map[string]any, _ jwk.Key) { p["new_ek_thumb"] = p["prev_ek_thumb"] },
+		"missing alg":          func(p map[string]any, _ jwk.Key) { delete(p["new_ek"].(map[string]any), "alg") },
+		"unsupported alg":      func(p map[string]any, _ jwk.Key) { p["new_ek"].(map[string]any)["alg"] = "ES384" },
+		"unsupported crv":      func(p map[string]any, _ jwk.Key) { p["new_ek"].(map[string]any)["crv"] = "X25519" },
+		"missing new_ek_thumb": func(p map[string]any, _ jwk.Key) { delete(p, "new_ek_thumb") },
+		"missing kid":          func(p map[string]any, _ jwk.Key) { delete(p["new_ek"].(map[string]any), "kid") },
+		"new_ae kid mismatch":  func(map[string]any, jwk.Key) {},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			e1, e2, o1, other := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
+			stream := newEKRStream(t)
+			stream.issue(e1, o1)
+			event, _ := entityRotation(t, e1.JWK(), e2.JWK(), nil, nil)
+			event.Domain, event.Timestamp = "agent.example", stream.ts()
+			chain, err := stream.client.ChainForWrite(context.Background(), event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload, err := payloadFromEventWithChain(event, false, &stream.client.ref, chainFieldsFromChain(event, chain))
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutate(payload, other.JWK())
+			canonical, err := canonicalJSON(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, prevSig := ekrSign(t, e1, canonical)
+			_, newSig := ekrSign(t, e2, canonical)
+			newKid := ekrKid(e2.JWK())
+			if name == "new_ae kid mismatch" {
+				newKid = "other-kid"
+			}
+			payload["sigs"] = map[string]any{
+				"prev_ae": map[string]any{"kid": ekrKid(e1.JWK()), "sig": prevSig},
+				"new_ae":  map[string]any{"kid": newKid, "sig": newSig},
+			}
+			entry, err := canonicalJSON(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream.appendEntry(entry)
+			_, err = stream.client.RebuildHistory(context.Background(), "agent.example")
+			if name == "unsupported crv" {
+				// An X25519 new_ek can never verify new_ae, so the
+				// rotation cannot authenticate and is skipped.
+				if err != nil {
+					t.Fatalf("RebuildHistory = %v, want unauthenticated rotation skipped", err)
+				}
+				ekrWantCurrentEntity(t, stream, e1.JWK())
+				return
+			}
+			ekrWantCode(t, err, dnsid.VerificationCodeInvalidEvidence)
+		})
+	}
 }

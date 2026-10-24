@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
@@ -283,8 +284,41 @@ func candidateAuthorizedByCurrentHistory(event dnsidlog.LogEvent, canonical []by
 	if counterKey == nil {
 		return false
 	}
+	// A new entity key carrying private members is never used to verify
+	// new_ae, so such a rotation cannot authenticate and is skipped as noise.
+	if event.Type == dnsidlog.LogEventEntityKeyRotation && hasPrivateJWKMember(counterKey) {
+		return false
+	}
+	if event.Type == dnsidlog.LogEventEntityKeyRotation {
+		// new_ae authenticates by signature with new_ek alone. Its kid must
+		// equal kid(new_ek), but that is a structural check: a signed
+		// rotation that fails it is invalid evidence, not noise.
+		return counterKid != "" && verifyEventSignature(counterKey, canonical, counterSignature) == nil
+	}
 	want, _ := counterKey.KeyID()
 	return counterKid != "" && counterKid == want && verifyEventSignature(counterKey, canonical, counterSignature) == nil
+}
+
+// hasPrivateJWKMember reports whether key is private or carries any JWK
+// private-key member (d, p, q, dp, dq, qi, k).
+func hasPrivateJWKMember(key jwk.Key) bool {
+	if private, err := jwk.IsPrivateKey(key); err != nil || private {
+		return true
+	}
+	data, err := json.Marshal(key)
+	if err != nil {
+		return true
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return true
+	}
+	for _, name := range []string{"d", "p", "q", "dp", "dq", "qi", "k"} {
+		if _, ok := members[name]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func validateMigrationResult(event dnsidlog.LogEvent, migration MigrationVerificationResult) error {
