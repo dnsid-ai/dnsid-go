@@ -104,13 +104,13 @@ const (
 ```
 
 <a name="CurrentEntityKey"></a>
-## func [CurrentEntityKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L551>)
+## func [CurrentEntityKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L552>)
 
 ```go
 func CurrentEntityKey(history []LogEvent) (jwk.Key, error)
 ```
 
-CurrentEntityKey returns the accountable\-entity key current at the end of a verified lifecycle history, such as the result of LogReader.RebuildHistory. The stream genesis \(ISSUANCE, or an inbound MIGRATION whose verifier populated InitialEntityPublicKey\) installs the entity key and each ENTITY\_KEY\_ROTATION then replaces it. It returns an error if history has no genesis, or if a rotation does not continue from the key it replaces. It does not verify signatures; pass only verified history.
+CurrentEntityKey returns the accountable\-entity key current at the end of a verified lifecycle history, such as the result of LogReader.RebuildHistory. The stream genesis \(ISSUANCE, or an inbound MIGRATION whose verifier populated InitialEntityPublicKey\) installs the entity key and each ENTITY\_KEY\_ROTATION then replaces it. It returns an error if history has no genesis, if its events name different domains, or if a rotation does not continue from the key it replaces. It does not verify signatures; pass only verified history for a single identity.
 
 <a name="ParseLogRef"></a>
 ## func [ParseLogRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/log.go#L317>)

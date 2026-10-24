@@ -978,7 +978,7 @@ const (
 ```
 
 <a name="RegistryRevoker"></a>
-## type [RegistryRevoker](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L447-L449>)
+## type [RegistryRevoker](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L451-L453>)
 
 RegistryRevoker is the registry capability required for managed revocation.
 

@@ -546,12 +546,16 @@ func (l *DomainLog) SnapshotAt(at time.Time) (*DomainSnapshot, error) {
 // The stream genesis (ISSUANCE, or an inbound MIGRATION whose verifier
 // populated InitialEntityPublicKey) installs the entity key and each
 // ENTITY_KEY_ROTATION then replaces it. It returns an error if history has no
-// genesis, or if a rotation does not continue from the key it replaces. It
-// does not verify signatures; pass only verified history.
+// genesis, if its events name different domains, or if a rotation does not
+// continue from the key it replaces. It does not verify signatures; pass only
+// verified history for a single identity.
 func CurrentEntityKey(history []LogEvent) (jwk.Key, error) {
 	var current jwk.Key
 	currentThumb := ""
 	for index, event := range history {
+		if !strings.EqualFold(event.Domain, history[0].Domain) {
+			return nil, lifecycleError(VerificationCodeDomainMismatch, index, "lifecycle event domain %q does not match %q", event.Domain, history[0].Domain)
+		}
 		switch event.Type {
 		case LogEventIssuance:
 			if current != nil {

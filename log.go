@@ -66,13 +66,8 @@ func (m *IdentityManager) SignLogEvent(event dnsidlog.LogEvent, role LogSignerRo
 	if m == nil || m.identity.LogRef == "" {
 		return event, NewArgumentError("dnsid: local log reference is required", nil)
 	}
-	var kp KeyProvider
-	switch role {
-	case LogSignerEntity, LogSignerPreviousEntity, LogSignerNewEntity:
-		kp = m.entityKeys
-	case LogSignerOperationalCountersignature, LogSignerPreviousOperational, LogSignerNewOperational:
-		kp = m.keys
-	default:
+	kp, ok := m.logSignerKeyProvider(role)
+	if !ok {
 		return event, NewArgumentError(fmt.Sprintf("dnsid: unsupported log signer role %q", role), nil)
 	}
 	reader, err := m.logReaderFor(m.identity.LogRef)
@@ -80,6 +75,20 @@ func (m *IdentityManager) SignLogEvent(event dnsidlog.LogEvent, role LogSignerRo
 		return event, err
 	}
 	return SignLogEventWithKey(event, role, kp, reader)
+}
+
+// logSignerKeyProvider returns the manager's key provider for role: the entity
+// provider for accountable-entity roles (including both ENTITY_KEY_ROTATION
+// roles) and the operational provider otherwise.
+func (m *IdentityManager) logSignerKeyProvider(role LogSignerRole) (KeyProvider, bool) {
+	switch role {
+	case LogSignerEntity, LogSignerPreviousEntity, LogSignerNewEntity:
+		return m.entityKeys, true
+	case LogSignerOperationalCountersignature, LogSignerPreviousOperational, LogSignerNewOperational:
+		return m.keys, true
+	default:
+		return nil, false
+	}
 }
 
 // SignLogEventWithKey adds one lifecycle signature using an explicitly supplied
@@ -426,12 +435,7 @@ func (m *IdentityManager) SignAndWriteEvent(ctx context.Context, event dnsidlog.
 		if logSignaturePresent(event, role) {
 			continue
 		}
-		var kp KeyProvider
-		if role == LogSignerEntity {
-			kp = m.entityKeys
-		} else {
-			kp = m.keys
-		}
+		kp, _ := m.logSignerKeyProvider(role)
 		if kp == nil {
 			continue
 		}

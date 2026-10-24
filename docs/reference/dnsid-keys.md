@@ -9,7 +9,7 @@ description: "KeyProvider implementations, key metadata, and log-event signing."
 
 Part of the root package `github.com/dnsid-ai/dnsid-go` — see [Core: IdentityManager](https://docs.dnsid.ai/reference/go/dnsid) for the package overview.
 
-## func [SignLogEventWithKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L88>)
+## func [SignLogEventWithKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L97>)
 
 ```go
 func SignLogEventWithKey(event dnsidlog.LogEvent, role LogSignerRole, kp KeyProvider, canonicalizer LogEventCanonicalizer) (dnsidlog.LogEvent, error)
@@ -225,7 +225,7 @@ const (
 ```
 
 <a name="RequiredLogSignatures"></a>
-### func [RequiredLogSignatures](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L219>)
+### func [RequiredLogSignatures](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L228>)
 
 ```go
 func RequiredLogSignatures(event dnsidlog.LogEvent) ([]LogSignerRole, error)

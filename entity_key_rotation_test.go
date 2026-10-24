@@ -208,3 +208,74 @@ func TestWriteSignedEvent_EntityKeyRotationNeedsBothSignatures(t *testing.T) {
 		t.Fatalf("written events = %d, want 1", len(wl.events))
 	}
 }
+
+func TestIdentityManager_EntityKeyRotationSignsWithEntityProvider(t *testing.T) {
+	entityKeys := GenerateES256KeyProvider()
+	previousKid := entityKeys.ListKeyIds()[0]
+	newKid, err := entityKeys.GenerateKey(JoseAlgES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousThumb, err := (&JWK{key: entityKeys.JWK(previousKid)}).Thumbprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newThumb, err := (&JWK{key: entityKeys.JWK(newKid)}).Thumbprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotation := dnsidlog.LogEvent{
+		Type: dnsidlog.LogEventEntityKeyRotation, Domain: "agent.example.com", Timestamp: time.Unix(1783987200, 0).UTC(),
+		PreviousEntityKid: previousKid, PreviousEntityThumbprint: previousThumb,
+		NewEntityKid: newKid, NewEntityPublicKey: entityKeys.JWK(newKid), NewEntityThumbprint: newThumb,
+	}
+	newManager := func(t *testing.T) (*IdentityManager, *splitWriteLog) {
+		t.Helper()
+		wl := &splitWriteLog{}
+		registry := dnsidlog.NewLogRegistry()
+		if err := registry.Register("test", func(string) dnsidlog.LogReader { return wl }); err != nil {
+			t.Fatal(err)
+		}
+		manager, err := NewIdentityManager(Config{Identity: &IdentityConfig{
+			Domain: "agent.example.com", GovernanceID: "example.com", LogRef: "test:agent",
+			StatusURL: "https://agent.example.com/status.json",
+		}}, GenerateES256KeyProvider(), WithLogRegistry(registry), WithEntityKeyProvider(entityKeys))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return manager, wl
+	}
+
+	t.Run("SignLogEvent", func(t *testing.T) {
+		manager, _ := newManager(t)
+		event, err := manager.SignLogEvent(rotation, LogSignerPreviousEntity)
+		if err != nil {
+			t.Fatalf("SignLogEvent previous_entity: %v", err)
+		}
+		event, err = manager.SignLogEvent(event, LogSignerNewEntity)
+		if err != nil {
+			t.Fatalf("SignLogEvent new_entity: %v", err)
+		}
+		if event.PreviousEntitySignature == "" || event.NewEntitySignature == "" {
+			t.Fatalf("event = %#v, want both entity signatures", event)
+		}
+	})
+	t.Run("SignAndWriteEvent", func(t *testing.T) {
+		manager, wl := newManager(t)
+		if _, err := manager.SignAndWriteEvent(context.Background(), rotation); err != nil {
+			t.Fatalf("SignAndWriteEvent: %v", err)
+		}
+		if len(wl.events) != 1 || wl.events[0].PreviousEntityKid != previousKid || wl.events[0].PreviousEntitySignature == "" || wl.events[0].NewEntityKid != newKid || wl.events[0].NewEntitySignature == "" {
+			t.Fatalf("written events = %#v", wl.events)
+		}
+	})
+}
+
+func TestCurrentEntityKeyRejectsMixedDomains(t *testing.T) {
+	now := time.Now()
+	issuance := lifecycleIssuance(t, "agent.example.com", GenerateES256KeyProvider().JWK(), now.Add(-time.Hour))
+	rotation := entityRotationEvent(t, "other.example.com", issuance.InitialEntityThumbprint, GenerateES256KeyProvider().JWK(), now)
+	if _, err := dnsidlog.CurrentEntityKey([]dnsidlog.LogEvent{issuance, rotation}); verificationCode(err) != dnsidlog.VerificationCodeDomainMismatch {
+		t.Fatalf("CurrentEntityKey mixed domains = %v, want DOMAIN_MISMATCH", err)
+	}
+}

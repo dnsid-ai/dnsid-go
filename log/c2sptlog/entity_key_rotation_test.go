@@ -856,3 +856,105 @@ func TestEntityKeyRotationAbsentKeepsIssuanceBinding(t *testing.T) {
 		t.Fatalf("VerifyBilateralBinding mismatch error = %v", err)
 	}
 }
+
+func TestEntityKeyRotationEdgeCases(t *testing.T) {
+	e1, e2, o1 := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
+
+	t.Run("exact duplicate is ignored", func(t *testing.T) {
+		stream := newEKRStream(t)
+		stream.issue(e1, o1)
+		stream.signed(entityRotation(t, e1.JWK(), e2.JWK(), e1, e2))
+		stream.appendEntry(stream.source.entries[1].Entry)
+		history, err := stream.client.RebuildHistory(context.Background(), "agent.example")
+		if err != nil {
+			t.Fatalf("RebuildHistory: %v", err)
+		}
+		ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation)
+		ekrWantCurrentEntity(t, stream, e2.JWK())
+	})
+
+	t.Run("rotate back to a superseded key", func(t *testing.T) {
+		stream := newEKRStream(t)
+		stream.issue(e1, o1)
+		stream.signed(entityRotation(t, e1.JWK(), e2.JWK(), e1, e2))
+		stream.signed(entityRotation(t, e2.JWK(), e1.JWK(), e2, e1))
+		ekrWantCurrentEntity(t, stream, e1.JWK())
+		if _, err := stream.client.VerifyBilateralBinding(context.Background(), ekrBindingInput(e1.JWK(), o1.JWK())); err != nil {
+			t.Fatalf("VerifyBilateralBinding E1: %v", err)
+		}
+	})
+
+	t.Run("new key sharing the previous kid label", func(t *testing.T) {
+		shared, err := e2.JWK().Clone()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := shared.Set(jwk.KeyIDKey, ekrKid(e1.JWK())); err != nil {
+			t.Fatal(err)
+		}
+		stream := newEKRStream(t)
+		stream.issue(e1, o1)
+		stream.signed(entityRotation(t, e1.JWK(), shared, e1, e2))
+		labelled := func(signer dnsid.KeyProvider) (dnsidlog.LogEvent, func(*dnsidlog.LogEvent, []byte)) {
+			return dnsidlog.LogEvent{Type: dnsidlog.LogEventRevocation, Reason: "keyCompromise"}, func(event *dnsidlog.LogEvent, canonical []byte) {
+				_, sig := ekrSign(t, signer, canonical)
+				event.InitialEntityKid, event.InitialEntitySignature = ekrKid(e1.JWK()), sig
+			}
+		}
+		stream.signed(labelled(e1))
+		history, err := stream.client.RebuildHistory(context.Background(), "agent.example")
+		if err != nil {
+			t.Fatalf("RebuildHistory: %v", err)
+		}
+		ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation)
+		stream.signed(labelled(e2))
+		history, err = stream.client.RebuildHistory(context.Background(), "agent.example")
+		if err != nil {
+			t.Fatalf("RebuildHistory: %v", err)
+		}
+		ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventRevocation)
+	})
+
+	// Authority is taken from an event's chain predecessor. A holder of a
+	// superseded entity key can therefore sign a fork off a pre-rotation
+	// predecessor; it is never accepted, but it is an authenticated chain
+	// conflict and fails verification, exactly as for KEY_ROTATION today.
+	t.Run("superseded key fork from pre-rotation predecessor", func(t *testing.T) {
+		stream := newEKRStream(t)
+		stream.issue(e1, o1)
+		forkEvent, forkSign := entitySigned(t, dnsidlog.LogEventRevocation, e1)
+		forkEvent.Domain, forkEvent.Timestamp = "agent.example", stream.ts()
+		forkChain, err := stream.client.ChainForWrite(context.Background(), forkEvent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream.signed(entityRotation(t, e1.JWK(), e2.JWK(), e1, e2))
+		forkEvent.Timestamp = stream.ts()
+		stream.signedWithChain(forkEvent, forkChain, forkSign)
+		_, err = stream.client.RebuildHistory(context.Background(), "agent.example")
+		ekrWantCode(t, err, dnsid.VerificationCodeChainContinuity)
+	})
+}
+
+func TestEntityKeyRotationRebuildHistoryThroughExportsRotatedKey(t *testing.T) {
+	e1, e2, o1 := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
+	stream := newEKRStream(t)
+	stream.issue(e1, o1)
+	stream.signed(entityRotation(t, e1.JWK(), e2.JWK(), e1, e2))
+	for _, tc := range []struct {
+		index uint64
+		want  jwk.Key
+	}{{0, e1.JWK()}, {1, e2.JWK()}} {
+		result, err := stream.client.RebuildHistoryThrough(context.Background(), "agent.example", stream.client.ref.FinalEventRef(tc.index))
+		if err != nil {
+			t.Fatalf("RebuildHistoryThrough @%d: %v", tc.index, err)
+		}
+		if ekrThumb(t, result.EntityKey) != ekrThumb(t, tc.want) || ekrThumb(t, result.ActiveOperationalKey) != ekrThumb(t, o1.JWK()) {
+			t.Fatalf("RebuildHistoryThrough @%d entity = %s, want %s", tc.index, ekrThumb(t, result.EntityKey), ekrThumb(t, tc.want))
+		}
+		migration := dnsidlog.LogEvent{Type: dnsidlog.LogEventMigration, Domain: "agent.example", Timestamp: stream.ts(), PreviousLog: ekrStreamRef, NewLog: ekrStreamRef + "-next", FinalEntryRef: string(stream.client.ref.FinalEventRef(tc.index))}
+		if err := validateMigrationResult(migration, result); err != nil {
+			t.Fatalf("validateMigrationResult @%d: %v", tc.index, err)
+		}
+	}
+}
