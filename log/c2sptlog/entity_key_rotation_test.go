@@ -1024,7 +1024,7 @@ func TestEntityKeyRotationAfterMigrationGenesisES256(t *testing.T) {
 	ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventMigration, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventRevocation)
 }
 
-// Amendment 3: a new_ek carrying any private member is never used to verify
+// A new_ek carrying any private member is never used to verify
 // new_ae, so the rotation is unauthenticated noise and is skipped.
 func TestEntityKeyRotationPrivateNewKeyIsSkipped(t *testing.T) {
 	for _, alg := range []string{"EdDSA", "ES256"} {
@@ -1075,7 +1075,7 @@ func TestEntityKeyRotationPrivateNewKeyIsSkipped(t *testing.T) {
 	}
 }
 
-// Amendments 3 and 4: authenticated rotations that fail structural
+// Authenticated rotations that fail structural
 // validation are fatal invalid evidence. Rotations that cannot authenticate
 // (new_ek without a kid, new_ae naming another kid, unsupported curve) are
 // skipped even though structural validation would also reject them.
@@ -1252,7 +1252,7 @@ func TestEntityKeyRotationPreparedSigningWithPendingKey(t *testing.T) {
 	})
 }
 
-// Amendment 5: a malformed ISSUANCE authenticated by its own keys is fatal
+// A malformed ISSUANCE authenticated by its own keys is fatal
 // invalid genesis evidence, not skipped.
 func TestEntityKeyRotationMalformedAuthenticatedGenesisIsFatal(t *testing.T) {
 	e1, o1 := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
@@ -1288,7 +1288,7 @@ func TestEntityKeyRotationMalformedAuthenticatedGenesisIsFatal(t *testing.T) {
 	}
 }
 
-// Amendment 5: a holder of a superseded key cannot revive a revoked identity
+// A holder of a superseded key cannot revive a revoked identity
 // with a fresh ISSUANCE; the first authenticated genesis decides.
 func TestEntityKeyRotationRevokedIdentityCannotBeRevivedBySupersededKey(t *testing.T) {
 	e1, e2, e3, o1, o2 := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
@@ -1303,17 +1303,24 @@ func TestEntityKeyRotationRevokedIdentityCannotBeRevivedBySupersededKey(t *testi
 			client := stream.client
 			if global {
 				var err error
-				client, err = New(ekrStreamRef, WithSource(&globalMemorySource{memorySource: *stream.source}), WithPolicy(Policy{Now: func() time.Time { return ekrBase.Add(24 * time.Hour) }}), withProofVerifySkipped())
+				client, err = New(ekrStreamRef, WithSource(&globalMemorySource{memorySource: *stream.source}), WithPolicy(Policy{MaxCheckpointAge: 48 * time.Hour, Now: func() time.Time { return ekrBase.Add(24 * time.Hour) }}), withProofVerifySkipped())
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
+			history, err := client.RebuildHistory(context.Background(), "agent.example")
+			if err != nil {
+				t.Fatalf("RebuildHistory: %v", err)
+			}
+			ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventRevocation)
+			_, err = client.VerifyNonRevocation(context.Background(), "agent.example", ekrBase.Add(time.Hour))
+			ekrWantCode(t, err, dnsid.VerificationCodeTerminalState)
 			for _, operational := range []jwk.Key{o1.JWK(), o2.JWK()} {
-				if _, err := client.VerifyBilateralBinding(context.Background(), ekrBindingInput(e2.JWK(), operational)); err == nil {
-					t.Fatal("VerifyBilateralBinding revived a revoked identity with a fresh ISSUANCE")
-				}
-				if _, err := client.VerifyLifecycleBinding(context.Background(), ekrBindingInput(e2.JWK(), operational), ekrThumb(t, operational)); err == nil {
-					t.Fatal("VerifyLifecycleBinding revived a revoked identity with a fresh ISSUANCE")
+				_, err := client.VerifyBilateralBinding(context.Background(), ekrBindingInput(e2.JWK(), operational))
+				ekrWantCode(t, err, dnsid.VerificationCodeTerminalState)
+				_, err = client.VerifyLifecycleBinding(context.Background(), ekrBindingInput(e2.JWK(), operational), ekrThumb(t, operational))
+				if err == nil || !strings.Contains(err.Error(), "current entity key does not match record ek") {
+					t.Fatalf("VerifyLifecycleBinding error = %v, want record ek mismatch", err)
 				}
 			}
 		})
