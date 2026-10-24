@@ -547,8 +547,10 @@ func (l *DomainLog) SnapshotAt(at time.Time) (*DomainSnapshot, error) {
 // populated InitialEntityPublicKey) installs the entity key and each
 // ENTITY_KEY_ROTATION then replaces it. It returns an error if history has no
 // genesis, if its events name different domains, or if a rotation does not
-// continue from the key it replaces. It does not verify signatures; pass only
-// verified history for a single identity.
+// continue from the key it replaces. It does not verify signatures, terminal
+// state, or entity/operational key distinctness, so the result is meaningful
+// only for history a LogReader has verified, and it still returns the last
+// entity key after a REVOCATION or RETIREMENT.
 func CurrentEntityKey(history []LogEvent) (jwk.Key, error) {
 	var current jwk.Key
 	currentThumb := ""

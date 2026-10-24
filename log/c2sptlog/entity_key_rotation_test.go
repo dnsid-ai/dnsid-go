@@ -958,3 +958,65 @@ func TestEntityKeyRotationRebuildHistoryThroughExportsRotatedKey(t *testing.T) {
 		}
 	}
 }
+
+// A rotation after an inbound MIGRATION genesis continues from the imported
+// entity key. ES256 keys exercise the second supported algorithm end to end.
+func TestEntityKeyRotationAfterMigrationGenesisES256(t *testing.T) {
+	e1, e2, e3 := dnsid.GenerateES256KeyProvider(), dnsid.GenerateES256KeyProvider(), dnsid.GenerateES256KeyProvider()
+	o1 := dnsid.GenerateES256KeyProvider()
+	previous := newEKRStream(t)
+	previous.issue(e1, o1)
+	previous.signed(entityRotation(t, e1.JWK(), e2.JWK(), e1, e2))
+	prior, err := previous.client.RebuildHistory(context.Background(), "agent.example")
+	if err != nil {
+		t.Fatalf("RebuildHistory prior: %v", err)
+	}
+
+	destinationRef := ekrStreamRef + "-next"
+	source := &memorySource{complete: true, freshness: ekrBase.Add(24 * time.Hour)}
+	verifier := func(context.Context, dnsidlog.LogEvent) (MigrationVerificationResult, error) {
+		return MigrationVerificationResult{EntityKey: e2.JWK(), ActiveOperationalKey: o1.JWK(), PriorHistory: prior}, nil
+	}
+	client, err := New(destinationRef, WithSource(source), WithMigrationVerifier(verifier), WithPolicy(Policy{MaxCheckpointAge: 48 * time.Hour, Now: func() time.Time { return ekrBase.Add(24 * time.Hour) }}), withProofVerifySkipped())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := &ekrStream{t: t, source: source, client: client, next: previous.next}
+	migration := dnsidlog.LogEvent{Type: dnsidlog.LogEventMigration, Domain: "agent.example", Timestamp: stream.ts(), PreviousLog: ekrStreamRef, NewLog: destinationRef, FinalEntryRef: string(previous.client.ref.FinalEventRef(1))}
+	canonical, err := client.Canonical(migration)
+	if err != nil {
+		t.Fatalf("Canonical MIGRATION: %v", err)
+	}
+	migration.InitialEntityKid, migration.InitialEntitySignature = ekrSign(t, e2, canonical)
+	entry, err := client.EntryBytes(migration)
+	if err != nil {
+		t.Fatalf("EntryBytes MIGRATION: %v", err)
+	}
+	stream.appendEntry(entry)
+	stream.signed(entityRotation(t, e2.JWK(), e3.JWK(), e2, e3))
+	stream.signed(entitySigned(t, dnsidlog.LogEventRevocation, e2))
+
+	history, err := client.RebuildHistory(context.Background(), "agent.example")
+	if err != nil {
+		t.Fatalf("RebuildHistory destination: %v", err)
+	}
+	ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventMigration, dnsidlog.LogEventEntityKeyRotation)
+	ekrWantCurrentEntity(t, stream, e3.JWK())
+	binding, err := client.VerifyBilateralBinding(context.Background(), ekrBindingInput(e3.JWK(), o1.JWK()))
+	if err != nil {
+		t.Fatalf("VerifyBilateralBinding E3: %v", err)
+	}
+	if binding.InitialEntityThumbprint != ekrThumb(t, e1.JWK()) || binding.CurrentEntityThumbprint != ekrThumb(t, e3.JWK()) {
+		t.Fatalf("binding = %#v", binding)
+	}
+	if _, err := client.VerifyBilateralBinding(context.Background(), ekrBindingInput(e2.JWK(), o1.JWK())); err == nil {
+		t.Fatal("VerifyBilateralBinding accepted the imported key after rotation")
+	}
+
+	stream.signed(entitySigned(t, dnsidlog.LogEventRevocation, e3))
+	history, err = client.RebuildHistory(context.Background(), "agent.example")
+	if err != nil {
+		t.Fatalf("RebuildHistory after revocation: %v", err)
+	}
+	ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventMigration, dnsidlog.LogEventEntityKeyRotation, dnsidlog.LogEventRevocation)
+}
