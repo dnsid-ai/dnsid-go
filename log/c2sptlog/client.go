@@ -531,7 +531,9 @@ func (c *Client) KeyTimestamp(ctx context.Context, domain, keyThumbprint string)
 }
 
 // VerifyBilateralBinding verifies the signed ISSUANCE event against the
-// current DNS record material and returns its trusted continuity anchor.
+// current DNS record material and returns its trusted continuity anchor. The
+// record's ek must match the entity key current at the end of the verified
+// history, which ENTITY_KEY_ROTATION events may have moved from ISSUANCE.
 func (c *Client) VerifyBilateralBinding(ctx context.Context, input dnsidlog.BilateralBindingInput) (binding dnsidlog.BilateralBinding, err error) {
 	ctx, cancel := dnsid.VerificationContext(ctx)
 	defer cancel()
@@ -563,12 +565,22 @@ func verifyBilateralBinding(events []dnsidlog.LogEvent, input dnsidlog.Bilateral
 	if err != nil {
 		return dnsidlog.BilateralBinding{}, fmt.Errorf("dnsid: c2sp-tlog ISSUANCE entity key thumbprint failed: %w", err)
 	}
+	// The record ek must match the entity key current at the end of the
+	// verified history; ENTITY_KEY_ROTATION moves it away from ISSUANCE.
+	currentEntityKey, err := dnsidlog.CurrentEntityKey(events)
+	if err != nil {
+		return dnsidlog.BilateralBinding{}, err
+	}
+	currentEntityThumb, err := thumbprint(currentEntityKey)
+	if err != nil {
+		return dnsidlog.BilateralBinding{}, fmt.Errorf("dnsid: c2sp-tlog current entity key thumbprint failed: %w", err)
+	}
 	recordEntityThumb, err := thumbprint(input.EntityKey)
 	if err != nil {
 		return dnsidlog.BilateralBinding{}, fmt.Errorf("dnsid: c2sp-tlog record entity key thumbprint failed: %w", err)
 	}
-	if entityThumb != recordEntityThumb {
-		return dnsidlog.BilateralBinding{}, fmt.Errorf("dnsid: c2sp-tlog ISSUANCE entity key does not match record ek for %s", input.Domain)
+	if currentEntityThumb != recordEntityThumb {
+		return dnsidlog.BilateralBinding{}, fmt.Errorf("dnsid: c2sp-tlog current entity key does not match record ek for %s", input.Domain)
 	}
 	if genesis.GovernanceID != input.GovernanceID {
 		return dnsidlog.BilateralBinding{}, fmt.Errorf("dnsid: c2sp-tlog ISSUANCE gi %q does not match record gi %q", genesis.GovernanceID, input.GovernanceID)
@@ -580,6 +592,7 @@ func verifyBilateralBinding(events []dnsidlog.LogEvent, input dnsidlog.Bilateral
 	return dnsidlog.BilateralBinding{
 		InitialOperationalThumbprint: operationalThumb,
 		InitialEntityThumbprint:      entityThumb,
+		CurrentEntityThumbprint:      currentEntityThumb,
 		Timestamp:                    genesis.Timestamp,
 	}, nil
 }

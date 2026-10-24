@@ -43,6 +43,12 @@ const (
 	// LogEventDelegation grants a scoped, expiring delegation to another
 	// party without changing lifecycle state.
 	LogEventDelegation LogEventType = "DELEGATION"
+	// LogEventEntityKeyRotation replaces the active accountable-entity
+	// record-signing key. It is signed by both the outgoing entity key
+	// (authorization) and the incoming entity key (proof of possession).
+	// After it, the entity key it installs authorizes later entity-signed
+	// events and must match the identity record's ek key.
+	LogEventEntityKeyRotation LogEventType = "ENTITY_KEY_ROTATION"
 )
 
 // ValidRevocationReason reports whether reason is a draft 01 REVOCATION reason code.
@@ -144,6 +150,13 @@ type LogEvent struct {
 	NewOperationalPublicKey       jwk.Key `json:"newOperationalPublicKey,omitempty"`
 	NewOperationalThumbprint      string  `json:"newOperationalThumbprint,omitempty"`
 	NewOperationalSignature       string  `json:"newOperationalSignature,omitempty"`
+	PreviousEntityKid             string  `json:"previousEntityKid,omitempty"`
+	PreviousEntityThumbprint      string  `json:"previousEntityThumbprint,omitempty"`
+	PreviousEntitySignature       string  `json:"previousEntitySignature,omitempty"`
+	NewEntityKid                  string  `json:"newEntityKid,omitempty"`
+	NewEntityPublicKey            jwk.Key `json:"newEntityPublicKey,omitempty"`
+	NewEntityThumbprint           string  `json:"newEntityThumbprint,omitempty"`
+	NewEntitySignature            string  `json:"newEntitySignature,omitempty"`
 
 	Domain       string    `json:"domain,omitempty"`
 	Timestamp    time.Time `json:"timestamp,omitempty"`
@@ -179,9 +192,13 @@ type BilateralBindingInput struct {
 }
 
 // BilateralBinding is the verified key anchor established by ISSUANCE.
+// InitialEntityThumbprint is the ISSUANCE entity key; CurrentEntityThumbprint
+// is the entity key current at the end of the verified history, after any
+// ENTITY_KEY_ROTATION events, and is the key the record's ek must match.
 type BilateralBinding struct {
 	InitialOperationalThumbprint string
 	InitialEntityThumbprint      string
+	CurrentEntityThumbprint      string
 	Timestamp                    time.Time
 }
 
@@ -213,7 +230,9 @@ type LogReader interface {
 	// is not currently bound.
 	KeyTimestamp(ctx context.Context, domain, keyThumbprint string) (time.Time, error)
 	// VerifyBilateralBinding verifies the ISSUANCE proofs, entity and operational
-	// signatures, and correspondence with the current DNS record.
+	// signatures, and correspondence with the current DNS record. The record's
+	// entity key must match the entity key current at the end of the verified
+	// history (the ISSUANCE key unless ENTITY_KEY_ROTATION events moved it).
 	VerifyBilateralBinding(ctx context.Context, input BilateralBindingInput) (BilateralBinding, error)
 	// VerifyOperationalContinuity verifies a rotation chain from the ISSUANCE
 	// operational key to the current operational key.
@@ -440,6 +459,7 @@ func (l *DomainLog) SnapshotAt(at time.Time) (*DomainSnapshot, error) {
 		return nil, lifecycleError(VerificationCodeSnapshotEmpty, -1, "no lifecycle events")
 	}
 	s := &DomainSnapshot{Domain: l.domain, SnapshotAt: at}
+	entityThumbprint := ""
 	pastSnapshotBoundary := false
 	for index, event := range l.events {
 		if !strings.EqualFold(event.Domain, l.domain) {
@@ -473,6 +493,7 @@ func (l *DomainLog) SnapshotAt(at time.Time) (*DomainSnapshot, error) {
 				return nil, lifecycleError(VerificationCodeInvalidIssuance, index, "ISSUANCE entity and operational keys must be distinct")
 			}
 			s.HistoricalState = AgentStateActive
+			entityThumbprint = entityThumb
 			s.ActiveKey = event.InitialOperationalPublicKey
 			s.ActiveKeyThumbprint = event.InitialOperationalThumbprint
 			s.KeyBoundAt = event.Timestamp
@@ -488,6 +509,15 @@ func (l *DomainLog) SnapshotAt(at time.Time) (*DomainSnapshot, error) {
 			s.ActiveKey = event.NewOperationalPublicKey
 			s.ActiveKeyThumbprint = event.NewOperationalThumbprint
 			s.KeyBoundAt = event.Timestamp
+		case LogEventEntityKeyRotation:
+			if s.HistoricalState != AgentStateActive || event.PreviousEntityThumbprint != entityThumbprint {
+				return nil, lifecycleError(VerificationCodeKeyContinuity, index, "ENTITY_KEY_ROTATION does not continue from the active entity key")
+			}
+			newThumb, err := keyThumbprint(event.NewEntityPublicKey)
+			if err != nil || event.NewEntityThumbprint == "" || newThumb != event.NewEntityThumbprint || newThumb == entityThumbprint || newThumb == s.ActiveKeyThumbprint {
+				return nil, lifecycleError(VerificationCodeKeyContinuity, index, "ENTITY_KEY_ROTATION new key is invalid")
+			}
+			entityThumbprint = newThumb
 		case LogEventRevocation:
 			if !ValidRevocationReason(event.Reason) {
 				return nil, lifecycleError(VerificationCodeInvalidRevocationReason, index, "invalid REVOCATION reason %q", event.Reason)
@@ -509,6 +539,62 @@ func (l *DomainLog) SnapshotAt(at time.Time) (*DomainSnapshot, error) {
 		return nil, lifecycleError(VerificationCodeSnapshotEmpty, -1, "no ISSUANCE event found at snapshot time")
 	}
 	return s, nil
+}
+
+// CurrentEntityKey returns the accountable-entity key current at the end of a
+// verified lifecycle history, such as the result of LogReader.RebuildHistory.
+// The stream genesis (ISSUANCE, or an inbound MIGRATION whose verifier
+// populated InitialEntityPublicKey) installs the entity key and each
+// ENTITY_KEY_ROTATION then replaces it. It returns an error if history has no
+// genesis, or if a rotation does not continue from the key it replaces. It
+// does not verify signatures; pass only verified history.
+func CurrentEntityKey(history []LogEvent) (jwk.Key, error) {
+	var current jwk.Key
+	currentThumb := ""
+	for index, event := range history {
+		switch event.Type {
+		case LogEventIssuance:
+			if current != nil {
+				return nil, lifecycleError(VerificationCodeDuplicateIssuance, index, "duplicate ISSUANCE in one identity history")
+			}
+			fallthrough
+		case LogEventMigration:
+			if event.InitialEntityPublicKey == nil {
+				if current == nil {
+					return nil, lifecycleError(VerificationCodeGenesisRequired, index, "lifecycle genesis has no entity key")
+				}
+				continue
+			}
+			thumb, err := keyThumbprint(event.InitialEntityPublicKey)
+			if err != nil {
+				return nil, lifecycleError(VerificationCodeInvalidIssuance, index, "genesis entity key is invalid")
+			}
+			if current != nil && thumb != currentThumb {
+				return nil, lifecycleError(VerificationCodeKeyContinuity, index, "MIGRATION entity key does not continue from the active entity key")
+			}
+			current, currentThumb = event.InitialEntityPublicKey, thumb
+		case LogEventEntityKeyRotation:
+			if current == nil {
+				return nil, lifecycleError(VerificationCodeGenesisRequired, index, "ENTITY_KEY_ROTATION before lifecycle genesis")
+			}
+			if event.PreviousEntityThumbprint != currentThumb {
+				return nil, lifecycleError(VerificationCodeKeyContinuity, index, "ENTITY_KEY_ROTATION does not continue from the active entity key")
+			}
+			thumb, err := keyThumbprint(event.NewEntityPublicKey)
+			if err != nil || thumb != event.NewEntityThumbprint || thumb == currentThumb {
+				return nil, lifecycleError(VerificationCodeKeyContinuity, index, "ENTITY_KEY_ROTATION new key is invalid")
+			}
+			current, currentThumb = event.NewEntityPublicKey, thumb
+		default:
+			if current == nil {
+				return nil, lifecycleError(VerificationCodeGenesisRequired, index, "first lifecycle event must be ISSUANCE or MIGRATION")
+			}
+		}
+	}
+	if current == nil {
+		return nil, lifecycleError(VerificationCodeSnapshotEmpty, -1, "no lifecycle genesis found")
+	}
+	return current, nil
 }
 
 func keyThumbprint(key jwk.Key) (string, error) {

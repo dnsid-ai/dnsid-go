@@ -16,7 +16,8 @@ type SignerRole string
 
 const (
 	// SignerEntity is the accountable entity key: it signs ISSUANCE and
-	// every post-issuance event other than KEY_ROTATION.
+	// every post-issuance event other than KEY_ROTATION and
+	// ENTITY_KEY_ROTATION. After an ENTITY_KEY_ROTATION it is the rotated key.
 	SignerEntity SignerRole = "entity"
 	// SignerOperationalCountersignature is the operational key's
 	// countersignature on ISSUANCE.
@@ -27,6 +28,12 @@ const (
 	// SignerNewOperational is the incoming operational key's signature on
 	// KEY_ROTATION.
 	SignerNewOperational SignerRole = "new_operational"
+	// SignerPreviousEntity is the outgoing accountable-entity key's
+	// authorizing signature on ENTITY_KEY_ROTATION.
+	SignerPreviousEntity SignerRole = "previous_entity"
+	// SignerNewEntity is the incoming accountable-entity key's
+	// proof-of-possession signature on ENTITY_KEY_ROTATION.
+	SignerNewEntity SignerRole = "new_entity"
 )
 
 // PreparedEvent preserves the complete method-specific envelope while its
@@ -219,7 +226,8 @@ func (c *Client) SignPreparedEvent(ctx context.Context, prepared *PreparedEvent,
 
 // SignPreparedEventWithKey validates every signature already present and adds
 // role using the named active or pending key. It is intended for transitions
-// such as KEY_ROTATION whose new-key proof must be made before activation.
+// such as KEY_ROTATION and ENTITY_KEY_ROTATION whose new-key proof must be
+// made before activation.
 func (c *Client) SignPreparedEventWithKey(ctx context.Context, prepared *PreparedEvent, role SignerRole, kp dnsid.KeyProvider, kid string) (*PreparedEvent, error) {
 	if kid == "" {
 		return nil, dnsid.NewArgumentError("dnsid: c2sp-tlog signer kid is required", nil)
@@ -428,6 +436,22 @@ func (c *Client) preparedSignerKeys(ctx context.Context, prepared *PreparedEvent
 		}
 		keys[SignerPreviousOperational] = operational
 		keys[SignerNewOperational] = event.NewOperationalPublicKey
+	case dnsidlog.LogEventEntityKeyRotation:
+		entity, operational, state, err := c.currentLifecycleState(ctx, event.Domain)
+		if err != nil {
+			return nil, err
+		}
+		if event.PreviousEntityThumbprint != state["entity_thumb"] {
+			return nil, fmt.Errorf("dnsid: ENTITY_KEY_ROTATION does not continue from the active entity key")
+		}
+		if event.NewEntityThumbprint == state["entity_thumb"] || event.NewEntityThumbprint == state["operational_thumb"] {
+			return nil, fmt.Errorf("dnsid: new entity key must be distinct from the active entity and operational keys")
+		}
+		if err := validateResolvedKeyIDs(entity, operational, event.NewEntityPublicKey); err != nil {
+			return nil, err
+		}
+		keys[SignerPreviousEntity] = entity
+		keys[SignerNewEntity] = event.NewEntityPublicKey
 	case dnsidlog.LogEventMigration:
 		if !c.isInboundMigration(event) || c.verifyMigration == nil {
 			return nil, invalidMigration("dnsid: migration signing requires verified source history", nil)
@@ -485,6 +509,10 @@ func lifecycleStateFromVerified(verified []verifiedEvent, domain string) (jwk.Ke
 		case dnsidlog.LogEventKeyRotation:
 			operational = item.event.NewOperationalPublicKey
 			operationalThumb = item.event.NewOperationalThumbprint
+			state = activeLifecycleState(domain, entityThumb, operationalThumb)
+		case dnsidlog.LogEventEntityKeyRotation:
+			entity = item.event.NewEntityPublicKey
+			entityThumb = item.event.NewEntityThumbprint
 			state = activeLifecycleState(domain, entityThumb, operationalThumb)
 		case dnsidlog.LogEventRevocation:
 			state = activeLifecycleState(domain, entityThumb, operationalThumb)
@@ -587,6 +615,8 @@ func requiredSignerRoles(eventType dnsidlog.LogEventType) ([]SignerRole, error) 
 		return []SignerRole{SignerEntity, SignerOperationalCountersignature}, nil
 	case dnsidlog.LogEventKeyRotation:
 		return []SignerRole{SignerPreviousOperational, SignerNewOperational}, nil
+	case dnsidlog.LogEventEntityKeyRotation:
+		return []SignerRole{SignerPreviousEntity, SignerNewEntity}, nil
 	case dnsidlog.LogEventRevocation, dnsidlog.LogEventRetirement, dnsidlog.LogEventMigration, dnsidlog.LogEventDelegation:
 		return []SignerRole{SignerEntity}, nil
 	default:
@@ -604,6 +634,10 @@ func signatureName(role SignerRole) string {
 		return "prev_op"
 	case SignerNewOperational:
 		return "new_op"
+	case SignerPreviousEntity:
+		return "prev_ae"
+	case SignerNewEntity:
+		return "new_ae"
 	default:
 		return ""
 	}

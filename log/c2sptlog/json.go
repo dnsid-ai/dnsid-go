@@ -202,7 +202,7 @@ func rejectUnknownSigFields(value any) error {
 		return fmt.Errorf("dnsid: c2sp-tlog sigs field must be an object")
 	}
 	for name, raw := range sigs {
-		if name != "ae" && name != "op" && name != "prev_op" && name != "new_op" {
+		if name != "ae" && name != "op" && name != "prev_op" && name != "new_op" && name != "prev_ae" && name != "new_ae" {
 			return fmt.Errorf("dnsid: unsupported c2sp-tlog signature field %q", name)
 		}
 		sig, ok := raw.(map[string]any)

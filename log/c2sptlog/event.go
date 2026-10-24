@@ -295,6 +295,20 @@ func payloadFromEventWithChain(event dnsidlog.LogEvent, includeSigs bool, ref *R
 			}
 			payload["new_ku"] = newKU
 		}
+	case dnsidlog.LogEventEntityKeyRotation:
+		if event.PreviousEntityThumbprint != "" {
+			payload["prev_ek_thumb"] = event.PreviousEntityThumbprint
+		}
+		if event.NewEntityThumbprint != "" {
+			payload["new_ek_thumb"] = event.NewEntityThumbprint
+		}
+		if event.NewEntityPublicKey != nil {
+			newEK, err := keyAsJSON(event.NewEntityPublicKey)
+			if err != nil {
+				return nil, err
+			}
+			payload["new_ek"] = newEK
+		}
 	case dnsidlog.LogEventRevocation:
 		if event.Reason != "" {
 			payload["reason"] = event.Reason
@@ -349,6 +363,13 @@ func signaturesFromEvent(event dnsidlog.LogEvent) map[string]any {
 		}
 		if event.NewOperationalKid != "" && event.NewOperationalSignature != "" {
 			sigs["new_op"] = map[string]any{"kid": event.NewOperationalKid, "sig": event.NewOperationalSignature}
+		}
+	case dnsidlog.LogEventEntityKeyRotation:
+		if event.PreviousEntityKid != "" && event.PreviousEntitySignature != "" {
+			sigs["prev_ae"] = map[string]any{"kid": event.PreviousEntityKid, "sig": event.PreviousEntitySignature}
+		}
+		if event.NewEntityKid != "" && event.NewEntitySignature != "" {
+			sigs["new_ae"] = map[string]any{"kid": event.NewEntityKid, "sig": event.NewEntitySignature}
 		}
 	default:
 		if event.InitialEntityKid != "" && event.InitialEntitySignature != "" {
@@ -448,6 +469,14 @@ func eventFromPayload(payload map[string]any) (parsedEvent, error) {
 		} else if ok {
 			event.NewOperationalPublicKey = key
 		}
+	case dnsidlog.LogEventEntityKeyRotation:
+		event.PreviousEntityThumbprint, _ = optionalString(payload, "prev_ek_thumb")
+		event.NewEntityThumbprint, _ = optionalString(payload, "new_ek_thumb")
+		if key, ok, err := optionalJWK(payload, "new_ek"); err != nil {
+			fieldErr = errors.Join(fieldErr, err)
+		} else if ok {
+			event.NewEntityPublicKey = key
+		}
 	case dnsidlog.LogEventRevocation:
 		event.Reason, _ = optionalString(payload, "reason")
 	case dnsidlog.LogEventRetirement:
@@ -507,6 +536,20 @@ func validateLifecycleFields(event dnsidlog.LogEvent) error {
 		thumb, err := thumbprint(event.NewOperationalPublicKey)
 		if err != nil || thumb != event.NewOperationalThumbprint {
 			return fmt.Errorf("dnsid: c2sp-tlog new_thumb does not match new_ku")
+		}
+	case dnsidlog.LogEventEntityKeyRotation:
+		if event.PreviousEntityThumbprint == "" || event.NewEntityThumbprint == "" || event.NewEntityPublicKey == nil {
+			return fmt.Errorf("dnsid: c2sp-tlog ENTITY_KEY_ROTATION requires prev_ek_thumb, new_ek_thumb, and new_ek")
+		}
+		if err := validateSigningJWK(event.NewEntityPublicKey, "new_ek"); err != nil {
+			return err
+		}
+		thumb, err := thumbprint(event.NewEntityPublicKey)
+		if err != nil || thumb != event.NewEntityThumbprint {
+			return fmt.Errorf("dnsid: c2sp-tlog new_ek_thumb does not match new_ek")
+		}
+		if event.NewEntityThumbprint == event.PreviousEntityThumbprint {
+			return fmt.Errorf("dnsid: c2sp-tlog ENTITY_KEY_ROTATION must change the entity key")
 		}
 	case dnsidlog.LogEventRevocation:
 		if !dnsidlog.ValidRevocationReason(event.Reason) {
@@ -587,6 +630,14 @@ func validateEmbeddedSignatureKids(event dnsidlog.LogEvent) error {
 		if event.NewOperationalKid != newKid {
 			return fmt.Errorf("dnsid: c2sp-tlog KEY_ROTATION new_op kid does not match new_ku")
 		}
+	case dnsidlog.LogEventEntityKeyRotation:
+		if event.NewEntityPublicKey == nil {
+			return fmt.Errorf("dnsid: ENTITY_KEY_ROTATION requires new entity key")
+		}
+		newKid, _ := event.NewEntityPublicKey.KeyID()
+		if event.NewEntityKid != newKid {
+			return fmt.Errorf("dnsid: c2sp-tlog ENTITY_KEY_ROTATION new_ae kid does not match new_ek")
+		}
 	}
 	// kid is a label; distinct keys may share one (method section 9).
 	return nil
@@ -631,6 +682,14 @@ func applySignatures(event *dnsidlog.LogEvent, payload map[string]any) {
 	if next, ok := parseSig(sigs["new_op"]); ok {
 		event.NewOperationalKid = next.Kid
 		event.NewOperationalSignature = next.Sig
+	}
+	if prev, ok := parseSig(sigs["prev_ae"]); ok {
+		event.PreviousEntityKid = prev.Kid
+		event.PreviousEntitySignature = prev.Sig
+	}
+	if next, ok := parseSig(sigs["new_ae"]); ok {
+		event.NewEntityKid = next.Kid
+		event.NewEntitySignature = next.Sig
 	}
 }
 

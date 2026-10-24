@@ -27,13 +27,16 @@ func ParseLogRef(lr string) (method, entryRef string, err error) {
 type LogSignerRole string
 
 // The lifecycle-event signer roles: the accountable entity signature, the
-// operational countersignature on ISSUANCE, and the previous- and
-// new-operational signatures on KEY_ROTATION.
+// operational countersignature on ISSUANCE, the previous- and
+// new-operational signatures on KEY_ROTATION, and the previous- and
+// new-entity signatures on ENTITY_KEY_ROTATION.
 const (
 	LogSignerEntity                      LogSignerRole = "entity"
 	LogSignerOperationalCountersignature LogSignerRole = "operational_countersignature"
 	LogSignerPreviousOperational         LogSignerRole = "previous_operational"
 	LogSignerNewOperational              LogSignerRole = "new_operational"
+	LogSignerPreviousEntity              LogSignerRole = "previous_entity"
+	LogSignerNewEntity                   LogSignerRole = "new_entity"
 )
 
 // LogEventCanonicalizer produces the exact bytes covered by lifecycle-event
@@ -65,7 +68,7 @@ func (m *IdentityManager) SignLogEvent(event dnsidlog.LogEvent, role LogSignerRo
 	}
 	var kp KeyProvider
 	switch role {
-	case LogSignerEntity:
+	case LogSignerEntity, LogSignerPreviousEntity, LogSignerNewEntity:
 		kp = m.entityKeys
 	case LogSignerOperationalCountersignature, LogSignerPreviousOperational, LogSignerNewOperational:
 		kp = m.keys
@@ -101,6 +104,10 @@ func SignLogEventWithKey(event dnsidlog.LogEvent, role LogSignerRole, kp KeyProv
 		kid, useNamedKey = event.PreviousOperationalKid, true
 	case LogSignerNewOperational:
 		expected, kid, useNamedKey = event.NewOperationalPublicKey, event.NewOperationalKid, true
+	case LogSignerPreviousEntity:
+		kid, useNamedKey = event.PreviousEntityKid, true
+	case LogSignerNewEntity:
+		expected, kid, useNamedKey = event.NewEntityPublicKey, event.NewEntityKid, true
 	default:
 		return event, NewArgumentError(fmt.Sprintf("dnsid: unsupported log signer role %q", role), nil)
 	}
@@ -116,7 +123,7 @@ func SignLogEventWithKey(event dnsidlog.LogEvent, role LogSignerRole, kp KeyProv
 	} else if kid == "" {
 		return event, NewArgumentError(fmt.Sprintf("dnsid: log signer role %q has no event kid", role), nil)
 	}
-	if expected == nil && role != LogSignerPreviousOperational {
+	if expected == nil && role != LogSignerPreviousOperational && role != LogSignerPreviousEntity {
 		return event, NewArgumentError(fmt.Sprintf("dnsid: log signer role %q has no event public key", role), nil)
 	}
 	key := kp.JWK(kid)
@@ -128,6 +135,9 @@ func SignLogEventWithKey(event dnsidlog.LogEvent, role LogSignerRole, kp KeyProv
 		return event, NewArgumentError(fmt.Sprintf("dnsid: computing log signer role %q key thumbprint", role), err)
 	}
 	expectedThumb := event.PreviousOperationalThumbprint
+	if role == LogSignerPreviousEntity {
+		expectedThumb = event.PreviousEntityThumbprint
+	}
 	if expected != nil {
 		expectedThumb, err = (&JWK{key: expected}).Thumbprint()
 		if err != nil {
@@ -154,6 +164,12 @@ func SignLogEventWithKey(event dnsidlog.LogEvent, role LogSignerRole, kp KeyProv
 	case LogSignerNewOperational:
 		event.NewOperationalKid = kid
 		event.NewOperationalSignature = ""
+	case LogSignerPreviousEntity:
+		event.PreviousEntityKid = kid
+		event.PreviousEntitySignature = ""
+	case LogSignerNewEntity:
+		event.NewEntityKid = kid
+		event.NewEntitySignature = ""
 	}
 	canonical, err := canonicalizer.Canonical(event)
 	if err != nil {
@@ -184,6 +200,10 @@ func SignLogEventWithKey(event dnsidlog.LogEvent, role LogSignerRole, kp KeyProv
 		event.PreviousOperationalSignature = encoded
 	case LogSignerNewOperational:
 		event.NewOperationalSignature = encoded
+	case LogSignerPreviousEntity:
+		event.PreviousEntitySignature = encoded
+	case LogSignerNewEntity:
+		event.NewEntitySignature = encoded
 	}
 	return event, nil
 }
@@ -202,6 +222,8 @@ func RequiredLogSignatures(event dnsidlog.LogEvent) ([]LogSignerRole, error) {
 		return []LogSignerRole{LogSignerEntity, LogSignerOperationalCountersignature}, nil
 	case dnsidlog.LogEventKeyRotation:
 		return []LogSignerRole{LogSignerPreviousOperational}, nil
+	case dnsidlog.LogEventEntityKeyRotation:
+		return []LogSignerRole{LogSignerPreviousEntity, LogSignerNewEntity}, nil
 	case dnsidlog.LogEventRevocation, dnsidlog.LogEventRetirement, dnsidlog.LogEventMigration, dnsidlog.LogEventDelegation:
 		return []LogSignerRole{LogSignerEntity}, nil
 	default:
@@ -219,6 +241,10 @@ func logSignaturePresent(event dnsidlog.LogEvent, role LogSignerRole) bool {
 		return event.PreviousOperationalKid != "" && event.PreviousOperationalSignature != ""
 	case LogSignerNewOperational:
 		return event.NewOperationalKid != "" && event.NewOperationalSignature != ""
+	case LogSignerPreviousEntity:
+		return event.PreviousEntityKid != "" && event.PreviousEntitySignature != ""
+	case LogSignerNewEntity:
+		return event.NewEntityKid != "" && event.NewEntitySignature != ""
 	default:
 		return false
 	}
@@ -245,6 +271,16 @@ func (m *IdentityManager) WriteSignedEvent(ctx context.Context, event dnsidlog.L
 	case dnsidlog.LogEventKeyRotation:
 		if event.PreviousOperationalKid == "" || event.PreviousOperationalSignature == "" {
 			return "", NewArgumentError("dnsid: KEY_ROTATION requires a previous-operational signature", nil)
+		}
+	case dnsidlog.LogEventEntityKeyRotation:
+		if event.NewEntityPublicKey == nil {
+			return "", NewArgumentError("dnsid: ENTITY_KEY_ROTATION requires the new accountable-entity public key", nil)
+		}
+		if event.PreviousEntityKid == "" || event.PreviousEntitySignature == "" {
+			return "", NewArgumentError("dnsid: ENTITY_KEY_ROTATION requires a previous-entity signature", nil)
+		}
+		if event.NewEntityKid == "" || event.NewEntitySignature == "" {
+			return "", NewArgumentError("dnsid: ENTITY_KEY_ROTATION requires a new-entity signature", nil)
 		}
 	case dnsidlog.LogEventRevocation, dnsidlog.LogEventRetirement, dnsidlog.LogEventMigration, dnsidlog.LogEventDelegation:
 		if event.InitialEntityKid == "" || event.InitialEntitySignature == "" {

@@ -186,6 +186,20 @@ func verifyLifecycleVerifiedWithMigration(ctx context.Context, indexed []verifie
 				continue
 			}
 			previousState = activeLifecycleState(event.Domain, entityThumb, currentOperationalThumb)
+		case dnsidlog.LogEventEntityKeyRotation:
+			activeEntityThumb, err := thumbprint(entityKey)
+			if err != nil {
+				continue
+			}
+			if event.PreviousEntityThumbprint != activeEntityThumb || event.NewEntityPublicKey == nil || event.NewEntityThumbprint == "" {
+				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeKeyContinuity, false, "dnsid: authenticated ENTITY_KEY_ROTATION does not continue from the active entity key", nil)
+			}
+			newThumb, err := thumbprint(event.NewEntityPublicKey)
+			if err != nil || newThumb != event.NewEntityThumbprint || newThumb == activeEntityThumb || newThumb == currentOperationalThumb {
+				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeKeyContinuity, false, "dnsid: authenticated ENTITY_KEY_ROTATION new key binding is invalid", err)
+			}
+			entityKey = event.NewEntityPublicKey
+			previousState = activeLifecycleState(event.Domain, newThumb, currentOperationalThumb)
 		case dnsidlog.LogEventRevocation, dnsidlog.LogEventRetirement, dnsidlog.LogEventMigration, dnsidlog.LogEventDelegation:
 			if event.Type == dnsidlog.LogEventRevocation && !dnsidlog.ValidRevocationReason(event.Reason) {
 				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: authenticated REVOCATION reason is invalid", nil)
@@ -240,6 +254,8 @@ func candidateAuthorizedByCurrentHistory(event dnsidlog.LogEvent, canonical []by
 	case dnsidlog.LogEventKeyRotation:
 		key = operationalKey
 		kid, signature = event.PreviousOperationalKid, event.PreviousOperationalSignature
+	case dnsidlog.LogEventEntityKeyRotation:
+		kid, signature = event.PreviousEntityKid, event.PreviousEntitySignature
 	case dnsidlog.LogEventIssuance, dnsidlog.LogEventRevocation, dnsidlog.LogEventRetirement,
 		dnsidlog.LogEventMigration, dnsidlog.LogEventDelegation:
 	default:
@@ -259,6 +275,8 @@ func candidateAuthorizedByCurrentHistory(event dnsidlog.LogEvent, canonical []by
 		counterKey, counterKid, counterSignature = event.InitialOperationalPublicKey, event.InitialOperationalKid, event.InitialOperationalSignature
 	case dnsidlog.LogEventKeyRotation:
 		counterKey, counterKid, counterSignature = event.NewOperationalPublicKey, event.NewOperationalKid, event.NewOperationalSignature
+	case dnsidlog.LogEventEntityKeyRotation:
+		counterKey, counterKid, counterSignature = event.NewEntityPublicKey, event.NewEntityKid, event.NewEntitySignature
 	default:
 		return true
 	}
@@ -299,12 +317,11 @@ func validateMigrationResult(event dnsidlog.LogEvent, migration MigrationVerific
 	if err != nil || snapshot.HistoricalState != dnsidlog.AgentStateActive || snapshot.ActiveKeyThumbprint != operationalThumb {
 		return invalidMigration("dnsid: inbound MIGRATION prior history does not establish the active operational key", err)
 	}
-	var priorEntityKey jwk.Key
-	for _, prior := range migration.PriorHistory {
-		if prior.Type == dnsidlog.LogEventIssuance {
-			priorEntityKey = prior.InitialEntityPublicKey
-			break
-		}
+	// The destination imports the entity key current at the end of the
+	// verified prior history, after any ENTITY_KEY_ROTATION events.
+	priorEntityKey, err := dnsidlog.CurrentEntityKey(migration.PriorHistory)
+	if err != nil {
+		return invalidMigration("dnsid: inbound MIGRATION prior history does not establish the entity key", err)
 	}
 	priorEntityThumb, err := thumbprint(priorEntityKey)
 	if err != nil || priorEntityThumb != entityThumb {
