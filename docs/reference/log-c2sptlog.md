@@ -277,7 +277,7 @@ func EntryBytes(event dnsidlog.LogEvent) ([]byte, error)
 EntryBytes returns the canonical entry bytes for event, including its signatures, without any stream context. It returns an error if the event has no signatures or exceeds the maximum entry size. Use Client.EntryBytes for stream\-contextualized entries.
 
 <a name="EventID"></a>
-## func [EventID](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/event.go#L728>)
+## func [EventID](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/event.go#L787>)
 
 ```go
 func EventID(signedBytes []byte) string
@@ -549,7 +549,7 @@ func (c *Client) CanonicalWithChain(event dnsidlog.LogEvent, chain Chain) ([]byt
 CanonicalWithChain is Canonical with caller\-supplied logical stream\-chain metadata, as required for non\-genesis events in every scope.
 
 <a name="Client.ChainForWrite"></a>
-### func \(\*Client\) [ChainForWrite](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L505>)
+### func \(\*Client\) [ChainForWrite](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L533>)
 
 ```go
 func (c *Client) ChainForWrite(ctx context.Context, event dnsidlog.LogEvent) (Chain, error)
@@ -585,7 +585,7 @@ func (c *Client) KeyTimestamp(ctx context.Context, domain, keyThumbprint string)
 KeyTimestamp returns the signed event timestamp of the verified event that bound keyThumbprint for domain. Inclusion verification has already enforced that this timestamp does not exceed the accepted log timestamp. It returns an error if keyThumbprint is not the currently active operational key.
 
 <a name="Client.ParsePreparedEvent"></a>
-### func \(\*Client\) [ParsePreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L141>)
+### func \(\*Client\) [ParsePreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L148>)
 
 ```go
 func (c *Client) ParsePreparedEvent(entry []byte) (*PreparedEvent, error)
@@ -594,7 +594,7 @@ func (c *Client) ParsePreparedEvent(entry []byte) (*PreparedEvent, error)
 ParsePreparedEvent treats received bytes as untrusted, canonicalizes the envelope independently, and preserves unknown signed fields.
 
 <a name="Client.PreloadHistory"></a>
-### func \(\*Client\) [PreloadHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L942>)
+### func \(\*Client\) [PreloadHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L955>)
 
 ```go
 func (c *Client) PreloadHistory(ctx context.Context, domain string) (dnsidlog.LogReader, error)
@@ -603,7 +603,7 @@ func (c *Client) PreloadHistory(ctx context.Context, domain string) (dnsidlog.Lo
 PreloadHistory retrieves history while the caller fetches the operational key. The returned reader reuses entries until ctx is canceled or their bundle expires; callers must cancel ctx when verification ends. Proofs and lifecycle are verified on use. Custom sources are not preloaded because their freshness bounds are unknown.
 
 <a name="Client.PrepareEvent"></a>
-### func \(\*Client\) [PrepareEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L102>)
+### func \(\*Client\) [PrepareEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L109>)
 
 ```go
 func (c *Client) PrepareEvent(event dnsidlog.LogEvent) (*PreparedEvent, error)
@@ -612,7 +612,7 @@ func (c *Client) PrepareEvent(event dnsidlog.LogEvent) (*PreparedEvent, error)
 PrepareEvent builds an unsigned method\-specific envelope. ISSUANCE and inbound MIGRATION derive seq=0; later events use PrepareEventWithChain.
 
 <a name="Client.PrepareEventWithChain"></a>
-### func \(\*Client\) [PrepareEventWithChain](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L115>)
+### func \(\*Client\) [PrepareEventWithChain](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L122>)
 
 ```go
 func (c *Client) PrepareEventWithChain(event dnsidlog.LogEvent, chain Chain) (*PreparedEvent, error)
@@ -621,7 +621,7 @@ func (c *Client) PrepareEventWithChain(event dnsidlog.LogEvent, chain Chain) (*P
 PrepareEventWithChain is PrepareEvent with caller\-supplied public stream\-chain metadata, as required for non\-genesis events in every scope.
 
 <a name="Client.PreparedEntryBytes"></a>
-### func \(\*Client\) [PreparedEntryBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L332>)
+### func \(\*Client\) [PreparedEntryBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L340>)
 
 ```go
 func (c *Client) PreparedEntryBytes(ctx context.Context, prepared *PreparedEvent) (result []byte, err error)
@@ -630,7 +630,7 @@ func (c *Client) PreparedEntryBytes(ctx context.Context, prepared *PreparedEvent
 PreparedEntryBytes returns exact canonical bytes after validating all required signatures. It never appends.
 
 <a name="Client.ReadEvent"></a>
-### func \(\*Client\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L877>)
+### func \(\*Client\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L890>)
 
 ```go
 func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsidlog.LogEvent, err error)
@@ -639,7 +639,7 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 ReadEvent reads and verifies the single event addressed by a final event reference \<lr\>@\<index\>. The entry's inclusion proof must verify, its index must match the reference, and the entry must appear in the domain's verified lifecycle history; otherwise an error is returned.
 
 <a name="Client.RebuildHistory"></a>
-### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L993>)
+### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L1006>)
 
 ```go
 func (c *Client) RebuildHistory(ctx context.Context, domain string) ([]dnsidlog.LogEvent, error)
@@ -657,7 +657,7 @@ func (c *Client) RebuildHistoryThrough(ctx context.Context, domain string, final
 RebuildHistoryThrough verifies an exact signed migration cutoff. It can be called by an injected MigrationVerifier after selecting the source's trust configuration. Later source events are not imported. A valid later copy of the final logical event is allowed; its exact occurrence evidence is retained.
 
 <a name="Client.SignPreparedEvent"></a>
-### func \(\*Client\) [SignPreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L216>)
+### func \(\*Client\) [SignPreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L223>)
 
 ```go
 func (c *Client) SignPreparedEvent(ctx context.Context, prepared *PreparedEvent, role SignerRole, kp dnsid.KeyProvider) (*PreparedEvent, error)
@@ -666,25 +666,25 @@ func (c *Client) SignPreparedEvent(ctx context.Context, prepared *PreparedEvent,
 SignPreparedEvent validates every signature already present and adds exactly one role signature. ctx is used when historical stream keys are required.
 
 <a name="Client.SignPreparedEventWithKey"></a>
-### func \(\*Client\) [SignPreparedEventWithKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L223>)
+### func \(\*Client\) [SignPreparedEventWithKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L231>)
 
 ```go
 func (c *Client) SignPreparedEventWithKey(ctx context.Context, prepared *PreparedEvent, role SignerRole, kp dnsid.KeyProvider, kid string) (*PreparedEvent, error)
 ```
 
-SignPreparedEventWithKey validates every signature already present and adds role using the named active or pending key. It is intended for transitions such as KEY\_ROTATION whose new\-key proof must be made before activation.
+SignPreparedEventWithKey validates every signature already present and adds role using the named active or pending key. It is intended for transitions such as KEY\_ROTATION and ENTITY\_KEY\_ROTATION whose new\-key proof must be made before activation.
 
 <a name="Client.VerifyBilateralBinding"></a>
-### func \(\*Client\) [VerifyBilateralBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L535>)
+### func \(\*Client\) [VerifyBilateralBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L537>)
 
 ```go
 func (c *Client) VerifyBilateralBinding(ctx context.Context, input dnsidlog.BilateralBindingInput) (binding dnsidlog.BilateralBinding, err error)
 ```
 
-VerifyBilateralBinding verifies the signed ISSUANCE event against the current DNS record material and returns its trusted continuity anchor.
+VerifyBilateralBinding verifies the signed ISSUANCE event against the current DNS record material and returns its trusted continuity anchor. The record's ek must match the entity key current at the end of the verified history, which ENTITY\_KEY\_ROTATION events may have moved from ISSUANCE.
 
 <a name="Client.VerifyGovernanceRelationship"></a>
-### func \(\*Client\) [VerifyGovernanceRelationship](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L672>)
+### func \(\*Client\) [VerifyGovernanceRelationship](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L685>)
 
 ```go
 func (c *Client) VerifyGovernanceRelationship(ctx context.Context, domain, governanceID string) (err error)
@@ -693,7 +693,7 @@ func (c *Client) VerifyGovernanceRelationship(ctx context.Context, domain, gover
 VerifyGovernanceRelationship verifies that a verified ISSUANCE event for domain names governanceID as the governing organization.
 
 <a name="Client.VerifyLifecycleBinding"></a>
-### func \(\*Client\) [VerifyLifecycleBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L639>)
+### func \(\*Client\) [VerifyLifecycleBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L652>)
 
 ```go
 func (c *Client) VerifyLifecycleBinding(ctx context.Context, input dnsidlog.BilateralBindingInput, currentOperationalThumbprint string) (binding dnsidlog.BilateralBinding, err error)
@@ -702,7 +702,7 @@ func (c *Client) VerifyLifecycleBinding(ctx context.Context, input dnsidlog.Bila
 VerifyLifecycleBinding verifies the bilateral ISSUANCE binding and operational continuity over one verified lifecycle snapshot.
 
 <a name="Client.VerifyNonRevocation"></a>
-### func \(\*Client\) [VerifyNonRevocation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L698>)
+### func \(\*Client\) [VerifyNonRevocation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L711>)
 
 ```go
 func (c *Client) VerifyNonRevocation(ctx context.Context, domain string, at time.Time) (evidence dnsidlog.LoggedStateEvidence, err error)
@@ -711,7 +711,7 @@ func (c *Client) VerifyNonRevocation(ctx context.Context, domain string, at time
 VerifyNonRevocation verifies that domain's identity was neither revoked nor retired as of time at. It requires the configured Source to implement CompleteSource, because proving the absence of a REVOCATION entry needs a complete view of the stream and a positive maximum checkpoint age; without either it fails closed. Success returns the exact accepted proof boundaries, including every prior stream imported by migration.
 
 <a name="Client.VerifyOperationalContinuity"></a>
-### func \(\*Client\) [VerifyOperationalContinuity](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L589>)
+### func \(\*Client\) [VerifyOperationalContinuity](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L602>)
 
 ```go
 func (c *Client) VerifyOperationalContinuity(ctx context.Context, domain, initialOperationalThumbprint, currentOperationalThumbprint string) (err error)
@@ -738,7 +738,7 @@ func (c *Client) WriteEventWithChain(ctx context.Context, event dnsidlog.LogEven
 WriteEventWithChain is WriteEvent with caller\-supplied logical stream\-chain metadata, as required for non\-genesis events in every scope. The chain is validated against the verified history before the entry is appended.
 
 <a name="Client.WritePreparedEvent"></a>
-### func \(\*Client\) [WritePreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L364>)
+### func \(\*Client\) [WritePreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L372>)
 
 ```go
 func (c *Client) WritePreparedEvent(ctx context.Context, prepared *PreparedEvent) (dnsidlog.LogRef, error)
@@ -1390,7 +1390,7 @@ func (p Policy) VerifyProof(ref Reference, entry, rawProof []byte) (*VerifiedPro
 VerifyProof verifies rawProof as an inclusion proof for entry in the log identified by ref. It parses the proof, verifies the embedded checkpoint's log signature, witness quorum, and freshness under the policy, and checks the RFC 6962 inclusion path from the entry's leaf hash to the checkpoint root. It returns an error if any step fails.
 
 <a name="PreparedEvent"></a>
-## type [PreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L34-L39>)
+## type [PreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L41-L46>)
 
 PreparedEvent preserves the complete method\-specific envelope while its lifecycle signatures are collected. Its accessors return copies.
 
@@ -1401,7 +1401,7 @@ type PreparedEvent struct {
 ```
 
 <a name="PreparedEvent.Bytes"></a>
-### func \(\*PreparedEvent\) [Bytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L78>)
+### func \(\*PreparedEvent\) [Bytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L85>)
 
 ```go
 func (p *PreparedEvent) Bytes() ([]byte, error)
@@ -1410,7 +1410,7 @@ func (p *PreparedEvent) Bytes() ([]byte, error)
 Bytes returns the current canonical envelope, including any signatures already collected. It may be incomplete and is intended for signer handoff.
 
 <a name="PreparedEvent.Event"></a>
-### func \(\*PreparedEvent\) [Event](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L88>)
+### func \(\*PreparedEvent\) [Event](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L95>)
 
 ```go
 func (p *PreparedEvent) Event() (dnsidlog.LogEvent, error)
@@ -1419,7 +1419,7 @@ func (p *PreparedEvent) Event() (dnsidlog.LogEvent, error)
 Event returns the envelope parsed as the shared lifecycle event representation, including any signatures collected so far. It returns an error on a nil receiver.
 
 <a name="PreparedEvent.EventID"></a>
-### func \(\*PreparedEvent\) [EventID](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L60>)
+### func \(\*PreparedEvent\) [EventID](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L67>)
 
 ```go
 func (p *PreparedEvent) EventID() string
@@ -1428,7 +1428,7 @@ func (p *PreparedEvent) EventID() string
 EventID returns the derived logical event identity, unchanged by signatures.
 
 <a name="PreparedEvent.Reference"></a>
-### func \(\*PreparedEvent\) [Reference](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L43>)
+### func \(\*PreparedEvent\) [Reference](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L50>)
 
 ```go
 func (p *PreparedEvent) Reference() Reference
@@ -1437,7 +1437,7 @@ func (p *PreparedEvent) Reference() Reference
 Reference returns the stream reference the event was prepared for. It returns the zero Reference on a nil receiver.
 
 <a name="PreparedEvent.RequiredSignatures"></a>
-### func \(\*PreparedEvent\) [RequiredSignatures](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L69>)
+### func \(\*PreparedEvent\) [RequiredSignatures](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L76>)
 
 ```go
 func (p *PreparedEvent) RequiredSignatures() []SignerRole
@@ -1446,7 +1446,7 @@ func (p *PreparedEvent) RequiredSignatures() []SignerRole
 RequiredSignatures returns a copy of the signer roles this event type requires before it can be written. It returns nil on a nil receiver.
 
 <a name="PreparedEvent.SignedBytes"></a>
-### func \(\*PreparedEvent\) [SignedBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L52>)
+### func \(\*PreparedEvent\) [SignedBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/prepared.go#L59>)
 
 ```go
 func (p *PreparedEvent) SignedBytes() []byte
@@ -1760,7 +1760,8 @@ type SignerRole string
 ```go
 const (
     // SignerEntity is the accountable entity key: it signs ISSUANCE and
-    // every post-issuance event other than KEY_ROTATION.
+    // every post-issuance event other than KEY_ROTATION and
+    // ENTITY_KEY_ROTATION. After an ENTITY_KEY_ROTATION it is the rotated key.
     SignerEntity SignerRole = "entity"
     // SignerOperationalCountersignature is the operational key's
     // countersignature on ISSUANCE.
@@ -1771,6 +1772,12 @@ const (
     // SignerNewOperational is the incoming operational key's signature on
     // KEY_ROTATION.
     SignerNewOperational SignerRole = "new_operational"
+    // SignerPreviousEntity is the outgoing accountable-entity key's
+    // authorizing signature on ENTITY_KEY_ROTATION.
+    SignerPreviousEntity SignerRole = "previous_entity"
+    // SignerNewEntity is the incoming accountable-entity key's
+    // proof-of-possession signature on ENTITY_KEY_ROTATION.
+    SignerNewEntity SignerRole = "new_entity"
 )
 ```
 

@@ -9,7 +9,7 @@ description: "KeyProvider implementations, key metadata, and log-event signing."
 
 Part of the root package `github.com/dnsid-ai/dnsid-go` — see [Core: IdentityManager](https://docs.dnsid.ai/reference/go/dnsid) for the package overview.
 
-## func [SignLogEventWithKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L85>)
+## func [SignLogEventWithKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L88>)
 
 ```go
 func SignLogEventWithKey(event dnsidlog.LogEvent, role LogSignerRole, kp KeyProvider, canonicalizer LogEventCanonicalizer) (dnsidlog.LogEvent, error)
@@ -192,7 +192,7 @@ func (p *LocalKeyProvider) Supersede(kid string) error
 Supersede removes a retained key after a completed rotation. It returns an \*ArgumentError when kid does not name a retained key.
 
 <a name="LogEventCanonicalizer"></a>
-## type [LogEventCanonicalizer](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L41-L43>)
+## type [LogEventCanonicalizer](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L44-L46>)
 
 LogEventCanonicalizer produces the exact bytes covered by lifecycle\-event signatures for one bound log method and reference.
 
@@ -211,7 +211,7 @@ LogSignerRole identifies a DNSid lifecycle\-event signer. Signatures from all ro
 type LogSignerRole string
 ```
 
-<a name="LogSignerEntity"></a>The lifecycle\-event signer roles: the accountable entity signature, the operational countersignature on ISSUANCE, and the previous\- and new\-operational signatures on KEY\_ROTATION.
+<a name="LogSignerEntity"></a>The lifecycle\-event signer roles: the accountable entity signature, the operational countersignature on ISSUANCE, the previous\- and new\-operational signatures on KEY\_ROTATION, and the previous\- and new\-entity signatures on ENTITY\_KEY\_ROTATION.
 
 ```go
 const (
@@ -219,11 +219,13 @@ const (
     LogSignerOperationalCountersignature LogSignerRole = "operational_countersignature"
     LogSignerPreviousOperational         LogSignerRole = "previous_operational"
     LogSignerNewOperational              LogSignerRole = "new_operational"
+    LogSignerPreviousEntity              LogSignerRole = "previous_entity"
+    LogSignerNewEntity                   LogSignerRole = "new_entity"
 )
 ```
 
 <a name="RequiredLogSignatures"></a>
-### func [RequiredLogSignatures](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L199>)
+### func [RequiredLogSignatures](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L219>)
 
 ```go
 func RequiredLogSignatures(event dnsidlog.LogEvent) ([]LogSignerRole, error)

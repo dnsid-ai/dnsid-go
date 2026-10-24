@@ -95,6 +95,15 @@ Operational-key rotation behavior:
 5. Keep the old key retained until all JWTs and signed requests that could have been created with it have expired and verifier caches have had time to refresh.
 6. Remove the old retained key with `Supersede` after the overlap window, or `Purge` a pending/retained key that should not remain.
 
+Accountable-entity key rotation (`ENTITY_KEY_ROTATION`, c2sp-tlog):
+
+- An `ENTITY_KEY_ROTATION` event moves an identity from its current entity key to a new one. It carries `prev_ek_thumb`, `new_ek_thumb` and the new public JWK `new_ek`, and needs two signatures over the same canonical bytes: `prev_ae` by the current entity key (authorization) and `new_ae` by the new key (proof of possession). `RequiredSignatures` and `RequiredLogSignatures` report them as `previous_entity` then `new_entity` (`SignerPreviousEntity`/`SignerNewEntity`, `LogSignerPreviousEntity`/`LogSignerNewEntity`).
+- Prepare it with `Client.ChainForWrite` and `PrepareEventWithChain`, collect both role signatures with `SignPreparedEvent` (the new key can sign before it is published), then `WritePreparedEvent`. The writer refuses a rotation whose `prev_ek_thumb` is not the current entity key or whose new key equals the current entity or operational key.
+- After the rotation is logged, publish the new key as the record's `ek=`. `VerifyBilateralBinding` requires `ek=` to match the entity key current at the end of the verified history, and `BilateralBinding.CurrentEntityThumbprint` reports it (`InitialEntityThumbprint` stays the ISSUANCE key). Publishing the new `ek=` before the rotation is logged, or keeping the old one after it, fails verification.
+- REVOCATION, RETIREMENT, DELEGATION and an inbound MIGRATION must then be signed by the rotated key; signatures by a superseded entity key are ignored as unauthenticated. Use `log.CurrentEntityKey` on a verified `RebuildHistory` result to find the expected signer.
+- Counterparties that pin `ek` thumbprints (`TrustedEntity.EntityKeyThumbprints`) reject the identity after a rotation until they enroll the new pin. Rotation never changes pins.
+- Verifiers that predate `ENTITY_KEY_ROTATION` (dnsid-go v0.44.1 and earlier) reject the event as unsupported and keep failing rotated identities with an entity-key mismatch. Rotate an entity key only once the verifiers that matter run a release that supports it.
+
 Important overlap rules:
 
 - `GetKeySet` and `GetEntityKeySet` publish only the current active key for draft 01 live endpoints. Retained keys are local verification/signing history in the key provider; they are not automatically exposed in live `ku=` JWKS.

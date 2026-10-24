@@ -511,7 +511,7 @@ func (m *IdentityManager) BuildUnsignedTXTRecord() (*TXTRecord, error)
 BuildUnsignedTXTRecord builds and validates this identity's unsigned \_dnsid TXT record. The returned record is ready for its entity\-key signature.
 
 <a name="IdentityManager.CanonicalizeLogEvent"></a>
-### func \(\*IdentityManager\) [CanonicalizeLogEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L48>)
+### func \(\*IdentityManager\) [CanonicalizeLogEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L51>)
 
 ```go
 func (m *IdentityManager) CanonicalizeLogEvent(event dnsidlog.LogEvent) ([]byte, error)
@@ -556,7 +556,7 @@ func (m *IdentityManager) EvictDomain(domain string)
 EvictDomain removes a domain's entry from the verified\-domain cache so the next VerifyDomain call performs a full re\-verification. Domains that fail normalization are ignored.
 
 <a name="IdentityManager.GenerateIssuanceEvent"></a>
-### func \(\*IdentityManager\) [GenerateIssuanceEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L265>)
+### func \(\*IdentityManager\) [GenerateIssuanceEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L301>)
 
 ```go
 func (m *IdentityManager) GenerateIssuanceEvent(ctx context.Context) (dnsidlog.LogRef, error)
@@ -592,7 +592,7 @@ func (m *IdentityManager) KeyProvider() KeyProvider
 KeyProvider returns this manager's local signing key provider, or nil for verify\-only managers.
 
 <a name="IdentityManager.LoadDomainLog"></a>
-### func \(\*IdentityManager\) [LoadDomainLog](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L477>)
+### func \(\*IdentityManager\) [LoadDomainLog](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L513>)
 
 ```go
 func (m *IdentityManager) LoadDomainLog(ctx context.Context, vd *VerifiedDomain) (*dnsidlog.DomainLog, error)
@@ -628,7 +628,7 @@ func (m *IdentityManager) RefreshDomain(ctx context.Context, domain string, opts
 RefreshDomain performs complete verification with new identity evidence, bypassing the identity cache and revalidating HTTP resources. Concurrent refreshes share acquisition, but not per\-caller peer or acceptance checks. Failure never returns cached evidence. Observed non\-ACTIVE status invalidates cached and in\-flight evidence. DNS propagation can still delay rotation.
 
 <a name="IdentityManager.RevokeViaRegistry"></a>
-### func \(\*IdentityManager\) [RevokeViaRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L419>)
+### func \(\*IdentityManager\) [RevokeViaRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L455>)
 
 ```go
 func (m *IdentityManager) RevokeViaRegistry(ctx context.Context, client RegistryRevoker, agentID string, reason RegistryRevocationReason) (*LifecycleResponse, error)
@@ -637,7 +637,7 @@ func (m *IdentityManager) RevokeViaRegistry(ctx context.Context, client Registry
 RevokeViaRegistry asks the registry to revoke the immutable managed identity at the local domain and evicts the local verified\-domain cache. The registry owns lifecycle persistence and the transparency\-log append; this method never appends a second local event.
 
 <a name="IdentityManager.SignAndWriteEvent"></a>
-### func \(\*IdentityManager\) [SignAndWriteEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L374>)
+### func \(\*IdentityManager\) [SignAndWriteEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L410>)
 
 ```go
 func (m *IdentityManager) SignAndWriteEvent(ctx context.Context, event dnsidlog.LogEvent) (dnsidlog.LogRef, error)
@@ -646,7 +646,7 @@ func (m *IdentityManager) SignAndWriteEvent(ctx context.Context, event dnsidlog.
 SignAndWriteEvent adds every signature the event's type requires that is not already present — using the entity key for entity signatures and the operational key otherwise — and writes the event to the local log. Roles whose key provider is not configured are skipped, in which case WriteSignedEvent rejects the still\-unsigned event. A zero Timestamp is set to the current time truncated to seconds.
 
 <a name="IdentityManager.SignLogEvent"></a>
-### func \(\*IdentityManager\) [SignLogEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L62>)
+### func \(\*IdentityManager\) [SignLogEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L65>)
 
 ```go
 func (m *IdentityManager) SignLogEvent(event dnsidlog.LogEvent, role LogSignerRole) (dnsidlog.LogEvent, error)
@@ -811,7 +811,7 @@ func (m *IdentityManager) VerifyLocalPublication(ctx context.Context) (*Verified
 VerifyLocalPublication fully verifies new evidence for this manager's own identity, as RefreshDomain does, without application\-peer or counterparty acceptance checks. Use it to confirm the manager's own publication, for example before activating a rotated operational key.
 
 <a name="IdentityManager.VerifyLogEvidence"></a>
-### func \(\*IdentityManager\) [VerifyLogEvidence](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L469>)
+### func \(\*IdentityManager\) [VerifyLogEvidence](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L505>)
 
 ```go
 func (m *IdentityManager) VerifyLogEvidence(ctx context.Context, vd *VerifiedDomain, at time.Time) (dnsidlog.LoggedStateEvidence, error)
@@ -820,7 +820,7 @@ func (m *IdentityManager) VerifyLogEvidence(ctx context.Context, vd *VerifiedDom
 VerifyLogEvidence performs an operation\-time complete\-history and non\-revocation check for vd. A zero at value uses the current time.
 
 <a name="IdentityManager.WriteSignedEvent"></a>
-### func \(\*IdentityManager\) [WriteSignedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L230>)
+### func \(\*IdentityManager\) [WriteSignedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L256>)
 
 ```go
 func (m *IdentityManager) WriteSignedEvent(ctx context.Context, event dnsidlog.LogEvent) (dnsidlog.LogRef, error)
@@ -1222,7 +1222,7 @@ func (v *VerifiedDomain) VerifiedAt() time.Time
 VerifiedAt returns when full verification completed. It returns the zero time on a nil receiver.
 
 <a name="VerifiedDomain.VerifyLogEvidence"></a>
-### func \(\*VerifiedDomain\) [VerifyLogEvidence](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L443>)
+### func \(\*VerifiedDomain\) [VerifyLogEvidence](<https://github.com/dnsid-ai/dnsid-go/blob/main/log.go#L479>)
 
 ```go
 func (v *VerifiedDomain) VerifyLogEvidence(ctx context.Context, at time.Time) (evidence dnsidlog.LoggedStateEvidence, err error)
