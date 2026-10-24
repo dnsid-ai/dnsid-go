@@ -1074,8 +1074,10 @@ func TestEntityKeyRotationPrivateNewKeyIsSkipped(t *testing.T) {
 	}
 }
 
-// Amendment 3: authenticated rotations that fail structural validation are
-// fatal invalid evidence, never ignored.
+// Amendments 3 and 4: authenticated rotations that fail structural
+// validation are fatal invalid evidence. Rotations that cannot authenticate
+// (new_ek without a kid, new_ae naming another kid, unsupported curve) are
+// skipped even though structural validation would also reject them.
 func TestEntityKeyRotationAuthenticatedMalformedIsFatal(t *testing.T) {
 	cases := map[string]func(payload map[string]any, other jwk.Key){
 		"thumb mismatch":       func(p map[string]any, other jwk.Key) { p["new_ek_thumb"] = ekrThumb(t, other) },
@@ -1085,6 +1087,7 @@ func TestEntityKeyRotationAuthenticatedMalformedIsFatal(t *testing.T) {
 		"unsupported crv":      func(p map[string]any, _ jwk.Key) { p["new_ek"].(map[string]any)["crv"] = "X25519" },
 		"missing new_ek_thumb": func(p map[string]any, _ jwk.Key) { delete(p, "new_ek_thumb") },
 		"missing kid":          func(p map[string]any, _ jwk.Key) { delete(p["new_ek"].(map[string]any), "kid") },
+		"empty kid":            func(p map[string]any, _ jwk.Key) { p["new_ek"].(map[string]any)["kid"] = "" },
 		"new_ae kid mismatch":  func(map[string]any, jwk.Key) {},
 	}
 	for name, mutate := range cases {
@@ -1123,9 +1126,10 @@ func TestEntityKeyRotationAuthenticatedMalformedIsFatal(t *testing.T) {
 			}
 			stream.appendEntry(entry)
 			_, err = stream.client.RebuildHistory(context.Background(), "agent.example")
-			if name == "unsupported crv" {
-				// An X25519 new_ek can never verify new_ae, so the
-				// rotation cannot authenticate and is skipped.
+			if name == "unsupported crv" || name == "missing kid" || name == "empty kid" || name == "new_ae kid mismatch" {
+				// The rotation cannot authenticate: an X25519 new_ek can
+				// never verify new_ae, and new_ae must name kid(new_ek),
+				// which must be non-empty. It is skipped, never fatal.
 				if err != nil {
 					t.Fatalf("RebuildHistory = %v, want unauthenticated rotation skipped", err)
 				}

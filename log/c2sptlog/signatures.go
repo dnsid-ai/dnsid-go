@@ -289,14 +289,10 @@ func candidateAuthorizedByCurrentHistory(event dnsidlog.LogEvent, canonical []by
 	if event.Type == dnsidlog.LogEventEntityKeyRotation && hasPrivateJWKMember(counterKey) {
 		return false
 	}
-	if event.Type == dnsidlog.LogEventEntityKeyRotation {
-		// new_ae authenticates by signature with new_ek alone. Its kid must
-		// equal kid(new_ek), but that is a structural check: a signed
-		// rotation that fails it is invalid evidence, not noise.
-		return counterKid != "" && verifyEventSignature(counterKey, canonical, counterSignature) == nil
-	}
+	// The counter-signature must name its key: a missing or empty kid, or a
+	// kid that differs from the key's, cannot authenticate (noise, skipped).
 	want, _ := counterKey.KeyID()
-	return counterKid != "" && counterKid == want && verifyEventSignature(counterKey, canonical, counterSignature) == nil
+	return want != "" && counterKid == want && verifyEventSignature(counterKey, canonical, counterSignature) == nil
 }
 
 // hasPrivateJWKMember reports whether key is private or carries any JWK
