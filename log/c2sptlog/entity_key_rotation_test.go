@@ -1140,3 +1140,113 @@ func TestEntityKeyRotationAuthenticatedMalformedIsFatal(t *testing.T) {
 		})
 	}
 }
+
+// Under a global-candidate source, spam at the tip from an attacker without
+// the current entity key is skipped and the binding stays on E2.
+func TestEntityKeyRotationGlobalCandidateSpamIsSkipped(t *testing.T) {
+	e1, e2, o1, attacker := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
+	stream := newEKRStream(t)
+	stream.issue(e1, o1)
+	stream.signed(entityRotation(t, e1.JWK(), e2.JWK(), e1, e2))
+	legitimate := stream.source.entries[1].Entry
+	stream.signed(entityRotation(t, e2.JWK(), attacker.JWK(), attacker, attacker))
+	stream.signed(entityRotation(t, e2.JWK(), attacker.JWK(), nil, attacker))
+	stream.signed(entitySigned(t, dnsidlog.LogEventRevocation, attacker))
+	stream.signed(entitySigned(t, dnsidlog.LogEventRevocation, e1))
+	// Move the legitimate rotation's signatures onto a rotation to the attacker's key.
+	moved := canonicalEntryMutation(t, string(legitimate), func(p map[string]any) {
+		attackerKey, _ := keyAsJSON(attacker.JWK())
+		p["new_ek"] = attackerKey
+		p["new_ek_thumb"] = ekrThumb(t, attacker.JWK())
+	})
+	stream.appendEntry(moved)
+	stream.appendEntry(legitimate)
+
+	global := &globalMemorySource{memorySource: *stream.source}
+	client, err := New(ekrStreamRef, WithSource(global), WithPolicy(Policy{Now: func() time.Time { return ekrBase.Add(24 * time.Hour) }}), withProofVerifySkipped())
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := client.RebuildHistory(context.Background(), "agent.example")
+	if err != nil {
+		t.Fatalf("RebuildHistory: %v", err)
+	}
+	ekrWantTypes(t, history, dnsidlog.LogEventIssuance, dnsidlog.LogEventEntityKeyRotation)
+	if _, err := client.VerifyBilateralBinding(context.Background(), ekrBindingInput(e2.JWK(), o1.JWK())); err != nil {
+		t.Fatalf("VerifyBilateralBinding E2: %v", err)
+	}
+	for _, key := range []jwk.Key{e1.JWK(), attacker.JWK()} {
+		if _, err := client.VerifyBilateralBinding(context.Background(), ekrBindingInput(key, o1.JWK())); err == nil {
+			t.Fatal("VerifyBilateralBinding accepted a key other than E2")
+		}
+	}
+}
+
+// One entity provider holding both keys signs new_entity with the pending key
+// through SignPreparedEventWithKey; the writer refuses a new key that reuses
+// the current entity kid.
+func TestEntityKeyRotationPreparedSigningWithPendingKey(t *testing.T) {
+	ctx := context.Background()
+	entityKeys := dnsid.GenerateES256KeyProvider()
+	previousKid := entityKeys.ListKeyIds()[0]
+	o1 := dnsid.GenerateES256KeyProvider()
+	stream := newEKRStream(t)
+	stream.issue(entityKeys, o1)
+	newKid, err := entityKeys.GenerateKey(dnsid.JoseAlgES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newKey := entityKeys.JWK(newKid)
+	event, _ := entityRotation(t, entityKeys.JWK(previousKid), newKey, nil, nil)
+	event.Domain, event.Timestamp = "agent.example", stream.ts()
+	chain, err := stream.client.ChainForWrite(ctx, event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := stream.client.PrepareEventWithChain(event, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.client.SignPreparedEvent(ctx, prepared, SignerNewEntity, entityKeys); err == nil {
+		t.Fatal("SignPreparedEvent signed new_entity with the active key")
+	}
+	prepared, err = stream.client.SignPreparedEventWithKey(ctx, prepared, SignerNewEntity, entityKeys, newKid)
+	if err != nil {
+		t.Fatalf("SignPreparedEventWithKey new_entity: %v", err)
+	}
+	prepared, err = stream.client.SignPreparedEvent(ctx, prepared, SignerPreviousEntity, entityKeys)
+	if err != nil {
+		t.Fatalf("SignPreparedEvent previous_entity: %v", err)
+	}
+	entry, err := stream.client.PreparedEntryBytes(ctx, prepared)
+	if err != nil {
+		t.Fatalf("PreparedEntryBytes: %v", err)
+	}
+	stream.appendEntry(entry)
+	ekrWantCurrentEntity(t, stream, newKey)
+
+	t.Run("writer refuses kid reuse", func(t *testing.T) {
+		other := dnsid.GenerateES256KeyProvider()
+		reused, err := other.JWK().Clone()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := reused.Set(jwk.KeyIDKey, newKid); err != nil {
+			t.Fatal(err)
+		}
+		event, _ := entityRotation(t, newKey, reused, nil, nil)
+		event.Domain, event.Timestamp = "agent.example", stream.ts()
+		chain, err := stream.client.ChainForWrite(ctx, event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prepared, err := stream.client.PrepareEventWithChain(event, chain)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = stream.client.SignPreparedEventWithKey(ctx, prepared, SignerPreviousEntity, entityKeys, newKid)
+		if err == nil || !strings.Contains(err.Error(), "duplicate c2sp-tlog kid") {
+			t.Fatalf("SignPreparedEventWithKey kid reuse error = %v, want duplicate kid", err)
+		}
+	})
+}
