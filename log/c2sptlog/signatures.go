@@ -296,7 +296,7 @@ func candidateAuthorizedByCurrentHistory(event dnsidlog.LogEvent, canonical []by
 }
 
 // hasPrivateJWKMember reports whether key is private or carries any JWK
-// private-key member (d, p, q, dp, dq, qi, k).
+// private-key member (d, p, q, dp, dq, qi, k, oth).
 func hasPrivateJWKMember(key jwk.Key) bool {
 	if private, err := jwk.IsPrivateKey(key); err != nil || private {
 		return true
@@ -309,7 +309,7 @@ func hasPrivateJWKMember(key jwk.Key) bool {
 	if err := json.Unmarshal(data, &members); err != nil {
 		return true
 	}
-	for _, name := range []string{"d", "p", "q", "dp", "dq", "qi", "k"} {
+	for _, name := range []string{"d", "p", "q", "dp", "dq", "qi", "k", "oth"} {
 		if _, ok := members[name]; ok {
 			return true
 		}

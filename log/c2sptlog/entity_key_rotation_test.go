@@ -550,6 +550,7 @@ func TestEntityKeyRotationStructuralValidation(t *testing.T) {
 		{"new_ek private", func(p map[string]any) { newEK(p)["d"] = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A" }},
 		{"new_ek stray private member", func(p map[string]any) { newEK(p)["qi"] = "AQAB" }},
 		{"new_ek symmetric member", func(p map[string]any) { newEK(p)["k"] = "AQAB" }},
+		{"new_ek other-primes member", func(p map[string]any) { newEK(p)["oth"] = []any{map[string]any{"r": "AQAB", "d": "AQAB", "t": "AQAB"}} }},
 		{"new_ek missing kid", func(p map[string]any) { delete(newEK(p), "kid") }},
 		{"new_ek missing alg", func(p map[string]any) { delete(newEK(p), "alg") }},
 		{"new_ek wrong alg", func(p map[string]any) { newEK(p)["alg"] = "ES256" }},
@@ -1027,7 +1028,7 @@ func TestEntityKeyRotationAfterMigrationGenesisES256(t *testing.T) {
 // new_ae, so the rotation is unauthenticated noise and is skipped.
 func TestEntityKeyRotationPrivateNewKeyIsSkipped(t *testing.T) {
 	for _, alg := range []string{"EdDSA", "ES256"} {
-		for _, member := range []string{"d", "p", "q", "dp", "dq", "qi", "k"} {
+		for _, member := range []string{"d", "p", "q", "dp", "dq", "qi", "k", "oth"} {
 			t.Run(alg+" "+member, func(t *testing.T) {
 				e1, o1 := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
 				e2 := dnsid.GenerateEd25519KeyProvider()
@@ -1249,4 +1250,72 @@ func TestEntityKeyRotationPreparedSigningWithPendingKey(t *testing.T) {
 			t.Fatalf("SignPreparedEventWithKey kid reuse error = %v, want duplicate kid", err)
 		}
 	})
+}
+
+// Amendment 5: a malformed ISSUANCE authenticated by its own keys is fatal
+// invalid genesis evidence, not skipped.
+func TestEntityKeyRotationMalformedAuthenticatedGenesisIsFatal(t *testing.T) {
+	e1, o1 := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
+	stream := newEKRStream(t)
+	stream.issue(e1, o1)
+	entry := stream.source.entries[0].Entry
+	payload, err := decodeJSONObject(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(payload, "sigs")
+	delete(payload, "gi")
+	canonical, err := canonicalJSON(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, entitySig := ekrSign(t, e1, canonical)
+	_, operationalSig := ekrSign(t, o1, canonical)
+	payload["sigs"] = map[string]any{
+		"ae": map[string]any{"kid": ekrKid(e1.JWK()), "sig": entitySig},
+		"op": map[string]any{"kid": ekrKid(o1.JWK()), "sig": operationalSig},
+	}
+	malformed, err := canonicalJSON(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.source.entries = nil
+	stream.appendEntry(malformed)
+	_, err = stream.client.RebuildHistory(context.Background(), "agent.example")
+	ekrWantCode(t, err, dnsid.VerificationCodeInvalidEvidence)
+	if !strings.Contains(err.Error(), "invalid authenticated genesis") {
+		t.Fatalf("RebuildHistory error = %v, want invalid authenticated genesis", err)
+	}
+}
+
+// Amendment 5: a holder of a superseded key cannot revive a revoked identity
+// with a fresh ISSUANCE; the first authenticated genesis decides.
+func TestEntityKeyRotationRevokedIdentityCannotBeRevivedBySupersededKey(t *testing.T) {
+	e1, e2, e3, o1, o2 := dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider(), dnsid.GenerateEd25519KeyProvider()
+	for _, global := range []bool{false, true} {
+		t.Run(map[bool]string{false: "per-stream source", true: "global-candidate source"}[global], func(t *testing.T) {
+			stream := newEKRStream(t)
+			stream.issue(e1, o1)
+			stream.signed(entityRotation(t, e1.JWK(), e2.JWK(), e1, e2))
+			stream.signed(entityRotation(t, e2.JWK(), e3.JWK(), e2, e3))
+			stream.signed(entitySigned(t, dnsidlog.LogEventRevocation, e3))
+			stream.issue(e2, o2)
+			client := stream.client
+			if global {
+				var err error
+				client, err = New(ekrStreamRef, WithSource(&globalMemorySource{memorySource: *stream.source}), WithPolicy(Policy{Now: func() time.Time { return ekrBase.Add(24 * time.Hour) }}), withProofVerifySkipped())
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, operational := range []jwk.Key{o1.JWK(), o2.JWK()} {
+				if _, err := client.VerifyBilateralBinding(context.Background(), ekrBindingInput(e2.JWK(), operational)); err == nil {
+					t.Fatal("VerifyBilateralBinding revived a revoked identity with a fresh ISSUANCE")
+				}
+				if _, err := client.VerifyLifecycleBinding(context.Background(), ekrBindingInput(e2.JWK(), operational), ekrThumb(t, operational)); err == nil {
+					t.Fatal("VerifyLifecycleBinding revived a revoked identity with a fresh ISSUANCE")
+				}
+			}
+		})
+	}
 }
