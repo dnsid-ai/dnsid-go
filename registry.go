@@ -1097,7 +1097,7 @@ func validateLivePublicJWK(value any) (string, error) {
 		return "", NewArgumentError("dnsid: Live public key must be an Ed25519 signing JWK with alg=EdDSA", nil)
 	}
 	var publicKey ed25519.PublicKey
-	if err := jwk.Export(key, &publicKey); err != nil || len(publicKey) != ed25519.PublicKeySize {
+	if err := jwk.Export(key, &publicKey); err != nil || !validEd25519PublicKey(publicKey) {
 		return "", NewArgumentError("dnsid: invalid Live Ed25519 public key", err)
 	}
 	thumbprint, err := (&JWK{key: key}).Thumbprint()

@@ -134,7 +134,7 @@ func VerifySignature(header ProtectedHeader, parts SignatureParts, keys []jwk.Ke
 				return false
 			}
 			var pub ed25519.PublicKey
-			if err := jwk.Export(key, &pub); err == nil && len(pub) == ed25519.PublicKeySize && ed25519.Verify(pub, parts.SigningInput, parts.Signature) {
+			if err := jwk.Export(key, &pub); err == nil && cryptoutil.VerifyEd25519(pub, parts.SigningInput, parts.Signature) {
 				return true
 			}
 		case dnsid.JoseAlgES256:

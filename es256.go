@@ -2,6 +2,7 @@ package dnsid
 
 import (
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"math/big"
 
 	"github.com/dnsid-ai/dnsid-go/internal/cryptoutil"
@@ -19,6 +20,14 @@ func es256RawFromDER(der []byte) ([]byte, error) {
 
 func verifyES256(pub *ecdsa.PublicKey, payload, sig []byte) bool {
 	return cryptoutil.VerifyES256(pub, payload, sig)
+}
+
+func verifyEd25519(pub ed25519.PublicKey, payload, sig []byte) bool {
+	return cryptoutil.VerifyEd25519(pub, payload, sig)
+}
+
+func validEd25519PublicKey(pub []byte) bool {
+	return cryptoutil.ValidEd25519PublicKey(pub)
 }
 
 func validES256Signature(sig []byte) bool {

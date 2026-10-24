@@ -165,7 +165,7 @@ func verifyRecordSignatureWithKey(r *TXTRecord, parsed *parsedRecordSignature, k
 	switch parsed.alg {
 	case JoseAlgEdDSA:
 		pub, err := exportEd25519PublicKey(key)
-		return err == nil && ed25519.Verify(pub, r.CanonicalContent(), parsed.signature)
+		return err == nil && verifyEd25519(pub, r.CanonicalContent(), parsed.signature)
 	case JoseAlgES256:
 		pub, err := exportES256PublicKey(key)
 		return err == nil && verifyES256(pub, r.CanonicalContent(), parsed.signature)
