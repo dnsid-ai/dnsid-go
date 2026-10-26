@@ -368,7 +368,7 @@ func verifyEventSignature(key jwk.Key, payload []byte, sigValue string) error {
 		if err := jwk.Export(key, &pub); err != nil {
 			return fmt.Errorf("dnsid: exporting Ed25519 key: %w", err)
 		}
-		if !ed25519.Verify(pub, payload, sig) {
+		if !cryptoutil.VerifyEd25519(pub, payload, sig) {
 			return fmt.Errorf("dnsid: invalid Ed25519 c2sp-tlog signature")
 		}
 		return nil

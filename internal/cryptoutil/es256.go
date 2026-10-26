@@ -77,10 +77,8 @@ func ValidES256Signature(sig []byte) bool {
 	if r.Sign() == 0 || s.Sign() == 0 {
 		return false
 	}
-	if r.Cmp(P256Order) >= 0 || s.Cmp(P256Order) >= 0 {
-		return false
-	}
-	return s.Cmp(P256HalfOrder) <= 0
+	// High-S is valid: JOSE and RFC 9421 do not require low-S, and common signers do not normalize.
+	return r.Cmp(P256Order) < 0 && s.Cmp(P256Order) < 0
 }
 
 func ES256RawRS(sig []byte) (*big.Int, *big.Int) {
