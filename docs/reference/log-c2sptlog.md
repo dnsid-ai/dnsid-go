@@ -30,7 +30,18 @@ A parsed TrustProfile may instead bind one exact scope and log prefix to its pol
 
 Every event is an entity\- or operational\-key\-signed JCS\-canonical JSON envelope. Verification replays a domain's entries in log order, checks the lifecycle signature chain \(ISSUANCE bilateral signatures, rotation old\-key/new\-key signatures, entity signatures on later events\), and logical predecessor metadata \(Chain\) in every scope. EventID excludes signatures; signature\-only copies never advance state. Indexes and exact complete entry bytes remain inclusion evidence. DNSidMethodRevision pins this breaking pre\-1.0 correction; old index/leaf chains are not accepted. A TrustedC2spCheckpointStore protects verified checkpoints against rollback.
 
-Multi\-party signing flows use PreparedEvent: Client.PrepareEvent builds the unsigned envelope, Client.SignPreparedEvent collects each SignerRole signature, and Client.WritePreparedEvent appends the exact signed bytes. ParsePreparedIssuance returns a validated registry\-prepared ISSUANCE and its client bound to the signed lr; callers must still check expected identity and keys before countersigning. Later events use Client.ParsePreparedEvent with the identity's verified reference, never a reference from the response body. VerifyStreamBundle verifies an offline, producer\-signed evidence bundle without network access. RebuildHistoryThrough supplies exact\-cutoff source evidence for caller\-configured migration verification, including valid later copies of the final logical event.
+Multi\-party signing flows use PreparedEvent: Client.PrepareEvent builds the unsigned envelope, Client.SignPreparedEvent collects each SignerRole signature, and Client.WritePreparedEvent appends the exact signed bytes. ParsePreparedIssuance returns a validated registry\-prepared ISSUANCE and its client bound to the signed lr; callers must still check expected identity and keys before countersigning. Later events use Client.ParsePreparedEvent with the identity's verified reference, never a reference from the response body. VerifyStreamBundle verifies an offline, producer\-signed evidence bundle without network access.
+
+As a prototype, verifiers can also opt in \(StreamBundleTrust.CommittedIndex, or VerificationRegistryConfig.CommittedIndexBundles\) to version 2 bundles in the "committed\-index" completeness mode. They carry no signature: an index state entry in the log itself commits a Merkle Patricia Trie over every FQDN's entry indices \(package tlogindex, using the C2SP tlog\-vindex encodings\), and the verifier scans the log's own tiles after the committed size. A version 2 bundle is the version 1 object without "sig" and with "v": 2, "completeness\_mode": "committed\-index", and two more fields:
+
+```
+"index_state": {"entry": <b64url state entry>, "index": <P>, "proof": <b64url inclusion hashes>}
+"index_proof": <b64url binary MPT proof for "fqdn">
+```
+
+"events" lists exactly the entries in the FQDN's committed value log, in index order, so the value log is derived from their indices rather than sent separately; an empty list claims non\-inclusion. Entries after the state's input\-size are never listed: the verifier finds them in its tail scan, which needs a fetcher for the log's entry bundles and hash tiles. IndexKey is the mapping function, and ReplayIndex and AuditIndexState let any party recompute and check a committed root.
+
+RebuildHistoryThrough supplies exact\-cutoff source evidence for caller\-configured migration verification, including valid later copies of the final logical event.
 
 See https://docs.dnsid.ai for protocol guides and account setup.
 
@@ -38,17 +49,21 @@ See https://docs.dnsid.ai for protocol guides and account setup.
 
 - [Constants](<#constants>)
 - [Variables](<#variables>)
+- [func AuditIndexState\(entries \[\]\[\]byte, state tlogindex.StateEntry, log IndexedLog\) error](<#AuditIndexState>)
 - [func Canonical\(event dnsidlog.LogEvent\) \(\[\]byte, error\)](<#Canonical>)
 - [func CanonicalFromEntry\(entry \[\]byte\) \(canonicalResult \[\]byte, errResult error\)](<#CanonicalFromEntry>)
 - [func EntryBytes\(event dnsidlog.LogEvent\) \(\[\]byte, error\)](<#EntryBytes>)
 - [func EventID\(signedBytes \[\]byte\) string](<#EventID>)
 - [func GenerateStreamID\(\) \(string, error\)](<#GenerateStreamID>)
+- [func IndexKey\(entry \[\]byte, log IndexedLog\) \(key string, ok bool, err error\)](<#IndexKey>)
+- [func IndexMapFunc\(log IndexedLog\) tlogindex.MapFunc](<#IndexMapFunc>)
 - [func LeafHash\(entry \[\]byte\) tlog.Hash](<#LeafHash>)
 - [func LogEventFromEntry\(entry \[\]byte\) \(eventResult dnsidlog.LogEvent, errResult error\)](<#LogEventFromEntry>)
 - [func NewDnsidManagedVerificationRegistry\(ctx context.Context, config DnsidManagedVerificationConfig\) \(\*dnsidlog.LogRegistry, error\)](<#NewDnsidManagedVerificationRegistry>)
 - [func NewVerificationRegistry\(ctx context.Context, config VerificationRegistryConfig\) \(\*dnsidlog.LogRegistry, error\)](<#NewVerificationRegistry>)
 - [func ParsePreparedIssuance\(entry \[\]byte\) \(\*Client, \*PreparedEvent, error\)](<#ParsePreparedIssuance>)
 - [func Register\(registry \*dnsidlog.LogRegistry, opts ...Option\) error](<#Register>)
+- [func ReplayIndex\(entries \[\]\[\]byte, log IndexedLog\) \(tlogindex.Hash, error\)](<#ReplayIndex>)
 - [type Appender](<#Appender>)
 - [type ApplicationSigningController](<#ApplicationSigningController>)
 - [type ApplicationSigningControllerFunc](<#ApplicationSigningControllerFunc>)
@@ -89,11 +104,13 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(c \*Client\) WriteEvent\(ctx context.Context, event dnsidlog.LogEvent\) \(dnsidlog.LogRef, error\)](<#Client.WriteEvent>)
   - [func \(c \*Client\) WriteEventWithChain\(ctx context.Context, event dnsidlog.LogEvent, chain Chain\) \(dnsidlog.LogRef, error\)](<#Client.WriteEventWithChain>)
   - [func \(c \*Client\) WritePreparedEvent\(ctx context.Context, prepared \*PreparedEvent\) \(dnsidlog.LogRef, error\)](<#Client.WritePreparedEvent>)
+- [type CommittedIndexTrust](<#CommittedIndexTrust>)
 - [type CompleteHistoryResult](<#CompleteHistoryResult>)
 - [type CompleteSource](<#CompleteSource>)
 - [type ContextTrustedC2spCheckpointStore](<#ContextTrustedC2spCheckpointStore>)
 - [type DnsidManagedVerificationConfig](<#DnsidManagedVerificationConfig>)
 - [type GlobalCandidateSource](<#GlobalCandidateSource>)
+- [type IndexedLog](<#IndexedLog>)
 - [type LocalPublicationVerifier](<#LocalPublicationVerifier>)
 - [type ManagedIssuanceActivationController](<#ManagedIssuanceActivationController>)
 - [type ManagedIssuanceActivationControllerFunc](<#ManagedIssuanceActivationControllerFunc>)
@@ -182,6 +199,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
 - [type SpecificationVersions](<#SpecificationVersions>)
   - [func PinnedSpecificationVersions\(\) SpecificationVersions](<#PinnedSpecificationVersions>)
 - [type StreamBundleSource](<#StreamBundleSource>)
+  - [func \(s \*StreamBundleSource\) GlobalCandidates\(\) bool](<#StreamBundleSource.GlobalCandidates>)
   - [func \(s \*StreamBundleSource\) ReadEvent\(\_ context.Context, ref dnsidlog.LogRef\) \(ProvenEntry, error\)](<#StreamBundleSource.ReadEvent>)
   - [func \(s \*StreamBundleSource\) RebuildCompleteHistory\(\_ context.Context, reference Reference, domain string\) \(CompleteHistoryResult, error\)](<#StreamBundleSource.RebuildCompleteHistory>)
   - [func \(s \*StreamBundleSource\) RebuildHistory\(\_ context.Context, reference Reference, domain string\) \(\[\]ProvenEntry, error\)](<#StreamBundleSource.RebuildHistory>)
@@ -210,6 +228,21 @@ const (
     // StreamBundleTrustedIndex is the only supported completeness mode: the
     // producer asserts the bundle is complete through the checkpoint size.
     StreamBundleTrustedIndex = "trusted-index"
+)
+```
+
+<a name="StreamBundleCommittedIndex"></a>
+
+```go
+const (
+    // StreamBundleCommittedIndex is the completeness mode of a version 2
+    // stream bundle. Completeness through the checkpoint comes from an index
+    // state entry committed in the log itself plus a verifier-side scan of the
+    // entries after it, not from a bundle signature.
+    StreamBundleCommittedIndex = "committed-index"
+    // StreamBundleCommittedIndexVersion is the bundle "v" value of a
+    // committed-index bundle.
+    StreamBundleCommittedIndexVersion = 2
 )
 ```
 
@@ -249,6 +282,15 @@ const (
 ```go
 var ErrConsistencyUnavailable = errors.New("dnsid: c2sp-tlog consistency evidence unavailable")
 ```
+
+<a name="AuditIndexState"></a>
+## func [AuditIndexState](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/committed_index.go#L137>)
+
+```go
+func AuditIndexState(entries [][]byte, state tlogindex.StateEntry, log IndexedLog) error
+```
+
+AuditIndexState checks a committed state entry against the log. entries must be the log's entries from index 0 through at least state.InputSize, authenticated by the caller \(for example with ScanSource.FetchEntriesThrough\). It fails if the log's RFC 6962 root at InputSize is not state.InputRoot or if replaying \[0, InputSize\) through IndexKey does not give state.MPTRoot. A failure on authenticated entries is permanent public evidence that the indexer committed a wrong root.
 
 <a name="Canonical"></a>
 ## func [Canonical](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/event.go#L91>)
@@ -295,6 +337,32 @@ func GenerateStreamID() (string, error)
 
 GenerateStreamID returns an opaque identity\-instance stream identifier with 128 bits of cryptographically secure randomness, encoded as unpadded base64url. Callers must generate a new value for each replacement identity.
 
+<a name="IndexKey"></a>
+## func [IndexKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/committed_index.go#L62>)
+
+```go
+func IndexKey(entry []byte, log IndexedLog) (key string, ok bool, err error)
+```
+
+IndexKey is the mapping function of the committed index. It returns the canonical key an entry is indexed under, or ok=false when the entry maps to no key.
+
+An entry maps to key exactly when all of these hold:
+
+- the raw\-scan candidate selection ScanSource uses would select the entry for the domain key: the entry is a canonical JSON object whose "fqdn" equals key under Unicode case folding. For a lower\-case ASCII key, such as any normalized FQDN, that is the same as key being the fqdn with every rune replaced by the lower\-case ASCII member of its case\-folding orbit; an fqdn with a rune that has no ASCII member maps to no key;
+- the entry's "lr" parses as a stream reference on log \(same scope and log prefix\), and the entry meets the stream\-reference rules a Client reading that stream applies \(method, log\_origin, stream\_id and lr\);
+- key is a valid tlog\-vindex canonical key.
+
+Every entry a Client for a stream on log would accept for a normalized FQDN therefore maps to that FQDN; entries that map to a key but that a Client skips, such as malformed lifecycle events, are still indexed, because the Client, not the indexer, classifies them. Index state entries, and anything else that is not a canonical JSON object, map to no key. The only error is a JSON nesting\-limit failure, which the raw scanner also treats as fatal.
+
+<a name="IndexMapFunc"></a>
+## func [IndexMapFunc](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/committed_index.go#L119>)
+
+```go
+func IndexMapFunc(log IndexedLog) tlogindex.MapFunc
+```
+
+IndexMapFunc returns IndexKey bound to log, for use with tlogindex.NewReplayer by an indexer or auditor.
+
 <a name="LeafHash"></a>
 ## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L265>)
 
@@ -325,7 +393,7 @@ NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed, SDK\
 The catalog covers the development, production, and partner \(https://log.partners.dnsid.ai\) logs. Each prefers signed stream bundles with safe raw\-scan fallback. The default checkpoint store is restart\-ephemeral; deployments needing rollback protection across restarts should inject durable storage and retain the returned registry for the process lifetime.
 
 <a name="NewVerificationRegistry"></a>
-## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L89>)
+## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L99>)
 
 ```go
 func NewVerificationRegistry(ctx context.Context, config VerificationRegistryConfig) (*dnsidlog.LogRegistry, error)
@@ -354,6 +422,15 @@ func Register(registry *dnsidlog.LogRegistry, opts ...Option) error
 ```
 
 Register installs the "c2sp\-tlog" method in registry so that LogRegistry.NewReader builds a Client \(with opts applied\) for every c2sp\-tlog lr value. It returns an error if registry is nil; an lr value that fails to parse yields a reader whose every method returns that parse error.
+
+<a name="ReplayIndex"></a>
+## func [ReplayIndex](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/committed_index.go#L126>)
+
+```go
+func ReplayIndex(entries [][]byte, log IndexedLog) (tlogindex.Hash, error)
+```
+
+ReplayIndex recomputes the committed index over entries, which must be the log's entries \[0, len\(entries\)\), and returns the MPT root a state entry with input\-size len\(entries\) must commit.
 
 <a name="Appender"></a>
 ## type [Appender](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L88-L90>)
@@ -758,6 +835,24 @@ func (c *Client) WritePreparedEvent(ctx context.Context, prepared *PreparedEvent
 
 WritePreparedEvent validates and appends the exact prepared bytes unchanged.
 
+<a name="CommittedIndexTrust"></a>
+## type [CommittedIndexTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/committed_index.go#L158-L167>)
+
+CommittedIndexTrust opts a verifier in to version 2 committed\-index stream bundles. VerifyStreamBundle accepts them only when StreamBundleTrust carries a non\-nil CommittedIndexTrust.
+
+```go
+type CommittedIndexTrust struct {
+    // Fetcher reads the log's own entry bundles and hash tiles for the tail
+    // scan of [input-size, checkpoint size). It is required.
+    Fetcher BoundedResourceFetcher
+    // MaxTailEntries bounds the tail scan. Zero uses 4096.
+    MaxTailEntries uint64
+    // MaxEntryBundleBytes bounds one entry bundle read. Zero uses the
+    // scanner's fixed maximum.
+    MaxEntryBundleBytes int64
+}
+```
+
 <a name="CompleteHistoryResult"></a>
 ## type [CompleteHistoryResult](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L57-L63>)
 
@@ -829,6 +924,18 @@ type GlobalCandidateSource interface {
     // GlobalCandidates reports whether RebuildHistory results are unfiltered
     // candidates from a global log rather than a selected stream.
     GlobalCandidates() bool
+}
+```
+
+<a name="IndexedLog"></a>
+## type [IndexedLog](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/committed_index.go#L35-L38>)
+
+IndexedLog names the log a committed index covers: the scope and log prefix that every stream reference \(lr\) on that log shares.
+
+```go
+type IndexedLog struct {
+    Scope     string
+    LogPrefix string
 }
 ```
 
@@ -1697,7 +1804,7 @@ func NewScanSource(policy Policy, config ScanSourceConfig) (*ScanSource, error)
 NewScanSource constructs a bounded C2SP network scanner. It is SSRF\-resistant unless the caller supplies a custom Transport.
 
 <a name="ScanSource.FetchEntriesThrough"></a>
-### func \(\*ScanSource\) [FetchEntriesThrough](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L231>)
+### func \(\*ScanSource\) [FetchEntriesThrough](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L241>)
 
 ```go
 func (s *ScanSource) FetchEntriesThrough(ctx context.Context, reference Reference, treeSize uint64) ([][]byte, error)
@@ -1724,7 +1831,7 @@ func (s *ScanSource) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (Proven
 ReadEvent implements Source by running a full authenticated scan and returning the entry at the reference's index. It returns an error if the index is outside the scanned checkpoint size.
 
 <a name="ScanSource.RebuildCompleteHistory"></a>
-### func \(\*ScanSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L202>)
+### func \(\*ScanSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L212>)
 
 ```go
 func (s *ScanSource) RebuildCompleteHistory(ctx context.Context, reference Reference, domain string) (CompleteHistoryResult, error)
@@ -1733,7 +1840,7 @@ func (s *ScanSource) RebuildCompleteHistory(ctx context.Context, reference Refer
 RebuildCompleteHistory implements CompleteSource by binding the returned candidates to the exact authenticated full\-scan checkpoint.
 
 <a name="ScanSource.RebuildHistory"></a>
-### func \(\*ScanSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L192>)
+### func \(\*ScanSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L202>)
 
 ```go
 func (s *ScanSource) RebuildHistory(ctx context.Context, reference Reference, domain string) ([]ProvenEntry, error)
@@ -1831,7 +1938,7 @@ func PinnedSpecificationVersions() SpecificationVersions
 PinnedSpecificationVersions returns the exact C2SP and DNSid envelope versions implemented by this package.
 
 <a name="StreamBundleSource"></a>
-## type [StreamBundleSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L76-L86>)
+## type [StreamBundleSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L84-L97>)
 
 StreamBundleSource adapts verified bundle evidence to Source and CompleteSource without trusting the producer's event parsing.
 
@@ -1841,8 +1948,17 @@ type StreamBundleSource struct {
 }
 ```
 
+<a name="StreamBundleSource.GlobalCandidates"></a>
+### func \(\*StreamBundleSource\) [GlobalCandidates](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L106>)
+
+```go
+func (s *StreamBundleSource) GlobalCandidates() bool
+```
+
+GlobalCandidates implements GlobalCandidateSource. It is false for a version 1 bundle, whose entries must all verify, and true for a committed\-index bundle, whose entries are the log's candidates for the FQDN, so a Client skips candidates that belong to another stream or do not verify as lifecycle events, exactly as it does for a raw log scan.
+
 <a name="StreamBundleSource.ReadEvent"></a>
-### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L235>)
+### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L260>)
 
 ```go
 func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (ProvenEntry, error)
@@ -1851,7 +1967,7 @@ func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (
 ReadEvent implements Source over the bundle's entries. It returns an error if ref does not address this bundle's reference or names an index the bundle does not contain.
 
 <a name="StreamBundleSource.RebuildCompleteHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L267>)
+### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L292>)
 
 ```go
 func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference Reference, domain string) (CompleteHistoryResult, error)
@@ -1860,7 +1976,7 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 RebuildCompleteHistory implements CompleteSource: a verified bundle's trusted\-index completeness assertion and entries share one checkpoint.
 
 <a name="StreamBundleSource.RebuildHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L254>)
+### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L279>)
 
 ```go
 func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Reference, domain string) ([]ProvenEntry, error)
@@ -1869,7 +1985,7 @@ func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Referen
 RebuildHistory implements Source over the bundle's entries. It returns copies of every bundled entry, or an error if reference or domain does not match the bundle.
 
 <a name="StreamBundleTrust"></a>
-## type [StreamBundleTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L41-L55>)
+## type [StreamBundleTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L42-L60>)
 
 StreamBundleTrust contains verifier\-controlled inputs. PolicyDocument is hashed byte\-for\-byte and parsed as tlog\-policy; it is never taken from the bundle. BundleVerifier is retained for single\-key callers; BundleVerifiers allows independently configured keys to overlap during signer rotation.
 
@@ -1888,6 +2004,10 @@ type StreamBundleTrust struct {
     TrustedCheckpointStore TrustedC2spCheckpointStore
     MigrationVerifier      MigrationVerifier
     MigrationLimits        MigrationVerificationLimits
+    // CommittedIndex, when non-nil, additionally accepts version 2
+    // committed-index bundles, which carry no signature. Nil keeps version 1
+    // trusted-index behavior unchanged.
+    CommittedIndex *CommittedIndexTrust
 }
 ```
 
@@ -1950,7 +2070,7 @@ type TrustedC2spCheckpointStore interface {
 ```
 
 <a name="VerificationRegistryConfig"></a>
-## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L78>)
+## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L88>)
 
 VerificationRegistryConfig configures NewVerificationRegistry. Exactly one of TrustProfile, PolicyDocument, and PolicyURL must be set. A PolicyURL is a caller\-selected trust\-policy location; it is never inferred from an identity's untrusted lr value.
 
@@ -2009,6 +2129,16 @@ type VerificationRegistryConfig struct {
     // consistency checks. ReadEvent may use the scanner to discover the FQDN
     // before requiring its bundle history.
     RequireStreamBundle bool
+    // CommittedIndexBundles opts in to version 2 committed-index stream
+    // bundles, requested as "?format=bundle&v=2". They carry no signature, so
+    // BundleVerifiers is not required for them; MaxBundleLifetime still is.
+    // The verifier reads the log's own entry bundles and hash tiles after the
+    // committed index state through the same fetcher as the scanner. A fetch
+    // failure falls back to the raw scan exactly as for version 1 bundles.
+    // This is a prototype of a proposed design and is off by default.
+    CommittedIndexBundles bool
+    // MaxCommittedIndexTail bounds that tail scan. Zero uses 4096 entries.
+    MaxCommittedIndexTail uint64
 }
 ```
 
@@ -2031,9 +2161,9 @@ type VerifiedProof struct {
 ```
 
 <a name="VerifiedStreamBundle"></a>
-## type [VerifiedStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L62-L72>)
+## type [VerifiedStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L69-L80>)
 
-VerifiedStreamBundle is the result of VerifyStreamBundle: the verified lifecycle events and materialized snapshot for one stream, its logged state, the bundle's expiry and completeness bound, the accepted signer, and a Source over the bundle's proven entries for further Client operations. LoggedState is historical log state, not current protocol status.
+VerifiedStreamBundle is the result of VerifyStreamBundle: the verified lifecycle events and materialized snapshot for one stream, its logged state, the bundle's expiry and completeness bound, the accepted signer, and a Source over the bundle's proven entries for further Client operations. LoggedState is historical log state, not current protocol status. CompletenessMode is "trusted\-index" for a signed version 1 bundle and "committed\-index" for a version 2 bundle, which has no signer, so SignerKeyID is empty.
 
 ```go
 type VerifiedStreamBundle struct {
@@ -2044,13 +2174,14 @@ type VerifiedStreamBundle struct {
     LoggedState         string
     Expires             time.Time
     CompleteThroughSize uint64
+    CompletenessMode    string
     SignerKeyID         string
     Source              *StreamBundleSource
 }
 ```
 
 <a name="VerifyStreamBundle"></a>
-### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L293>)
+### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L318>)
 
 ```go
 func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrust) (*VerifiedStreamBundle, error)

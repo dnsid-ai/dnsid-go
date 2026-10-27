@@ -1200,22 +1200,28 @@ func (c *Client) validateChain(event dnsidlog.LogEvent, chain Chain) error {
 }
 
 func (c *Client) validateEntryMetadata(entry []byte) error {
+	return validateEntryMetadataFor(c.ref, entry)
+}
+
+// validateEntryMetadataFor applies the stream-reference rules an entry must
+// meet to be read as part of the stream ref names.
+func validateEntryMetadataFor(ref Reference, entry []byte) error {
 	payload, err := payloadObjectFromEntry(entry)
 	if err != nil {
 		return err
 	}
-	origin, err := c.ref.Origin()
+	origin, err := ref.Origin()
 	if err != nil {
 		return err
 	}
-	if fqdn, _ := payload["fqdn"].(string); fqdn == c.ref.StreamID {
+	if fqdn, _ := payload["fqdn"].(string); fqdn == ref.StreamID {
 		return fmt.Errorf("dnsid: stream ID must identify an identity instance")
 	}
 	checks := map[string]string{
 		"method":     Method,
 		"log_origin": origin,
-		"stream_id":  c.ref.StreamID,
-		"lr":         c.ref.String(),
+		"stream_id":  ref.StreamID,
+		"lr":         ref.String(),
 	}
 	for key, want := range checks {
 		got, ok := payload[key].(string)

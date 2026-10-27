@@ -55,7 +55,29 @@
 // keys before countersigning. Later events use Client.ParsePreparedEvent with
 // the identity's verified reference, never a reference from the response body.
 // VerifyStreamBundle verifies an offline, producer-signed evidence bundle
-// without network access. RebuildHistoryThrough supplies exact-cutoff source
+// without network access.
+//
+// As a prototype, verifiers can also opt in (StreamBundleTrust.CommittedIndex,
+// or VerificationRegistryConfig.CommittedIndexBundles) to version 2 bundles in
+// the "committed-index" completeness mode. They carry no signature: an index
+// state entry in the log itself commits a Merkle Patricia Trie over every
+// FQDN's entry indices (package tlogindex, using the C2SP tlog-vindex
+// encodings), and the verifier scans the log's own tiles after the committed
+// size. A version 2 bundle is the version 1 object without "sig" and with
+// "v": 2, "completeness_mode": "committed-index", and two more fields:
+//
+//	"index_state": {"entry": <b64url state entry>, "index": <P>, "proof": <b64url inclusion hashes>}
+//	"index_proof": <b64url binary MPT proof for "fqdn">
+//
+// "events" lists exactly the entries in the FQDN's committed value log, in
+// index order, so the value log is derived from their indices rather than sent
+// separately; an empty list claims non-inclusion. Entries after the state's
+// input-size are never listed: the verifier finds them in its tail scan, which
+// needs a fetcher for the log's entry bundles and hash tiles. IndexKey is the
+// mapping function, and ReplayIndex and AuditIndexState let any party
+// recompute and check a committed root.
+//
+// RebuildHistoryThrough supplies exact-cutoff source
 // evidence for caller-configured migration verification, including valid later
 // copies of the final logical event.
 //
