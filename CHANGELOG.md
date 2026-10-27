@@ -94,6 +94,7 @@
 - Preserve checkpoint continuity/storage classifications and retrieval causes through verification APIs.
 - Distinguish candidate-invalid scans from authenticated contradictions of trusted history.
 - Validate checkpoint-store tuples and stop canceled verification before checkpoint publication.
+- Verify growing C2SP checkpoints with authenticated hash tiles in preferred and required bundle modes, without raw-scan fallback after consistency failures.
 
 ## [0.38.0] - 2026-10-07
 

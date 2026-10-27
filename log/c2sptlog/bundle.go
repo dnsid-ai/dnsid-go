@@ -174,19 +174,6 @@ func (s *fetchedStreamBundleSource) RebuildCompleteHistory(ctx context.Context, 
 // while bundle entries have already passed strict verification in load.
 func (*fetchedStreamBundleSource) GlobalCandidates() bool { return true }
 
-// FetchEntriesThrough supplies the narrowly permitted raw-scan fallback for
-// advancing a checkpoint accepted from an otherwise valid stream bundle.
-func (s *fetchedStreamBundleSource) FetchEntriesThrough(ctx context.Context, reference Reference, treeSize uint64) ([][]byte, error) {
-	if s == nil || s.requireBundle {
-		return nil, ErrConsistencyUnavailable
-	}
-	fallback, ok := s.fallback.(C2spFullLogSource)
-	if !ok {
-		return nil, ErrConsistencyUnavailable
-	}
-	return fallback.FetchEntriesThrough(ctx, reference, treeSize)
-}
-
 func (s *fetchedStreamBundleSource) load(ctx context.Context, reference Reference, domain string) (*VerifiedStreamBundle, bool, error) {
 	if s == nil || s.fetcher == nil {
 		return nil, false, fmt.Errorf("dnsid: c2sp stream bundle fetcher is required")
@@ -208,8 +195,7 @@ func (s *fetchedStreamBundleSource) load(ctx context.Context, reference Referenc
 		return nil, false, err
 	}
 	trust := s.trust
-	// The outer Client owns checkpoint advancement so it can use the raw
-	// scanner only when an otherwise valid bundle lacks consistency evidence.
+	// The outer Client owns continuity checks and atomic checkpoint advancement.
 	trust.TrustedCheckpointStore = nil
 	verified, err := VerifyStreamBundle(ctx, data, trust)
 	if err != nil {

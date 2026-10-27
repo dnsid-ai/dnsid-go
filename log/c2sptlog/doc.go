@@ -31,8 +31,11 @@
 // per-domain stream bundles the preferred source; RequireStreamBundle disables
 // raw-scan fallback for deployment checks. Configure CheckpointMaxAge to enable
 // fresh logged-state and non-revocation checks, which otherwise fail closed.
-// Advanced deployments can compose ParsePolicy, NewScanSource, Register, and a
-// durable checkpoint store directly.
+// Checkpoint growth reuses an already verified complete scan, then an explicit
+// consistency proof source, then candidate-authenticated hash tiles. Built-in
+// readers use tiles in both preferred- and required-bundle modes; consistency
+// failures never trigger a raw scan. Advanced deployments can compose
+// ParsePolicy, NewScanSource, Register, and a durable checkpoint store directly.
 //
 // Every event is an entity- or operational-key-signed JCS-canonical JSON
 // envelope. Verification replays a domain's entries in log order, checks the

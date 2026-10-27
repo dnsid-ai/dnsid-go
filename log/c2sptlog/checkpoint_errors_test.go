@@ -34,6 +34,7 @@ func TestCheckpointAdvanceError_Classifications(t *testing.T) {
 	next := TrustedC2spCheckpoint{Origin: "log", TreeSize: 2, RootHash: merkleRoot(entries), WitnessTime: time.Unix(1, 0)}
 	rollback := cloneTrustedCheckpoint(old)
 	rollback.TreeSize = 0
+	rollback.RootHash = merkleRoot(nil)
 	conflict := cloneTrustedCheckpoint(old)
 	conflict.RootHash = bytes.Repeat([]byte{0xff}, 32)
 	for _, tt := range []struct {

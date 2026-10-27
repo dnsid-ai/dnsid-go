@@ -338,7 +338,7 @@ func TestRequiredFetchedStreamBundleSourceUsesRawEventDiscoveryAndBundleHistory(
 	}
 }
 
-func TestFetchedStreamBundleSourceUsesRawScanOnlyForMissingConsistencyEvidence(t *testing.T) {
+func TestFetchedStreamBundleSource_CustomReaderMissingCapabilityFallback(t *testing.T) {
 	vector := loadStreamBundleVector(t)
 	verifier, err := note.NewVerifier(vector.Trust.BundleVerifierKey)
 	if err != nil {
