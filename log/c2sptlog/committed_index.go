@@ -21,7 +21,16 @@ const (
 	// StreamBundleCommittedIndex is the completeness mode of a version 2
 	// stream bundle. Completeness through the checkpoint comes from an index
 	// state entry committed in the log itself plus a verifier-side scan of the
-	// entries after it, not from a bundle signature.
+	// entries after it, not from a bundle signature. The verifier checks, in
+	// order: the checkpoint and its witnesses; the state entry's inclusion;
+	// that its input-size is at most its own index; the MPT proof for the
+	// fqdn against its mpt-root (inclusion of the value log over the listed
+	// events' indices, or non-inclusion when none are listed); that every
+	// listed index is below input-size; that every listed event is proven and
+	// maps to the fqdn under IndexKey; and finally a scan of [input-size,
+	// checkpoint size) through hash tiles authenticated against the
+	// checkpoint, adding every entry that maps to the fqdn. The combined
+	// entries are then replayed exactly as version 1 replays its events.
 	StreamBundleCommittedIndex = "committed-index"
 	// StreamBundleCommittedIndexVersion is the bundle "v" value of a
 	// committed-index bundle.

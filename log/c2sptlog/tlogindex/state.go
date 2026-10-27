@@ -12,8 +12,8 @@ import (
 // StateEntryHeader is the first line of an index state entry.
 const StateEntryHeader = "dnsid.org/tlog-index-state@v1"
 
-// maxStateEntryLen bounds parsing: the header, two decimal-free hash lines
-// and a 20-digit size fit well inside it.
+// maxStateEntryLen bounds parsing. The longest valid entry (a 20-digit size
+// and two 44-character base64 hashes) is under 180 bytes.
 const maxStateEntryLen = 256
 
 // StateEntry is an index state commitment appended to the indexed log. It

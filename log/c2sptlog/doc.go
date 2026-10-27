@@ -54,8 +54,8 @@
 // client bound to the signed lr; callers must still check expected identity and
 // keys before countersigning. Later events use Client.ParsePreparedEvent with
 // the identity's verified reference, never a reference from the response body.
-// VerifyStreamBundle verifies an offline, producer-signed evidence bundle
-// without network access.
+// VerifyStreamBundle verifies an offline, producer-signed (version 1) evidence
+// bundle without network access.
 //
 // As a prototype, verifiers can also opt in (StreamBundleTrust.CommittedIndex,
 // or VerificationRegistryConfig.CommittedIndexBundles) to version 2 bundles in

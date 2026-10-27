@@ -80,7 +80,11 @@ type VerificationRegistryConfig struct {
 	// BundleVerifiers is not required for them; MaxBundleLifetime still is.
 	// The verifier reads the log's own entry bundles and hash tiles after the
 	// committed index state through the same fetcher as the scanner. A fetch
-	// failure falls back to the raw scan exactly as for version 1 bundles.
+	// failure falls back to the raw scan exactly as for version 1 bundles,
+	// but a server that answers the v=2 request with a bundle that does not
+	// verify (for example a version 1 bundle when no BundleVerifiers are
+	// set) is an error, not a fallback, so a server that does not serve
+	// version 2 must answer such requests with 404.
 	// This is a prototype of a proposed design and is off by default.
 	CommittedIndexBundles bool
 	// MaxCommittedIndexTail bounds that tail scan. Zero uses 4096 entries.

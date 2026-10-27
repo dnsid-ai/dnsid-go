@@ -23,11 +23,13 @@ import (
 const (
 	// StreamBundleType is the required "type" value of a stream bundle.
 	StreamBundleType = "dnsid-c2sp-stream-bundle"
-	// StreamBundleVersion is the bundle format version this package
-	// produces and accepts.
+	// StreamBundleVersion is the signed bundle format version this package
+	// produces and accepts by default. Version 2 is accepted only on opt-in;
+	// see StreamBundleCommittedIndexVersion.
 	StreamBundleVersion = 1
-	// StreamBundleTrustedIndex is the only supported completeness mode: the
-	// producer asserts the bundle is complete through the checkpoint size.
+	// StreamBundleTrustedIndex is the version 1 completeness mode: the
+	// producer asserts, and signs, that the bundle is complete through the
+	// checkpoint size.
 	StreamBundleTrustedIndex          = "trusted-index"
 	defaultMaxStreamBundleBytes       = 8 << 20
 	defaultMaxStreamBundleEvents      = 10000
@@ -288,7 +290,8 @@ func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Referen
 }
 
 // RebuildCompleteHistory implements CompleteSource: a verified bundle's
-// trusted-index completeness assertion and entries share one checkpoint.
+// completeness bound (signed trusted-index, or committed-index) and entries
+// share one checkpoint.
 func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference Reference, domain string) (CompleteHistoryResult, error) {
 	if s == nil || reference.String() != s.reference.String() || !strings.EqualFold(domain, s.domain) {
 		return CompleteHistoryResult{}, fmt.Errorf("dnsid: stream bundle reference or fqdn mismatch")
@@ -306,8 +309,11 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 	}, nil
 }
 
-// VerifyStreamBundle verifies an offline stream bundle without network
-// access. It checks, in order: size and canonical JCS form, the accepted
+// VerifyStreamBundle verifies a stream bundle. A version 1 bundle is
+// verified offline, without network access. When trust.CommittedIndex is set,
+// a version 2 committed-index bundle is verified instead as described on
+// StreamBundleCommittedIndex, which reads the log's tiles after the committed
+// index through trust.CommittedIndex.Fetcher. For version 1 it checks, in order: size and canonical JCS form, the accepted
 // bundle signer's Ed25519 signature, format version and type, expiry against
 // local time and MaxBundleLifetime, that the bundle's policy hash matches the
 // verifier-supplied PolicyDocument, and then replays every bundled entry
