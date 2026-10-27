@@ -43,7 +43,7 @@ type AgentDetail struct {
 ```
 
 <a name="WaitForRegistryStatus"></a>
-### func [WaitForRegistryStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1310>)
+### func [WaitForRegistryStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1302>)
 
 ```go
 func WaitForRegistryStatus(ctx context.Context, client RegistryStatusReader, fqdn string, targetStatuses []string, opts *WaitForStatusOptions) (*AgentDetail, error)
@@ -329,7 +329,7 @@ func (c *HTTPRegistryClient) GetAgentStatus(ctx context.Context, fqdn string) (*
 GetAgentStatus returns the registry's detailed view of the agent at fqdn, including workflow status, DNS publication state, and any workflow error.
 
 <a name="HTTPRegistryClient.GetIdentityRecord"></a>
-### func \(\*HTTPRegistryClient\) [GetIdentityRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1265>)
+### func \(\*HTTPRegistryClient\) [GetIdentityRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1257>)
 
 ```go
 func (c *HTTPRegistryClient) GetIdentityRecord(ctx context.Context, fqdn string, req *IdentityRecordRequest) (*IdentityRecordResponse, error)
@@ -365,7 +365,7 @@ func (c *HTTPRegistryClient) ListAgents(ctx context.Context, opts *ListAgentsOpt
 ListAgents lists the caller's agents. A nil opts requests the first page with the server's default limit; use the response's NextCursor to page.
 
 <a name="HTTPRegistryClient.ListExpiringAgents"></a>
-### func \(\*HTTPRegistryClient\) [ListExpiringAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1276>)
+### func \(\*HTTPRegistryClient\) [ListExpiringAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1268>)
 
 ```go
 func (c *HTTPRegistryClient) ListExpiringAgents(ctx context.Context) (*OperationsAgentListResponse, error)
@@ -374,7 +374,7 @@ func (c *HTTPRegistryClient) ListExpiringAgents(ctx context.Context) (*Operation
 ListExpiringAgents lists agents whose identity records are approaching expiry.
 
 <a name="HTTPRegistryClient.ListFlaggedAgents"></a>
-### func \(\*HTTPRegistryClient\) [ListFlaggedAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1282>)
+### func \(\*HTTPRegistryClient\) [ListFlaggedAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1274>)
 
 ```go
 func (c *HTTPRegistryClient) ListFlaggedAgents(ctx context.Context) (*OperationsAgentListResponse, error)
@@ -383,7 +383,7 @@ func (c *HTTPRegistryClient) ListFlaggedAgents(ctx context.Context) (*Operations
 ListFlaggedAgents lists agents the registry has flagged for operator attention.
 
 <a name="HTTPRegistryClient.ListPendingAgents"></a>
-### func \(\*HTTPRegistryClient\) [ListPendingAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1288>)
+### func \(\*HTTPRegistryClient\) [ListPendingAgents](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1280>)
 
 ```go
 func (c *HTTPRegistryClient) ListPendingAgents(ctx context.Context) (*OperationsAgentListResponse, error)
@@ -392,22 +392,22 @@ func (c *HTTPRegistryClient) ListPendingAgents(ctx context.Context) (*Operations
 ListPendingAgents lists agents whose registration workflows have not yet completed.
 
 <a name="HTTPRegistryClient.PrepareIssuance"></a>
-### func \(\*HTTPRegistryClient\) [PrepareIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1180>)
+### func \(\*HTTPRegistryClient\) [PrepareIssuance](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1172>)
 
 ```go
 func (c *HTTPRegistryClient) PrepareIssuance(ctx context.Context, fqdn, idempotencyKey string) (*PreparedRegistryEvent, error)
 ```
 
-PrepareIssuance asks the registry to prepare a transparency\-log ISSUANCE event for fqdn. The returned entry bytes are untrusted: parse and validate them against the returned log reference before signing. The idempotency key must be 1 to 200 bytes without surrounding whitespace; reuse the same key when retrying.
+PrepareIssuance asks the registry to prepare a transparency\-log ISSUANCE event for fqdn. The returned entry bytes are untrusted: parse and validate them against a strict parse of the entry's signed lr before signing. The idempotency key must be 1 to 200 bytes without surrounding whitespace; reuse the same key when retrying.
 
 <a name="HTTPRegistryClient.PrepareKeyRotation"></a>
-### func \(\*HTTPRegistryClient\) [PrepareKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1200>)
+### func \(\*HTTPRegistryClient\) [PrepareKeyRotation](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1192>)
 
 ```go
 func (c *HTTPRegistryClient) PrepareKeyRotation(ctx context.Context, fqdn string, req *KeyRotationPreparationRequest, idempotencyKey string) (*PreparedRegistryEvent, error)
 ```
 
-PrepareKeyRotation asks the registry to prepare a transparency\-log KEY\_ROTATION event for fqdn. Authenticate with an organization session or API key; an agent bearer token is not accepted. The request must name the previous key ID and carry the new public key, which is rejected if it contains private JWK members. As with PrepareIssuance, the returned entry bytes are untrusted and must be validated before signing.
+PrepareKeyRotation asks the registry to prepare a transparency\-log KEY\_ROTATION event for fqdn. Authenticate with an organization session or API key; an agent bearer token is not accepted. The request must name the previous key ID and carry the new public key, which is rejected if it contains private JWK members. The returned entry bytes are untrusted and must be validated against the identity's verified log reference before signing.
 
 <a name="HTTPRegistryClient.PublishSignature"></a>
 ### func \(\*HTTPRegistryClient\) [PublishSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L675>)
@@ -491,7 +491,7 @@ func (c *HTTPRegistryClient) SubmitLiveProof(ctx context.Context, fqdn string, r
 SubmitLiveProof submits proof of possession for a managed Live registration. RequestID is also sent as the required Idempotency\-Key header.
 
 <a name="HTTPRegistryClient.SubmitPreparedEvent"></a>
-### func \(\*HTTPRegistryClient\) [SubmitPreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1230>)
+### func \(\*HTTPRegistryClient\) [SubmitPreparedEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1222>)
 
 ```go
 func (c *HTTPRegistryClient) SubmitPreparedEvent(ctx context.Context, fqdn string, entryBytes []byte, idempotencyKey string) (*SubmissionResult, error)
@@ -500,7 +500,7 @@ func (c *HTTPRegistryClient) SubmitPreparedEvent(ctx context.Context, fqdn strin
 SubmitPreparedEvent submits the exact signed entry bytes of a prepared event \(1 to 65535 bytes\) for transparency\-log inclusion. On an accepted result it verifies that the registry's reported entry hash matches the SHA\-256 of the submitted bytes and returns a \*ValidationError on mismatch. Retry with the same bytes and idempotency key when the registry reports a retryable state \(see RegistryAPIError.RetrySameEntry\).
 
 <a name="HTTPRegistryClient.SubmitSignature"></a>
-### func \(\*HTTPRegistryClient\) [SubmitSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1270>)
+### func \(\*HTTPRegistryClient\) [SubmitSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1262>)
 
 ```go
 func (c *HTTPRegistryClient) SubmitSignature(ctx context.Context, fqdn string, req *SignatureRequest) (*SignatureResponse, error)
@@ -527,7 +527,7 @@ func (c *HTTPRegistryClient) VerifyAgent(ctx context.Context, fqdn string) (*Lif
 VerifyAgent asks the registry to run its verification step for fqdn and advance the registration workflow.
 
 <a name="HTTPRegistryClient.VerifyDomainRemote"></a>
-### func \(\*HTTPRegistryClient\) [VerifyDomainRemote](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1295>)
+### func \(\*HTTPRegistryClient\) [VerifyDomainRemote](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1287>)
 
 ```go
 func (c *HTTPRegistryClient) VerifyDomainRemote(ctx context.Context, req *VerifyDomainRequest) (*VerifyDomainResponse, error)
@@ -536,7 +536,7 @@ func (c *HTTPRegistryClient) VerifyDomainRemote(ctx context.Context, req *Verify
 VerifyDomainRemote asks the registry to check a domain's DNSid state from its vantage point. It complements, but does not replace, local IdentityManager.VerifyDomain verification.
 
 <a name="HTTPRegistryClient.WaitForStatus"></a>
-### func \(\*HTTPRegistryClient\) [WaitForStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1301>)
+### func \(\*HTTPRegistryClient\) [WaitForStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1293>)
 
 ```go
 func (c *HTTPRegistryClient) WaitForStatus(ctx context.Context, fqdn string, targetStatuses []string, opts *WaitForStatusOptions) (*AgentDetail, error)
@@ -769,14 +769,13 @@ type OrganizationOnboardingResponse struct {
 ```
 
 <a name="ParseError"></a>
-## type [PreparedRegistryEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L58-L61>)
+## type [PreparedRegistryEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L59-L61>)
 
-PreparedRegistryEvent contains the untrusted exact bytes and log reference returned by a registry preparation endpoint. Parse and validate EntryBytes against LogReference with the selected log binding before signing.
+PreparedRegistryEvent contains only the untrusted exact response bytes from a registry preparation endpoint. Before signing, parse and validate EntryBytes with the selected log binding against the signed lr for issuance or the identity's verified log reference for later events.
 
 ```go
 type PreparedRegistryEvent struct {
-    EntryBytes   []byte
-    LogReference string
+    EntryBytes []byte
 }
 ```
 

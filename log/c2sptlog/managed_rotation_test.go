@@ -37,6 +37,7 @@ type managedRotationRegistry struct {
 	applicationPaused         func() bool
 	badFinalReference         bool
 	submitErr                 error
+	mutateEntry               func([]byte) []byte
 }
 
 func (r *managedRotationRegistry) PrepareIssuance(context.Context, string, string) (*dnsid.PreparedRegistryEvent, error) {
@@ -74,7 +75,10 @@ func (r *managedRotationRegistry) PrepareKeyRotation(ctx context.Context, domain
 	if err != nil {
 		return nil, err
 	}
-	return &dnsid.PreparedRegistryEvent{EntryBytes: entry, LogReference: r.client.ref.String()}, nil
+	if r.mutateEntry != nil {
+		entry = r.mutateEntry(entry)
+	}
+	return &dnsid.PreparedRegistryEvent{EntryBytes: entry}, nil
 }
 
 func (r *managedRotationRegistry) SubmitPreparedEvent(_ context.Context, _ string, entry []byte, idempotencyKey string) (*dnsid.SubmissionResult, error) {
@@ -239,6 +243,36 @@ func TestManagedOperationalKeyRotationAccepted(t *testing.T) {
 	}
 	if len(persisted) != 4 || persisted[0].Submission != nil || persisted[1].Submission.State != dnsid.SubmissionStateAccepted || !persisted[2].Activated || !persisted[2].ApplicationSigningPaused || persisted[3].ApplicationSigningPaused {
 		t.Fatalf("persisted states = %#v", persisted)
+	}
+}
+
+func TestManagedOperationalKeyRotationRejectsDifferentSignedLogReference(t *testing.T) {
+	client, provider, verify := managedRotationFixture(t)
+	registry := &managedRotationRegistry{
+		client: client,
+		mutateEntry: func(entry []byte) []byte {
+			return canonicalEntryMutation(t, string(entry), func(payload map[string]any) {
+				payload["lr"] = "c2sp-tlog:testnet:https://other.example#other"
+			})
+		},
+	}
+	previousKid, _ := provider.JWK().KeyID()
+	persisted, paused := false, false
+	_, err := RotateManagedOperationalKey(context.Background(), ManagedKeyRotationOptions{
+		Domain: "agent.example.com", Client: client, KeyProvider: provider, RegistryClient: registry,
+		IdempotencyKey: "rotation-1", Publication: verify,
+		Store: ManagedKeyRotationStoreFunc(func(context.Context, *ManagedKeyRotationState) error {
+			persisted = true
+			return nil
+		}),
+		ApplicationSigning: ApplicationSigningControllerFunc(func(context.Context, bool) error {
+			paused = true
+			return nil
+		}),
+	})
+	activeKid, _ := provider.JWK().KeyID()
+	if err == nil || len(registry.submissions) != 0 || persisted || paused || activeKid != previousKid {
+		t.Fatalf("different signed lr error/submissions/persisted/paused/activeKid = %v/%d/%v/%v/%s", err, len(registry.submissions), persisted, paused, activeKid)
 	}
 }
 

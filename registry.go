@@ -52,12 +52,12 @@ type KeyRotationPreparationRequest struct {
 	PublicKey     any    `json:"public_key"`
 }
 
-// PreparedRegistryEvent contains the untrusted exact bytes and log reference
-// returned by a registry preparation endpoint. Parse and validate EntryBytes
-// against LogReference with the selected log binding before signing.
+// PreparedRegistryEvent contains only the untrusted exact response bytes from
+// a registry preparation endpoint. Before signing, parse and validate EntryBytes
+// with the selected log binding against the signed lr for issuance or the
+// identity's verified log reference for later events.
 type PreparedRegistryEvent struct {
-	EntryBytes   []byte
-	LogReference string
+	EntryBytes []byte
 }
 
 // SubmissionState is durable registry transparency-log submission state.
@@ -1164,39 +1164,31 @@ func validateRegistryIdempotencyKey(key string) error {
 	return nil
 }
 
-func preparedRegistryEvent(response []byte, headers http.Header) (*PreparedRegistryEvent, error) {
-	logReference := headers.Get("DNSID-Log-Reference")
-	if logReference == "" {
-		return nil, NewValidationError("dnsid: registry prepared event is missing DNSID-Log-Reference", nil)
-	}
-	return &PreparedRegistryEvent{EntryBytes: response, LogReference: logReference}, nil
-}
-
 // PrepareIssuance asks the registry to prepare a transparency-log ISSUANCE
 // event for fqdn. The returned entry bytes are untrusted: parse and validate
-// them against the returned log reference before signing. The idempotency key
-// must be 1 to 200 bytes without surrounding whitespace; reuse the same key
-// when retrying.
+// them against a strict parse of the entry's signed lr before signing. The
+// idempotency key must be 1 to 200 bytes without surrounding whitespace; reuse
+// the same key when retrying.
 func (c *HTTPRegistryClient) PrepareIssuance(ctx context.Context, fqdn, idempotencyKey string) (*PreparedRegistryEvent, error) {
 	if err := validateRegistryIdempotencyKey(idempotencyKey); err != nil {
 		return nil, err
 	}
-	response, headers, _, err := c.doRequest(ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/tlog/issuance/prepare", nil, map[string]string{
+	response, _, _, err := c.doRequest(ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/tlog/issuance/prepare", nil, map[string]string{
 		"Content-Type":    "application/json",
 		"Idempotency-Key": idempotencyKey,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return preparedRegistryEvent(response, headers)
+	return &PreparedRegistryEvent{EntryBytes: response}, nil
 }
 
 // PrepareKeyRotation asks the registry to prepare a transparency-log
 // KEY_ROTATION event for fqdn. Authenticate with an organization session or
 // API key; an agent bearer token is not accepted. The request must name the
 // previous key ID and carry the new public key, which is rejected if it
-// contains private JWK members. As with PrepareIssuance, the returned entry
-// bytes are untrusted and must be validated before signing.
+// contains private JWK members. The returned entry bytes are untrusted and
+// must be validated against the identity's verified log reference before signing.
 func (c *HTTPRegistryClient) PrepareKeyRotation(ctx context.Context, fqdn string, req *KeyRotationPreparationRequest, idempotencyKey string) (*PreparedRegistryEvent, error) {
 	if req == nil || req.PreviousKeyID == "" || req.PublicKey == nil {
 		return nil, NewArgumentError("dnsid: previous key ID and public key are required", nil)
@@ -1211,14 +1203,14 @@ func (c *HTTPRegistryClient) PrepareKeyRotation(ctx context.Context, fqdn string
 	if err != nil {
 		return nil, NewArgumentError("dnsid: encoding key rotation preparation request", err)
 	}
-	response, headers, _, err := c.doRequest(ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/tlog/key-rotation/prepare", bytes.NewReader(body), map[string]string{
+	response, _, _, err := c.doRequest(ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/tlog/key-rotation/prepare", bytes.NewReader(body), map[string]string{
 		"Content-Type":    "application/json",
 		"Idempotency-Key": idempotencyKey,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return preparedRegistryEvent(response, headers)
+	return &PreparedRegistryEvent{EntryBytes: response}, nil
 }
 
 // SubmitPreparedEvent submits the exact signed entry bytes of a prepared

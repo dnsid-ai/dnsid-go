@@ -274,12 +274,15 @@ func prepareAndSubmitManagedIssuance(ctx context.Context, client *Client, entity
 		operationErr.Issuance = cloneManagedIssuance(next)
 		return next, operationErr
 	}
-	if raw == nil || raw.LogReference != issuance.LogReference {
-		return issuance, dnsid.NewValidationError("dnsid: registry preparation returned an unexpected c2sp-tlog reference", nil)
+	if raw == nil {
+		return issuance, dnsid.NewValidationError("dnsid: registry preparation returned no entry", nil)
 	}
-	prepared, err := client.ParsePreparedEvent(raw.EntryBytes)
+	_, prepared, err := ParsePreparedIssuance(raw.EntryBytes)
 	if err != nil {
 		return issuance, err
+	}
+	if prepared.Reference().String() != issuance.LogReference {
+		return issuance, dnsid.NewValidationError("dnsid: registry preparation returned an unexpected c2sp-tlog reference", nil)
 	}
 	if err := validateManagedPreparedIssuance(prepared, issuance, entityKey, provider.JWK()); err != nil {
 		return issuance, err

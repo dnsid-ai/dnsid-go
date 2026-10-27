@@ -50,6 +50,10 @@
 // Multi-party signing flows use PreparedEvent: Client.PrepareEvent builds the
 // unsigned envelope, Client.SignPreparedEvent collects each SignerRole
 // signature, and Client.WritePreparedEvent appends the exact signed bytes.
+// ParsePreparedIssuance returns a validated registry-prepared ISSUANCE and its
+// client bound to the signed lr; callers must still check expected identity and
+// keys before countersigning. Later events use Client.ParsePreparedEvent with
+// the identity's verified reference, never a reference from the response body.
 // VerifyStreamBundle verifies an offline, producer-signed evidence bundle
 // without network access. RebuildHistoryThrough supplies exact-cutoff source
 // evidence for caller-configured migration verification, including valid later

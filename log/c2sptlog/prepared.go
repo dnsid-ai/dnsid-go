@@ -136,6 +136,43 @@ func (c *Client) prepareEvent(event dnsidlog.LogEvent, chain *chainFields) (*Pre
 	return c.preparedFromEnvelope(envelope)
 }
 
+// ParsePreparedIssuance strictly parses a canonical ISSUANCE entry and returns
+// its bound client and prepared event. It derives the reference from the signed
+// lr, validates the genesis context and every signature already present, and
+// preserves unknown signed fields. It does not modify entry or perform network
+// I/O. The returned client has no Source or Appender.
+//
+// Callers must independently check the expected domain, governance identity,
+// entity key, and local operational key before countersigning. The signed lr
+// does not establish trust in the log. For rotation and other later events, use
+// Client.ParsePreparedEvent with the identity's verified reference instead.
+func ParsePreparedIssuance(entry []byte) (*Client, *PreparedEvent, error) {
+	payload, err := payloadObjectFromEntry(entry)
+	if err != nil {
+		return nil, nil, dnsid.NewParseError("dnsid: parsing prepared ISSUANCE", err)
+	}
+	if payload["type"] != string(dnsidlog.LogEventIssuance) {
+		return nil, nil, dnsid.NewValidationError("dnsid: prepared event must be ISSUANCE", nil)
+	}
+	lr, _ := payload["lr"].(string)
+	client, err := New(lr)
+	if err != nil {
+		return nil, nil, err
+	}
+	prepared, err := client.ParsePreparedEvent(entry)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys, err := client.preparedSignerKeys(context.Background(), prepared)
+	if err != nil {
+		return nil, nil, dnsid.NewValidationError("dnsid: invalid prepared ISSUANCE keys", err)
+	}
+	if err := verifyPresentSignatures(prepared, keys); err != nil {
+		return nil, nil, dnsid.NewValidationError("dnsid: invalid prepared ISSUANCE signatures", err)
+	}
+	return client, prepared, nil
+}
+
 // ParsePreparedEvent treats received bytes as untrusted, canonicalizes the
 // envelope independently, and preserves unknown signed fields.
 func (c *Client) ParsePreparedEvent(entry []byte) (*PreparedEvent, error) {
