@@ -1,6 +1,7 @@
 package c2sptlog
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"sort"
@@ -120,6 +121,9 @@ func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (verified 
 	}
 	if len(cp.Hash) != tlog.HashSize {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint root length %d, want %d", len(cp.Hash), tlog.HashSize)
+	}
+	if cp.Size == 0 && !bytes.Equal(cp.Hash, merkleRoot(nil)) {
+		return nil, fmt.Errorf("dnsid: empty c2sp-tlog checkpoint has invalid root")
 	}
 	witnessTime, err := p.acceptedCheckpointTime(cp, checkpointNote)
 	if err != nil {

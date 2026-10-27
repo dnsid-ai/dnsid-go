@@ -26,7 +26,7 @@ registry, err := c2sptlog.NewVerificationRegistry(ctx,
 	})
 ```
 
-A parsed TrustProfile may instead bind one exact scope and log prefix to its policy and accepted bundle signers; profiles are independently distributed rather than discovered from the log. NewDnsidManagedVerificationRegistry is the separately named, opt\-in factory for SDK\-embedded Identity Digital trust roots; the generic factory never selects those roots implicitly. The policy URL is caller\-selected trusted configuration and is never derived from an unverified log reference. The factory uses one bounded, redirect\-free, rebinding\-resistant ResourceFetcher for policy and standard log resources; custom fetchers must declare all public\-read SecurityGuarantees. Supplying independently trusted BundleVerifiers and MaxBundleLifetime makes verified per\-domain stream bundles the preferred source; RequireStreamBundle disables raw\-scan fallback for deployment checks. Configure CheckpointMaxAge to enable fresh logged\-state and non\-revocation checks, which otherwise fail closed. Advanced deployments can compose ParsePolicy, NewScanSource, Register, and a durable checkpoint store directly.
+A parsed TrustProfile may instead bind one exact scope and log prefix to its policy and accepted bundle signers; profiles are independently distributed rather than discovered from the log. NewDnsidManagedVerificationRegistry is the separately named, opt\-in factory for SDK\-embedded Identity Digital trust roots; the generic factory never selects those roots implicitly. The policy URL is caller\-selected trusted configuration and is never derived from an unverified log reference. The factory uses one bounded, redirect\-free, rebinding\-resistant ResourceFetcher for policy and standard log resources; custom fetchers must declare all public\-read SecurityGuarantees. Supplying independently trusted BundleVerifiers and MaxBundleLifetime makes verified per\-domain stream bundles the preferred source; RequireStreamBundle disables raw\-scan fallback for deployment checks. Configure CheckpointMaxAge to enable fresh logged\-state and non\-revocation checks, which otherwise fail closed. Checkpoint growth reuses an already verified complete scan, then an explicit consistency proof source, then candidate\-authenticated hash tiles. Built\-in readers use tiles in both preferred\- and required\-bundle modes; consistency failures never trigger a raw scan. Advanced deployments can compose ParsePolicy, NewScanSource, Register, and a durable checkpoint store directly.
 
 Every event is an entity\- or operational\-key\-signed JCS\-canonical JSON envelope. Verification replays a domain's entries in log order, checks the lifecycle signature chain \(ISSUANCE bilateral signatures, rotation old\-key/new\-key signatures, entity signatures on later events\), and logical predecessor metadata \(Chain\) in every scope. EventID excludes signatures; signature\-only copies never advance state. Indexes and exact complete entry bytes remain inclusion evidence. DNSidMethodRevision pins this breaking pre\-1.0 correction; old index/leaf chains are not accepted. A TrustedC2spCheckpointStore protects verified checkpoints against rollback.
 
@@ -295,7 +295,7 @@ func GenerateStreamID() (string, error)
 GenerateStreamID returns an opaque identity\-instance stream identifier with 128 bits of cryptographically secure randomness, encoded as unpadded base64url. Callers must generate a new value for each replacement identity.
 
 <a name="LeafHash"></a>
-## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L261>)
+## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L265>)
 
 ```go
 func LeafHash(entry []byte) tlog.Hash
@@ -324,7 +324,7 @@ NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed, SDK\
 The catalog covers the development, production, and partner \(https://log.partners.dnsid.ai\) logs. Each prefers signed stream bundles with safe raw\-scan fallback. The default checkpoint store is restart\-ephemeral; deployments needing rollback protection across restarts should inject durable storage and retain the returned registry for the process lifetime.
 
 <a name="NewVerificationRegistry"></a>
-## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L88>)
+## func [NewVerificationRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L89>)
 
 ```go
 func NewVerificationRegistry(ctx context.Context, config VerificationRegistryConfig) (*dnsidlog.LogRegistry, error)
@@ -335,7 +335,7 @@ NewVerificationRegistry creates a LogRegistry ready for verification of c2sp\-tl
 PolicyURL is trusted configuration, not discovery. Applications must not derive it from an unverified identity record or from the log prefix itself. Advanced deployments with private transports or custom stream sources should compose ParsePolicy, NewScanSource, and Register directly.
 
 <a name="Register"></a>
-## func [Register](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L379>)
+## func [Register](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L380>)
 
 ```go
 func Register(registry *dnsidlog.LogRegistry, opts ...Option) error
@@ -407,9 +407,9 @@ type C2spConsistencyProofSource interface {
 ```
 
 <a name="C2spFullLogSource"></a>
-## type [C2spFullLogSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L132-L134>)
+## type [C2spFullLogSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L133-L135>)
 
-C2spFullLogSource supplies all raw entries in \[0, treeSize\). It is an optional fallback for proving an old prefix when no consistency\-proof source is available. The SDK recomputes both roots; the source is not trusted.
+C2spFullLogSource supplies all raw entries in \[0, treeSize\). It is an optional fallback for lower\-level custom readers without proof or hash\-tile capability. Required\-bundle mode disables this fallback. The SDK recomputes both roots; the source is not trusted.
 
 ```go
 type C2spFullLogSource interface {
@@ -494,7 +494,7 @@ const (
     CheckpointAdvanceRollback CheckpointAdvanceErrorKind = "rollback"
     // CheckpointAdvanceRootConflict indicates different roots at equal sizes.
     CheckpointAdvanceRootConflict CheckpointAdvanceErrorKind = "root_conflict"
-    // CheckpointAdvanceConsistencyFailed indicates an invalid proof or a candidate-valid scan contradicting trusted history.
+    // CheckpointAdvanceConsistencyFailed indicates an invalid explicit proof or candidate-authenticated evidence contradicting trusted history.
     CheckpointAdvanceConsistencyFailed CheckpointAdvanceErrorKind = "consistency_failed"
     // CheckpointAdvanceConsistencyUnavailable indicates no supported consistency source.
     CheckpointAdvanceConsistencyUnavailable CheckpointAdvanceErrorKind = "consistency_unavailable"
@@ -513,7 +513,7 @@ type Client struct {
 ```
 
 <a name="New"></a>
-### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L175>)
+### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L176>)
 
 ```go
 func New(lr string, opts ...Option) (*Client, error)
@@ -522,7 +522,7 @@ func New(lr string, opts ...Option) (*Client, error)
 New constructs a Client bound to the parsed lr value. It returns an error if lr is not a valid c2sp\-tlog reference. Missing collaborators are not an error here: operations that need an absent Source or Appender fail when called.
 
 <a name="Client.AppendPreparedEntry"></a>
-### func \(\*Client\) [AppendPreparedEntry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L442>)
+### func \(\*Client\) [AppendPreparedEntry](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L443>)
 
 ```go
 func (c *Client) AppendPreparedEntry(ctx context.Context, entry []byte) (dnsidlog.LogRef, error)
@@ -558,7 +558,7 @@ func (c *Client) ChainForWrite(ctx context.Context, event dnsidlog.LogEvent) (Ch
 ChainForWrite derives the logical stream\-chain metadata for event from the client's verified history. ISSUANCE derives seq=0 without reading history.
 
 <a name="Client.EntryBytes"></a>
-### func \(\*Client\) [EntryBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L411>)
+### func \(\*Client\) [EntryBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L412>)
 
 ```go
 func (c *Client) EntryBytes(event dnsidlog.LogEvent) ([]byte, error)
@@ -567,7 +567,7 @@ func (c *Client) EntryBytes(event dnsidlog.LogEvent) ([]byte, error)
 EntryBytes returns the canonical, fully contextualized entry bytes without appending them. ISSUANCE entries receive seq=0; later events require EntryBytesWithChain.
 
 <a name="Client.EntryBytesWithChain"></a>
-### func \(\*Client\) [EntryBytesWithChain](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L427>)
+### func \(\*Client\) [EntryBytesWithChain](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L428>)
 
 ```go
 func (c *Client) EntryBytesWithChain(event dnsidlog.LogEvent, chain Chain) ([]byte, error)
@@ -576,7 +576,7 @@ func (c *Client) EntryBytesWithChain(event dnsidlog.LogEvent, chain Chain) ([]by
 EntryBytesWithChain returns canonical contextualized entry bytes with the caller\-supplied logical stream\-chain metadata, without appending them.
 
 <a name="Client.KeyTimestamp"></a>
-### func \(\*Client\) [KeyTimestamp](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L504>)
+### func \(\*Client\) [KeyTimestamp](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L505>)
 
 ```go
 func (c *Client) KeyTimestamp(ctx context.Context, domain, keyThumbprint string) (timestamp time.Time, err error)
@@ -594,7 +594,7 @@ func (c *Client) ParsePreparedEvent(entry []byte) (*PreparedEvent, error)
 ParsePreparedEvent treats received bytes as untrusted, canonicalizes the envelope independently, and preserves unknown signed fields.
 
 <a name="Client.PreloadHistory"></a>
-### func \(\*Client\) [PreloadHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L942>)
+### func \(\*Client\) [PreloadHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L945>)
 
 ```go
 func (c *Client) PreloadHistory(ctx context.Context, domain string) (dnsidlog.LogReader, error)
@@ -630,7 +630,7 @@ func (c *Client) PreparedEntryBytes(ctx context.Context, prepared *PreparedEvent
 PreparedEntryBytes returns exact canonical bytes after validating all required signatures. It never appends.
 
 <a name="Client.ReadEvent"></a>
-### func \(\*Client\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L877>)
+### func \(\*Client\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L879>)
 
 ```go
 func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsidlog.LogEvent, err error)
@@ -639,7 +639,7 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 ReadEvent reads and verifies the single event addressed by a final event reference \<lr\>@\<index\>. The entry's inclusion proof must verify, its index must match the reference, and the entry must appear in the domain's verified lifecycle history; otherwise an error is returned.
 
 <a name="Client.RebuildHistory"></a>
-### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L993>)
+### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L1000>)
 
 ```go
 func (c *Client) RebuildHistory(ctx context.Context, domain string) ([]dnsidlog.LogEvent, error)
@@ -675,7 +675,7 @@ func (c *Client) SignPreparedEventWithKey(ctx context.Context, prepared *Prepare
 SignPreparedEventWithKey validates every signature already present and adds role using the named active or pending key. It is intended for transitions such as KEY\_ROTATION whose new\-key proof must be made before activation.
 
 <a name="Client.VerifyBilateralBinding"></a>
-### func \(\*Client\) [VerifyBilateralBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L535>)
+### func \(\*Client\) [VerifyBilateralBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L536>)
 
 ```go
 func (c *Client) VerifyBilateralBinding(ctx context.Context, input dnsidlog.BilateralBindingInput) (binding dnsidlog.BilateralBinding, err error)
@@ -684,7 +684,7 @@ func (c *Client) VerifyBilateralBinding(ctx context.Context, input dnsidlog.Bila
 VerifyBilateralBinding verifies the signed ISSUANCE event against the current DNS record material and returns its trusted continuity anchor.
 
 <a name="Client.VerifyGovernanceRelationship"></a>
-### func \(\*Client\) [VerifyGovernanceRelationship](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L672>)
+### func \(\*Client\) [VerifyGovernanceRelationship](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L673>)
 
 ```go
 func (c *Client) VerifyGovernanceRelationship(ctx context.Context, domain, governanceID string) (err error)
@@ -693,7 +693,7 @@ func (c *Client) VerifyGovernanceRelationship(ctx context.Context, domain, gover
 VerifyGovernanceRelationship verifies that a verified ISSUANCE event for domain names governanceID as the governing organization.
 
 <a name="Client.VerifyLifecycleBinding"></a>
-### func \(\*Client\) [VerifyLifecycleBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L639>)
+### func \(\*Client\) [VerifyLifecycleBinding](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L640>)
 
 ```go
 func (c *Client) VerifyLifecycleBinding(ctx context.Context, input dnsidlog.BilateralBindingInput, currentOperationalThumbprint string) (binding dnsidlog.BilateralBinding, err error)
@@ -702,7 +702,7 @@ func (c *Client) VerifyLifecycleBinding(ctx context.Context, input dnsidlog.Bila
 VerifyLifecycleBinding verifies the bilateral ISSUANCE binding and operational continuity over one verified lifecycle snapshot.
 
 <a name="Client.VerifyNonRevocation"></a>
-### func \(\*Client\) [VerifyNonRevocation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L698>)
+### func \(\*Client\) [VerifyNonRevocation](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L699>)
 
 ```go
 func (c *Client) VerifyNonRevocation(ctx context.Context, domain string, at time.Time) (evidence dnsidlog.LoggedStateEvidence, err error)
@@ -711,7 +711,7 @@ func (c *Client) VerifyNonRevocation(ctx context.Context, domain string, at time
 VerifyNonRevocation verifies that domain's identity was neither revoked nor retired as of time at. It requires the configured Source to implement CompleteSource, because proving the absence of a REVOCATION entry needs a complete view of the stream and a positive maximum checkpoint age; without either it fails closed. Success returns the exact accepted proof boundaries, including every prior stream imported by migration.
 
 <a name="Client.VerifyOperationalContinuity"></a>
-### func \(\*Client\) [VerifyOperationalContinuity](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L589>)
+### func \(\*Client\) [VerifyOperationalContinuity](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L590>)
 
 ```go
 func (c *Client) VerifyOperationalContinuity(ctx context.Context, domain, initialOperationalThumbprint, currentOperationalThumbprint string) (err error)
@@ -720,7 +720,7 @@ func (c *Client) VerifyOperationalContinuity(ctx context.Context, domain, initia
 VerifyOperationalContinuity verifies that the current operational key is connected to the ISSUANCE key by the validated rotation chain.
 
 <a name="Client.WriteEvent"></a>
-### func \(\*Client\) [WriteEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L397>)
+### func \(\*Client\) [WriteEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L398>)
 
 ```go
 func (c *Client) WriteEvent(ctx context.Context, event dnsidlog.LogEvent) (dnsidlog.LogRef, error)
@@ -729,7 +729,7 @@ func (c *Client) WriteEvent(ctx context.Context, event dnsidlog.LogEvent) (dnsid
 WriteEvent canonicalizes, validates, and appends a fully signed lifecycle event, returning the final event reference \<lr\>@\<index\>. In every scope, only ISSUANCE and inbound MIGRATION events can be written this way \(they derive seq=0\); later events must supply chain metadata via WriteEventWithChain.
 
 <a name="Client.WriteEventWithChain"></a>
-### func \(\*Client\) [WriteEventWithChain](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L453>)
+### func \(\*Client\) [WriteEventWithChain](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L454>)
 
 ```go
 func (c *Client) WriteEventWithChain(ctx context.Context, event dnsidlog.LogEvent, chain Chain) (dnsidlog.LogRef, error)
@@ -1192,7 +1192,7 @@ func (e *ManagedKeyRotationSubmissionError) Unwrap() error
 
 
 <a name="MemoryTrustedC2spCheckpointStore"></a>
-## type [MemoryTrustedC2spCheckpointStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L139-L142>)
+## type [MemoryTrustedC2spCheckpointStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L140-L143>)
 
 MemoryTrustedC2spCheckpointStore protects against rollback for the lifetime of this store instance. Use durable injected storage for protection across restarts. Construct it with NewMemoryTrustedC2spCheckpointStore before use.
 
@@ -1203,7 +1203,7 @@ type MemoryTrustedC2spCheckpointStore struct {
 ```
 
 <a name="NewMemoryTrustedC2spCheckpointStore"></a>
-### func [NewMemoryTrustedC2spCheckpointStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L146>)
+### func [NewMemoryTrustedC2spCheckpointStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L147>)
 
 ```go
 func NewMemoryTrustedC2spCheckpointStore() *MemoryTrustedC2spCheckpointStore
@@ -1212,7 +1212,7 @@ func NewMemoryTrustedC2spCheckpointStore() *MemoryTrustedC2spCheckpointStore
 NewMemoryTrustedC2spCheckpointStore returns an empty in\-memory store. It is safe for concurrent use.
 
 <a name="MemoryTrustedC2spCheckpointStore.CompareAndSwap"></a>
-### func \(\*MemoryTrustedC2spCheckpointStore\) [CompareAndSwap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L199>)
+### func \(\*MemoryTrustedC2spCheckpointStore\) [CompareAndSwap](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L200>)
 
 ```go
 func (s *MemoryTrustedC2spCheckpointStore) CompareAndSwap(origin string, expected *TrustedC2spCheckpoint, candidate TrustedC2spCheckpoint) (bool, error)
@@ -1221,7 +1221,7 @@ func (s *MemoryTrustedC2spCheckpointStore) CompareAndSwap(origin string, expecte
 CompareAndSwap implements TrustedC2spCheckpointStore. It returns an error on invalid input. Administrative replacements require external authorization.
 
 <a name="MemoryTrustedC2spCheckpointStore.CompareAndSwapContext"></a>
-### func \(\*MemoryTrustedC2spCheckpointStore\) [CompareAndSwapContext](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L205>)
+### func \(\*MemoryTrustedC2spCheckpointStore\) [CompareAndSwapContext](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L206>)
 
 ```go
 func (s *MemoryTrustedC2spCheckpointStore) CompareAndSwapContext(ctx context.Context, origin string, expected *TrustedC2spCheckpoint, candidate TrustedC2spCheckpoint) (bool, error)
@@ -1230,7 +1230,7 @@ func (s *MemoryTrustedC2spCheckpointStore) CompareAndSwapContext(ctx context.Con
 CompareAndSwapContext cancels lock waits and checks cancellation immediately before publication. It never leaves a queued write running after return.
 
 <a name="MemoryTrustedC2spCheckpointStore.Load"></a>
-### func \(\*MemoryTrustedC2spCheckpointStore\) [Load](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L154>)
+### func \(\*MemoryTrustedC2spCheckpointStore\) [Load](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L155>)
 
 ```go
 func (s *MemoryTrustedC2spCheckpointStore) Load(origin string) (*TrustedC2spCheckpoint, error)
@@ -1239,7 +1239,7 @@ func (s *MemoryTrustedC2spCheckpointStore) Load(origin string) (*TrustedC2spChec
 Load implements TrustedC2spCheckpointStore. It returns a copy of the stored checkpoint, nil when none is recorded, and an error on a nil receiver.
 
 <a name="MemoryTrustedC2spCheckpointStore.LoadContext"></a>
-### func \(\*MemoryTrustedC2spCheckpointStore\) [LoadContext](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L159>)
+### func \(\*MemoryTrustedC2spCheckpointStore\) [LoadContext](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/checkpoint_store.go#L160>)
 
 ```go
 func (s *MemoryTrustedC2spCheckpointStore) LoadContext(ctx context.Context, origin string) (*TrustedC2spCheckpoint, error)
@@ -1300,7 +1300,7 @@ type Option func(*Client)
 ```
 
 <a name="WithAppender"></a>
-### func [WithAppender](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L202>)
+### func [WithAppender](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L203>)
 
 ```go
 func WithAppender(appender Appender) Option
@@ -1309,7 +1309,7 @@ func WithAppender(appender Appender) Option
 WithAppender sets the Appender used to write entries. Write operations require an Appender.
 
 <a name="WithMigrationVerificationLimits"></a>
-### func [WithMigrationVerificationLimits](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L227>)
+### func [WithMigrationVerificationLimits](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L228>)
 
 ```go
 func WithMigrationVerificationLimits(limits MigrationVerificationLimits) Option
@@ -1318,7 +1318,7 @@ func WithMigrationVerificationLimits(limits MigrationVerificationLimits) Option
 WithMigrationVerificationLimits configures recursion and imported\-history bounds. Zero fields use finite defaults.
 
 <a name="WithMigrationVerifier"></a>
-### func [WithMigrationVerifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L221>)
+### func [WithMigrationVerifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L222>)
 
 ```go
 func WithMigrationVerifier(verifier MigrationVerifier) Option
@@ -1327,7 +1327,7 @@ func WithMigrationVerifier(verifier MigrationVerifier) Option
 WithMigrationVerifier configures verification and stitching of inbound migrations. Without one, inbound migration fails closed.
 
 <a name="WithPolicy"></a>
-### func [WithPolicy](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L208>)
+### func [WithPolicy](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L209>)
 
 ```go
 func WithPolicy(policy Policy) Option
@@ -1336,7 +1336,7 @@ func WithPolicy(policy Policy) Option
 WithPolicy sets the checkpoint and proof verification policy. The zero Policy rejects all proofs because it has no log verifier.
 
 <a name="WithSource"></a>
-### func [WithSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L196>)
+### func [WithSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L197>)
 
 ```go
 func WithSource(source Source) Option
@@ -1345,7 +1345,7 @@ func WithSource(source Source) Option
 WithSource sets the Source the Client reads proven entries from. All read and verification operations require a Source.
 
 <a name="WithTrustedCheckpointStore"></a>
-### func [WithTrustedCheckpointStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L215>)
+### func [WithTrustedCheckpointStore](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L216>)
 
 ```go
 func WithTrustedCheckpointStore(store TrustedC2spCheckpointStore) Option
@@ -1354,7 +1354,7 @@ func WithTrustedCheckpointStore(store TrustedC2spCheckpointStore) Option
 WithTrustedCheckpointStore sets the store that records the largest verified checkpoint per origin, protecting subsequent reads against log rollback. Without a store, no rollback protection is applied.
 
 <a name="Policy"></a>
-## type [Policy](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L27-L38>)
+## type [Policy](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L28-L39>)
 
 Policy is the local trust configuration for verifying c2sp\-tlog checkpoints and inclusion proofs. LogVerifier is required and must match the log's signing key; WitnessVerifiers and WitnessQuorum define which witness cosignatures are accepted and how many are required \(public streams require a quorum of at least 1\). CheckpointTime, when set, overrides the default witness\-timestamp rule. Now defaults to time.Now. MaxCheckpointAge, when positive, rejects checkpoints whose accepted timestamp is older; ClockSkew is the tolerated clock difference for witness timestamps. Prefer building a Policy with ParsePolicy from a tlog\-policy document; the zero Policy rejects all proofs.
 
@@ -1381,7 +1381,7 @@ func ParsePolicy(document []byte) (policyResult Policy, errResult error)
 ParsePolicy parses the official line\-oriented C2SP tlog\-policy format for a verification\-only client. Witness URLs are optional transport hints and are ignored. Definitions are ordered: groups and quorum may reference only preceding witnesses or groups.
 
 <a name="Policy.VerifyProof"></a>
-### func \(Policy\) [VerifyProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L68>)
+### func \(Policy\) [VerifyProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L69>)
 
 ```go
 func (p Policy) VerifyProof(ref Reference, entry, rawProof []byte) (*VerifiedProof, error)
@@ -1830,7 +1830,7 @@ type StreamBundleSource struct {
 ```
 
 <a name="StreamBundleSource.ReadEvent"></a>
-### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L249>)
+### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L235>)
 
 ```go
 func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (ProvenEntry, error)
@@ -1839,7 +1839,7 @@ func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (
 ReadEvent implements Source over the bundle's entries. It returns an error if ref does not address this bundle's reference or names an index the bundle does not contain.
 
 <a name="StreamBundleSource.RebuildCompleteHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L281>)
+### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L267>)
 
 ```go
 func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference Reference, domain string) (CompleteHistoryResult, error)
@@ -1848,7 +1848,7 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 RebuildCompleteHistory implements CompleteSource: a verified bundle's trusted\-index completeness assertion and entries share one checkpoint.
 
 <a name="StreamBundleSource.RebuildHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L268>)
+### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L254>)
 
 ```go
 func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Reference, domain string) ([]ProvenEntry, error)
@@ -1938,7 +1938,7 @@ type TrustedC2spCheckpointStore interface {
 ```
 
 <a name="VerificationRegistryConfig"></a>
-## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L77>)
+## type [VerificationRegistryConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/verification_registry.go#L24-L78>)
 
 VerificationRegistryConfig configures NewVerificationRegistry. Exactly one of TrustProfile, PolicyDocument, and PolicyURL must be set. A PolicyURL is a caller\-selected trust\-policy location; it is never inferred from an identity's untrusted lr value.
 
@@ -1993,14 +1993,15 @@ type VerificationRegistryConfig struct {
     // Zero uses the package defaults.
     MaxStreamBundleBytes  int
     MaxStreamBundleEvents int
-    // RequireStreamBundle disables raw-scan history fallback. ReadEvent may use
-    // the scanner to discover the FQDN before requiring its bundle history.
+    // RequireStreamBundle disables raw-scan history fallback, not hash-tile
+    // consistency checks. ReadEvent may use the scanner to discover the FQDN
+    // before requiring its bundle history.
     RequireStreamBundle bool
 }
 ```
 
 <a name="VerifiedProof"></a>
-## type [VerifiedProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L45-L54>)
+## type [VerifiedProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L46-L55>)
 
 VerifiedProof is the accepted result of checkpoint and inclusion\-proof verification: the proven entry index, the parsed checkpoint and its signed note, and the timestamps derived from accepted witness cosignatures \(CheckpointIntegrationTime adds the policy's clock skew to CheckpointWitnessTime\).
 
@@ -2037,7 +2038,7 @@ type VerifiedStreamBundle struct {
 ```
 
 <a name="VerifyStreamBundle"></a>
-### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L307>)
+### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L293>)
 
 ```go
 func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrust) (*VerifiedStreamBundle, error)

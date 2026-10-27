@@ -155,6 +155,7 @@ type preloadedHistory struct {
 	entries []ProvenEntry
 	expires time.Time
 	now     func() time.Time
+	scan    *completeScan
 }
 
 func (h *preloadedHistory) checkExpiry() error {
@@ -711,6 +712,7 @@ func (c *Client) VerifyNonRevocation(ctx context.Context, domain string, at time
 	if c.policy.MaxCheckpointAge <= 0 {
 		return dnsidlog.LoggedStateEvidence{}, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: c2sp-tlog non-revocation requires a positive maximum checkpoint age", nil)
 	}
+	ctx = withScanEvidence(ctx)
 	completeHistory, err := complete.RebuildCompleteHistory(ctx, c.ref, domain)
 	if err != nil {
 		var verificationErr *dnsid.VerificationError
@@ -893,6 +895,7 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 	if wantRef.String() != c.ref.String() {
 		return dnsidlog.LogEvent{}, dnsid.NewArgumentError("dnsid: c2sp-tlog final ref does not match client reference", nil)
 	}
+	ctx = withScanEvidence(ctx)
 	proven, err := c.source.ReadEvent(ctx, ref)
 	if err != nil {
 		return dnsidlog.LogEvent{}, logVerificationError(err, true)
@@ -946,6 +949,7 @@ func (c *Client) PreloadHistory(ctx context.Context, domain string) (dnsidlog.Lo
 	history := &preloadedHistory{ctx: ctx, domain: domain}
 	ctx, cancel := dnsid.VerificationContext(ctx)
 	defer cancel()
+	ctx = withScanEvidence(ctx)
 	source := c.source
 	if fetched, ok := source.(*fetchedStreamBundleSource); ok {
 		bundle, fallback, err := fetched.load(ctx, c.ref, domain)
@@ -981,6 +985,9 @@ func (c *Client) PreloadHistory(ctx context.Context, domain string) (dnsidlog.Lo
 		return nil, logVerificationError(err, false)
 	}
 	history.entries = entries
+	if evidence, ok := ctx.Value(scanEvidenceKey{}).(*scanEvidence); ok {
+		history.scan = evidence.scan
+	}
 	reader := *c
 	reader.preloaded = history
 	return &reader, nil
@@ -1002,6 +1009,7 @@ func (c *Client) rebuildVerifiedHistory(ctx context.Context, domain string) (ver
 	if c == nil || c.source == nil {
 		return nil, nil, dnsid.NewArgumentError("dnsid: c2sp-tlog source is required", nil)
 	}
+	ctx = withScanEvidence(ctx)
 	var entries []ProvenEntry
 	history := c.preloaded
 	if history != nil && history.domain == domain && history.ctx.Err() == nil {
@@ -1009,6 +1017,9 @@ func (c *Client) rebuildVerifiedHistory(ctx context.Context, domain string) (ver
 			return nil, nil, err
 		}
 		entries = history.entries
+		if evidence, ok := ctx.Value(scanEvidenceKey{}).(*scanEvidence); ok {
+			evidence.scan = history.scan
+		}
 	} else {
 		history = nil
 		entries, err = c.source.RebuildHistory(ctx, c.ref, domain)

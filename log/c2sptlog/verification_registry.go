@@ -71,8 +71,9 @@ type VerificationRegistryConfig struct {
 	// Zero uses the package defaults.
 	MaxStreamBundleBytes  int
 	MaxStreamBundleEvents int
-	// RequireStreamBundle disables raw-scan history fallback. ReadEvent may use
-	// the scanner to discover the FQDN before requiring its bundle history.
+	// RequireStreamBundle disables raw-scan history fallback, not hash-tile
+	// consistency checks. ReadEvent may use the scanner to discover the FQDN
+	// before requiring its bundle history.
 	RequireStreamBundle bool
 }
 

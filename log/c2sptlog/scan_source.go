@@ -322,7 +322,11 @@ func (s *ScanSource) scan(ctx context.Context, reference Reference) (result *com
 	if !bytes.Equal(root[:], verified.Checkpoint.Hash) {
 		return nil, fmt.Errorf("dnsid: complete c2sp-tlog scan does not match checkpoint root")
 	}
-	return &completeScan{checkpoint: checkpoint, verified: verified, entries: entries, levels: levels}, nil
+	result = &completeScan{checkpoint: checkpoint, verified: verified, entries: entries, levels: levels}
+	if evidence, ok := ctx.Value(scanEvidenceKey{}).(*scanEvidence); ok {
+		evidence.scan = result
+	}
+	return result, nil
 }
 
 func (s *ScanSource) fetch(ctx context.Context, rawURL string, maximum int64) ([]byte, error) {

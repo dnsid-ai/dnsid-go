@@ -23,7 +23,7 @@ const (
 	CheckpointAdvanceRollback CheckpointAdvanceErrorKind = "rollback"
 	// CheckpointAdvanceRootConflict indicates different roots at equal sizes.
 	CheckpointAdvanceRootConflict CheckpointAdvanceErrorKind = "root_conflict"
-	// CheckpointAdvanceConsistencyFailed indicates an invalid proof or a candidate-valid scan contradicting trusted history.
+	// CheckpointAdvanceConsistencyFailed indicates an invalid explicit proof or candidate-authenticated evidence contradicting trusted history.
 	CheckpointAdvanceConsistencyFailed CheckpointAdvanceErrorKind = "consistency_failed"
 	// CheckpointAdvanceConsistencyUnavailable indicates no supported consistency source.
 	CheckpointAdvanceConsistencyUnavailable CheckpointAdvanceErrorKind = "consistency_unavailable"
@@ -127,8 +127,9 @@ type C2spConsistencyProofSource interface {
 var ErrConsistencyUnavailable = errors.New("dnsid: c2sp-tlog consistency evidence unavailable")
 
 // C2spFullLogSource supplies all raw entries in [0, treeSize). It is an
-// optional fallback for proving an old prefix when no consistency-proof source
-// is available. The SDK recomputes both roots; the source is not trusted.
+// optional fallback for lower-level custom readers without proof or hash-tile
+// capability. Required-bundle mode disables this fallback. The SDK recomputes
+// both roots; the source is not trusted.
 type C2spFullLogSource interface {
 	FetchEntriesThrough(ctx context.Context, reference Reference, treeSize uint64) ([][]byte, error)
 }
@@ -322,39 +323,63 @@ func (c *Client) advanceTrustedCheckpoint(ctx context.Context, candidate Trusted
 }
 
 func (c *Client) verifyCheckpointConsistency(ctx context.Context, old, next TrustedC2spCheckpoint) error {
-	if source, ok := c.source.(C2spConsistencyProofSource); ok {
-		hashes, err := source.FetchConsistencyProof(ctx, c.ref, old.TreeSize, next.TreeSize)
-		if err != nil {
-			if errors.Is(err, ErrConsistencyUnavailable) {
-				return checkpointAdvanceError(CheckpointAdvanceConsistencyUnavailable, old, next, err)
-			}
-			return logVerificationError(fmt.Errorf("dnsid: fetching c2sp-tlog consistency proof: %w", err), true)
-		}
-		if err := proof.VerifyConsistency(rfc6962.DefaultHasher, old.TreeSize, next.TreeSize, hashes, old.RootHash, next.RootHash); err != nil {
-			return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, err)
-		}
+	if old.TreeSize == 0 {
 		return nil
+	}
+	if evidence, ok := ctx.Value(scanEvidenceKey{}).(*scanEvidence); ok && evidence.scan != nil {
+		scan := evidence.scan
+		if scan.verified.Checkpoint.Origin == next.Origin && uint64(len(scan.entries)) >= next.TreeSize {
+			return verifyScanRoots(scan.entries[:next.TreeSize], old, next)
+		}
+	}
+	if source, ok := c.source.(C2spConsistencyProofSource); ok {
+		return verifyExplicitConsistency(ctx, source, c.ref, old, next)
+	}
+	if source, ok := c.source.(checkpointTileSource); ok {
+		return source.verifyTileConsistency(ctx, c.ref, old, next)
 	}
 	if source, ok := c.source.(C2spFullLogSource); ok {
-		entries, err := source.FetchEntriesThrough(ctx, c.ref, next.TreeSize)
-		if err != nil {
-			if errors.Is(err, ErrConsistencyUnavailable) {
-				return checkpointAdvanceError(CheckpointAdvanceConsistencyUnavailable, old, next, err)
-			}
-			return logVerificationError(fmt.Errorf("dnsid: fetching complete c2sp-tlog scan: %w", err), true)
-		}
-		if uint64(len(entries)) != next.TreeSize {
-			return dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: incomplete candidate checkpoint scan", fmt.Errorf("complete scan returned %d entries, want %d", len(entries), next.TreeSize))
-		}
-		if !bytes.Equal(merkleRoot(entries), next.RootHash) {
-			return dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: complete scan does not match candidate checkpoint root", nil)
-		}
-		if !bytes.Equal(merkleRoot(entries[:old.TreeSize]), old.RootHash) {
-			return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, fmt.Errorf("complete scan contradicts trusted prefix root"))
-		}
-		return nil
+		return verifyScanConsistency(ctx, source, c.ref, old, next)
 	}
 	return checkpointAdvanceError(CheckpointAdvanceConsistencyUnavailable, old, next, nil)
+}
+
+func verifyExplicitConsistency(ctx context.Context, source C2spConsistencyProofSource, ref Reference, old, next TrustedC2spCheckpoint) error {
+	hashes, err := source.FetchConsistencyProof(ctx, ref, old.TreeSize, next.TreeSize)
+	if err != nil {
+		if errors.Is(err, ErrConsistencyUnavailable) {
+			return checkpointAdvanceError(CheckpointAdvanceConsistencyUnavailable, old, next, err)
+		}
+		return logVerificationError(fmt.Errorf("dnsid: fetching c2sp-tlog consistency proof: %w", err), true)
+	}
+	if err := proof.VerifyConsistency(rfc6962.DefaultHasher, old.TreeSize, next.TreeSize, hashes, old.RootHash, next.RootHash); err != nil {
+		return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, err)
+	}
+	return nil
+}
+
+func verifyScanConsistency(ctx context.Context, source C2spFullLogSource, ref Reference, old, next TrustedC2spCheckpoint) error {
+	entries, err := source.FetchEntriesThrough(ctx, ref, next.TreeSize)
+	if err != nil {
+		if errors.Is(err, ErrConsistencyUnavailable) {
+			return checkpointAdvanceError(CheckpointAdvanceConsistencyUnavailable, old, next, err)
+		}
+		return logVerificationError(fmt.Errorf("dnsid: fetching complete c2sp-tlog scan: %w", err), true)
+	}
+	return verifyScanRoots(entries, old, next)
+}
+
+func verifyScanRoots(entries [][]byte, old, next TrustedC2spCheckpoint) error {
+	if uint64(len(entries)) != next.TreeSize {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: incomplete candidate checkpoint scan", fmt.Errorf("complete scan returned %d entries, want %d", len(entries), next.TreeSize))
+	}
+	if !bytes.Equal(merkleRoot(entries), next.RootHash) {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: complete scan does not match candidate checkpoint root", nil)
+	}
+	if !bytes.Equal(merkleRoot(entries[:old.TreeSize]), old.RootHash) {
+		return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, fmt.Errorf("complete scan contradicts trusted prefix root"))
+	}
+	return nil
 }
 
 func merkleRoot(entries [][]byte) []byte {
@@ -387,6 +412,9 @@ func checkpointStoreError(message string, cause error) error {
 func validateTrustedCheckpoint(origin string, checkpoint TrustedC2spCheckpoint) error {
 	if origin == "" || checkpoint.Origin != origin || checkpoint.TreeSize > math.MaxInt64 || len(checkpoint.RootHash) != sha256.Size || checkpoint.WitnessTime.IsZero() || checkpoint.WitnessTime.Year() < 1 || checkpoint.WitnessTime.Year() > 9999 {
 		return dnsid.NewArgumentError("dnsid: checkpoint requires a matching nonempty origin, int64 tree size, SHA-256 root and valid witnessed time", nil)
+	}
+	if checkpoint.TreeSize == 0 && !bytes.Equal(checkpoint.RootHash, merkleRoot(nil)) {
+		return dnsid.NewArgumentError("dnsid: empty checkpoint requires SHA-256 empty-tree root", nil)
 	}
 	return nil
 }
