@@ -187,6 +187,19 @@ func (s *fetchedStreamBundleSource) FetchEntriesThrough(ctx context.Context, ref
 	return fallback.FetchEntriesThrough(ctx, reference, treeSize)
 }
 
+// proveCheckpointConsistency reads only hash tiles, never raw history, so it
+// stays available when RequireStreamBundle disables raw-scan fallback.
+func (s *fetchedStreamBundleSource) proveCheckpointConsistency(ctx context.Context, reference Reference, old, next TrustedC2spCheckpoint) ([][]byte, error) {
+	if s == nil {
+		return nil, ErrConsistencyUnavailable
+	}
+	source, ok := s.fallback.(authenticatedConsistencySource)
+	if !ok {
+		return nil, ErrConsistencyUnavailable
+	}
+	return source.proveCheckpointConsistency(ctx, reference, old, next)
+}
+
 func (s *fetchedStreamBundleSource) load(ctx context.Context, reference Reference, domain string) (*VerifiedStreamBundle, bool, error) {
 	if s == nil || s.fetcher == nil {
 		return nil, false, fmt.Errorf("dnsid: c2sp stream bundle fetcher is required")

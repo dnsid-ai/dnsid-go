@@ -25,8 +25,8 @@ Use these stable kind values, mapped to each language's existing error idiom:
 |---|---|---|
 | `rollback` | Candidate size is smaller than the trusted size. | Retain trust; investigate with operations and security. Do not infer legitimate recovery. |
 | `root_conflict` | Equal sizes have different roots. | Retain trust; escalate as potential equivocation. |
-| `consistency_failed` | A supplied consistency proof fails, or a complete scan reproduces the candidate root but contradicts the trusted prefix. | `LOG_INCONSISTENT`; retain trust and investigate. This alone does not prove a fork. |
-| `consistency_unavailable` | The source cannot supply consistency evidence, including required-bundle mode without a proof source. | Non-transient missing evidence; retain trust and fix source configuration. This is not evidence of equivocation. |
+| `consistency_failed` | A supplied consistency proof fails, a proof built from hash tiles authenticated against the candidate root fails against the trusted root, or a complete scan reproduces the candidate root but contradicts the trusted prefix. | `LOG_INCONSISTENT`; retain trust and investigate. This alone does not prove a fork. |
+| `consistency_unavailable` | The source cannot supply consistency evidence, including required-bundle mode whose fallback reads no hash tiles. | Non-transient missing evidence; retain trust and fix source configuration. This is not evidence of equivocation. |
 
 A network/source fetch error is not `consistency_failed`. Preserve its original
 cause, including cancellation and resource-fetch classification. Store load/CAS
@@ -49,9 +49,9 @@ classification through public verification wrappers.
 Public reader and bundle errors expose `VerificationCodeLogRollback` (`LOG_ROLLBACK`),
 `VerificationCodeLogFork` (`LOG_FORK`), and `VerificationCodeLogInconsistent`
 (`LOG_INCONSISTENT`). `errors.As` also reaches `CheckpointAdvanceError` and its
-copied diagnostics. A missing candidate leaf, invalid occurrence index, or scan
-that cannot reproduce the candidate root is `INVALID_EVIDENCE`, not a continuity
-contradiction. Invalid accepted checkpoints are fatal even in global candidate scans;
+copied diagnostics. A missing candidate leaf, invalid occurrence index, scan
+that cannot reproduce the candidate root, or hash tile that does not hash to the
+candidate root is `INVALID_EVIDENCE`, not a continuity contradiction. Invalid accepted checkpoints are fatal even in global candidate scans;
 invalid per-entry inclusion candidates can still be omitted.
 
 Store failures expose `VerificationCodeCheckpointStore` (`CHECKPOINT_STORE_ERROR`),

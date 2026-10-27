@@ -322,6 +322,22 @@ func (c *Client) advanceTrustedCheckpoint(ctx context.Context, candidate Trusted
 }
 
 func (c *Client) verifyCheckpointConsistency(ctx context.Context, old, next TrustedC2spCheckpoint) error {
+	if source, ok := c.source.(authenticatedConsistencySource); ok {
+		hashes, err := source.proveCheckpointConsistency(ctx, c.ref, old, next)
+		switch {
+		case errors.Is(err, ErrConsistencyUnavailable):
+			// No hash-tile reader behind this source; try the explicit sources below.
+		case err != nil:
+			return logVerificationError(fmt.Errorf("dnsid: proving c2sp-tlog consistency from hash tiles: %w", err), true)
+		default:
+			// The hashes are authenticated against the candidate root, so a
+			// failure here contradicts the trusted checkpoint.
+			if err := proof.VerifyConsistency(rfc6962.DefaultHasher, old.TreeSize, next.TreeSize, hashes, old.RootHash, next.RootHash); err != nil {
+				return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, err)
+			}
+			return nil
+		}
+	}
 	if source, ok := c.source.(C2spConsistencyProofSource); ok {
 		hashes, err := source.FetchConsistencyProof(ctx, c.ref, old.TreeSize, next.TreeSize)
 		if err != nil {
