@@ -14,11 +14,12 @@ import (
 	"strings"
 	"time"
 
+	wbahttpsig "github.com/WebDecoy/web-bot-auth/httpsig"
 	"github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	"github.com/dnsid-ai/dnsid-go/internal/joseutil"
-	"github.com/dnsid-ai/dnsid-go/internal/sfv"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/digest"
+	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/sfv"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
@@ -73,8 +74,8 @@ type ComponentIdentifier struct {
 }
 
 // SignatureParameter is one ordered RFC 8941 parameter on a Signature-Input
-// inner list. Value is an RFC 8941 bare item: bool, int64, float64 (decimal),
-// string, []byte, or github.com/forcebit/http-message-signatures-rfc9421-go/pkg/sfv.Token.
+// inner list. Value is an RFC 8941 bare item: bool, int64, string, []byte, or
+// sfv.Token.
 type SignatureParameter struct {
 	Name  string
 	Value any
@@ -483,7 +484,7 @@ func parseComponentIdentifier(s string) (ComponentIdentifier, error) {
 	if !ok {
 		return ComponentIdentifier{}, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed HTTP signature component", nil)
 	}
-	c := ComponentIdentifier{Name: name}
+	c := ComponentIdentifier{Name: strings.TrimSpace(name)}
 	if c.Name == "" {
 		return ComponentIdentifier{}, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: empty HTTP signature component", nil)
 	}
@@ -852,6 +853,9 @@ func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error) {
 	if sigInput == "" {
 		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: missing Signature-Input header", nil)
 	}
+	if err := validateUniqueDictionaryLabels(sigInput, "Signature-Input"); err != nil {
+		return nil, err
+	}
 	dict, err := sfv.NewParser(sigInput, sfv.DefaultLimits()).ParseDictionary()
 	if err != nil {
 		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed Signature-Input header", err)
@@ -868,7 +872,7 @@ func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error) {
 			if !ok {
 				return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed HTTP signature component", nil)
 			}
-			component := ComponentIdentifier{Name: name}
+			component := ComponentIdentifier{Name: strings.TrimSpace(name)}
 			for _, parameter := range item.Parameters {
 				if component.Params == nil {
 					component.Params = map[string]any{}
@@ -1053,7 +1057,7 @@ func signatureParamsInnerList(params SignatureParams) (sfv.InnerList, error) {
 }
 
 func validateComponentIdentifier(component ComponentIdentifier) error {
-	originalName := component.Name
+	originalName := strings.TrimSpace(component.Name)
 	name := strings.ToLower(originalName)
 	malformed := func(message string) error {
 		return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: "+message, nil)
@@ -1087,10 +1091,6 @@ func validateComponentIdentifier(component ComponentIdentifier) error {
 	case "@query-param":
 		if !hasName || hasKey {
 			return malformed("@query-param requires name parameter")
-		}
-		queryName, _ := component.Params["name"].(string)
-		if _, err := url.QueryUnescape(queryName); err != nil {
-			return malformed("malformed @query-param name encoding")
 		}
 	case "@status":
 		if hasReq || hasKey || hasName {
@@ -1158,6 +1158,9 @@ func formURLEncode(s string) string {
 
 // ParseSignature parses a Signature dictionary into bytes by label.
 func ParseSignature(input string) (map[string][]byte, error) {
+	if err := validateUniqueDictionaryLabels(input, "Signature"); err != nil {
+		return nil, err
+	}
 	dict, err := sfv.NewParser(input, sfv.DefaultLimits()).ParseDictionary()
 	if err != nil {
 		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed Signature header", err)
@@ -1175,6 +1178,28 @@ func ParseSignature(input string) (map[string][]byte, error) {
 		out[label] = sig
 	}
 	return out, nil
+}
+
+func validateUniqueDictionaryLabels(input, field string) error {
+	limits := sfv.DefaultLimits()
+	if limits.MaxInputLength > 0 && len(input) > limits.MaxInputLength {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed "+field+" header: input exceeds limit", nil)
+	}
+	members, err := wbahttpsig.ParseDictionaryHeader(input)
+	if err != nil {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed "+field+" header", err)
+	}
+	if limits.MaxDictionaryMembers > 0 && len(members) > limits.MaxDictionaryMembers {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed "+field+" header: dictionary exceeds member limit", nil)
+	}
+	seen := make(map[string]struct{}, len(members))
+	for _, member := range members {
+		if _, duplicate := seen[member.Key]; duplicate {
+			return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: duplicate "+field+" label "+member.Key, nil)
+		}
+		seen[member.Key] = struct{}{}
+	}
+	return nil
 }
 
 // JoseAlgToHTTPSigAlg maps SDK JOSE algorithms to RFC 9421 algorithm names.
@@ -1230,7 +1255,7 @@ func isHTTPSignatureComponentName(component string) bool {
 		return false
 	}
 	for _, r := range component {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || strings.ContainsRune("!#$%&'*+-.^_`|~", r) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
 			continue
 		}
 		return false
@@ -1286,6 +1311,7 @@ func headerFieldValue(header http.Header, name string) (string, bool) {
 	if len(values) == 0 {
 		return "", false
 	}
+	// RFC 9421 section 2.1: strip OWS from each value, as net/http does on receipt.
 	canonical := make([]string, len(values))
 	for i, value := range values {
 		for _, c := range []byte(value) {

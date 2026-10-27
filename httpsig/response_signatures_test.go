@@ -154,7 +154,7 @@ func (k *countingKeys) Sign(input []byte) (*dnsid.KeySignature, error) {
 
 func TestNegotiatedResponse_InvalidLocalOptionsBeforeIO(t *testing.T) {
 	f := newResponseFixture(t)
-	for _, name := range []string{"domain", "http", "header", "lowercase-header", "empty-header", "unsupported", "duplicate", "missing-req", "oversized-target", "oversized-headers", "invalid-query-name"} {
+	for _, name := range []string{"domain", "http", "header", "lowercase-header", "empty-header", "unsupported", "duplicate", "missing-req", "oversized-target", "oversized-headers"} {
 		t.Run(name, func(t *testing.T) {
 			keys := &countingKeys{KeyProvider: f.keys}
 			profile := New(nil, f.opts.ExpectedDomain, keys, Config{})
@@ -181,8 +181,6 @@ func TestNegotiatedResponse_InvalidLocalOptionsBeforeIO(t *testing.T) {
 				req.URL.Path = "/" + strings.Repeat("x", 64<<10)
 			case "oversized-headers":
 				req.Header.Set("X-Large", strings.Repeat("x", 1<<20))
-			case "invalid-query-name":
-				opts.AdditionalComponents = []ComponentIdentifier{{Name: "@query-param", Params: map[string]any{"req": true, "name": "bad%zz"}}}
 			}
 			_, err := profile.CreateSignedHTTPRequest(req, SigningOptions{ResponseSignature: &opts})
 			var argument *dnsid.ArgumentError

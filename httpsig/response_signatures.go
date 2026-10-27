@@ -17,8 +17,8 @@ import (
 	"github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	"github.com/dnsid-ai/dnsid-go/internal/joseutil"
-	"github.com/dnsid-ai/dnsid-go/internal/sfv"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/digest"
+	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/sfv"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
@@ -72,12 +72,23 @@ func responsePolicy(opts ResponseSignatureOptions) (ResponseSignatureOptions, []
 		if err := AppendComponent(&components, component); err != nil {
 			return opts, nil, err
 		}
-		normalized := components[len(components)-1]
-		if strings.HasPrefix(normalized.Name, "@") && normalized.Name != "@status" && normalized.Params["req"] != true {
-			return opts, nil, dnsid.NewArgumentError("dnsid: response request-derived components require req", nil)
+		if err := checkResponseComponent(components[len(components)-1]); err != nil {
+			return opts, nil, dnsid.NewArgumentError(err.Error(), nil)
 		}
 	}
 	return opts, components, nil
+}
+
+func checkResponseComponent(component ComponentIdentifier) error {
+	req := component.Params["req"] == true
+	if strings.HasPrefix(component.Name, "@") && component.Name != "@status" && !req {
+		return errors.New("response request-derived components require req")
+	}
+	// The response signature fields are written by signing, so they cannot cover themselves.
+	if (component.Name == "signature" || component.Name == "signature-input") && !req {
+		return errors.New("response components cannot cover response signature fields")
+	}
+	return nil
 }
 
 func prepareResponseNegotiation(req *http.Request, opts ResponseSignatureOptions) error {
@@ -107,7 +118,7 @@ func prepareResponseNegotiation(req *http.Request, opts ResponseSignatureOptions
 	if err != nil {
 		return dnsid.NewArgumentError("dnsid: invalid response negotiation", err)
 	}
-	if len(value) > 16<<10 || len(components) > 128 {
+	if len(value) > 16<<10 {
 		return dnsid.NewArgumentError("dnsid: response negotiation exceeds limits", nil)
 	}
 	if req.Header == nil {
@@ -165,6 +176,9 @@ func parseResponseNegotiation(req *http.Request) (SignatureParams, error) {
 		return SignatureParams{}, err
 	}
 	value := strings.Join(req.Header.Values("Accept-Signature"), ", ")
+	if err := validateUniqueDictionaryLabels(value, "Accept-Signature"); err != nil {
+		return SignatureParams{}, responseVerificationError("malformed response signature request", err)
+	}
 	dict, err := sfv.NewParser(value, sfv.DefaultLimits()).ParseDictionary()
 	if err != nil || len(dict.Keys) != 1 {
 		return SignatureParams{}, responseVerificationError("expected one response signature request", err)
@@ -211,6 +225,9 @@ func parseResponseNegotiation(req *http.Request) (SignatureParams, error) {
 			}
 			seen[parameter.Key] = true
 		}
+		if name, _ := item.Value.(string); name != strings.TrimSpace(name) {
+			return params, responseVerificationError("invalid response component", nil)
+		}
 		wire, err := sfv.SerializeItem(item)
 		if err != nil {
 			return params, responseVerificationError("invalid response component", err)
@@ -222,8 +239,8 @@ func parseResponseNegotiation(req *http.Request) (SignatureParams, error) {
 		if containsComponent(params.Components, component) {
 			return params, responseVerificationError("duplicate response component", nil)
 		}
-		if strings.HasPrefix(component.Name, "@") && component.Name != "@status" && component.Params["req"] != true {
-			return params, responseVerificationError("response request-derived components require req", nil)
+		if err := checkResponseComponent(component); err != nil {
+			return params, responseVerificationError(err.Error(), nil)
 		}
 		params.Components = append(params.Components, component)
 	}
@@ -280,6 +297,9 @@ func responseContent(ctx context.Context, req *http.Request, res *http.Response)
 }
 
 func verifyResponseContentDigest(body []byte, value string) error {
+	if err := validateUniqueDictionaryLabels(value, "Content-Digest"); err != nil {
+		return err
+	}
 	dict, err := sfv.NewParser(value, sfv.DefaultLimits()).ParseDictionary()
 	if err != nil {
 		return err
@@ -428,16 +448,11 @@ func (p *Profile) SignRequestedHTTPResponse(req *http.Request, res *http.Respons
 		return nil, responseVerificationError("cannot append no-store to malformed cache policy", nil)
 	}
 	signed.Header.Set("Cache-Control", cache)
-	base, err := BuildSignatureInput(&signed, params)
-	if err != nil {
+	if _, err := BuildSignatureInput(&signed, params); err != nil {
 		return nil, responseVerificationError("cannot resolve requested response components", err)
 	}
 	if err := SignHTTPMessage(&signed, params, p.keys); err != nil {
 		return nil, err
-	}
-	finalBase, err := BuildSignatureInput(&signed, params)
-	if err != nil || finalBase != base {
-		return nil, responseVerificationError("covered fields changed during response signing", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

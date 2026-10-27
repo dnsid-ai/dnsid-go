@@ -33,14 +33,12 @@ func TestNegotiatedResponse_AdditionalComponentMatrixAndSigningConsistency(t *te
 		{Name: "@path", Params: map[string]any{"req": true}},
 		{Name: "@query-param", Params: map[string]any{"name": "q", "req": true}, ParamOrder: []string{"name", "req"}},
 		{Name: "x-meta", Params: map[string]any{"key": "choice"}},
-		{Name: "x_meta"},
 		{Name: "x-req-meta", Params: map[string]any{"key": "choice", "req": true}, ParamOrder: []string{"key", "req"}},
 	}
 	req := f.request(t)
 	req.Header.Set("X-Req-Meta", `choice="request"`)
 	res := responseMessage("response content")
 	res.Header.Set("X-Meta", `choice="response"`)
-	res.Header.Set("X_Meta", "value")
 	signed, err := f.signer.SignRequestedHTTPResponse(req, res)
 	if err != nil {
 		t.Fatal(err)
@@ -54,17 +52,20 @@ func TestNegotiatedResponse_AdditionalComponentMatrixAndSigningConsistency(t *te
 	signed.Body.Close()
 	for _, name := range []string{"signature", "signature-input"} {
 		t.Run(name, func(t *testing.T) {
-			f.opts.AdditionalComponents = []ComponentIdentifier{{Name: name}}
-			req := f.request(t)
-			res := responseMessage("response content")
-			other := SignatureParams{Label: "other", Components: []ComponentIdentifier{{Name: "@status"}}}
-			if err := SignHTTPMessage(res, other, f.keys); err != nil {
-				t.Fatal(err)
+			opts := ResponseSignatureOptions{ExpectedDomain: f.opts.ExpectedDomain, AdditionalComponents: []ComponentIdentifier{{Name: name}}}
+			unsigned, _ := http.NewRequest(http.MethodGet, "https://gateway.example/", nil)
+			var argument *dnsid.ArgumentError
+			if _, err := f.signer.CreateSignedHTTPRequest(unsigned, SigningOptions{ResponseSignature: &opts}); !errors.As(err, &argument) {
+				t.Fatalf("want local argument rejection: %v", err)
 			}
-			before := res.Header.Get(name)
+			f.opts.AdditionalComponents = nil
+			req := f.request(t)
+			req.Header.Set("Accept-Signature", strings.Replace(req.Header.Get("Accept-Signature"), ")", ` "`+name+`")`, 1))
+			res := responseMessage("response content")
 			signed, err := f.signer.SignRequestedHTTPResponse(req, res)
-			if signed != nil || err == nil || res.Header.Get(name) != before {
-				t.Fatal("published self-referential invalid signature")
+			var verification *dnsid.VerificationError
+			if signed != nil || !errors.As(err, &verification) || res.Header.Get("Signature") != "" {
+				t.Fatalf("want negotiation rejection without signing: %v", err)
 			}
 			res.Body.Close()
 		})

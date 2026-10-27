@@ -9,6 +9,7 @@ require (
 
 require (
 	filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e // indirect
+	github.com/WebDecoy/web-bot-auth v0.4.1 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.1 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.33.7 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.7 // indirect
