@@ -277,22 +277,12 @@ func prepareAndSubmitManagedIssuance(ctx context.Context, client *Client, entity
 	if raw == nil {
 		return issuance, dnsid.NewValidationError("dnsid: registry preparation returned no entry", nil)
 	}
-	// Use the prepared-event parser to reject duplicate members and non-canonical JSON.
-	payload, err := payloadObjectFromEntry(raw.EntryBytes)
-	if err != nil {
-		return issuance, dnsid.NewParseError("dnsid: parsing registry ISSUANCE", err)
-	}
-	lr, _ := payload["lr"].(string)
-	ref, err := ParseReference(lr)
+	_, prepared, err := ParsePreparedIssuance(raw.EntryBytes)
 	if err != nil {
 		return issuance, err
 	}
-	if ref.String() != issuance.LogReference {
+	if prepared.Reference().String() != issuance.LogReference {
 		return issuance, dnsid.NewValidationError("dnsid: registry preparation returned an unexpected c2sp-tlog reference", nil)
-	}
-	prepared, err := client.ParsePreparedEvent(raw.EntryBytes)
-	if err != nil {
-		return issuance, err
 	}
 	if err := validateManagedPreparedIssuance(prepared, issuance, entityKey, provider.JWK()); err != nil {
 		return issuance, err
