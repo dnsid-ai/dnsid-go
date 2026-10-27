@@ -129,8 +129,7 @@ func (r *c2spTileReader) readTile(tile tlog.Tile) ([]byte, error) {
 		return r.fetchExact(full, want)
 	}
 	data, err := r.fetchExact(full+".p/"+strconv.Itoa(tile.W), want)
-	var fetchErr *ResourceFetchError
-	if err == nil || !errors.As(err, &fetchErr) || fetchErr.Kind != ResourceFetchHTTPStatus || fetchErr.HTTPStatus != http.StatusNotFound {
+	if err == nil || !isMissingResource(err) {
 		return data, err
 	}
 	// C2SP tlog-tiles lets logs delete a partial tile once the log grows past
@@ -179,6 +178,17 @@ func (r *c2spTileReader) currentWidth(tile tlog.Tile) (int, error) {
 		return 0, nil
 	}
 	return int(min(available-start, 1<<c2spTileHeight)), nil
+}
+
+// isMissingResource reports whether a fetch failed because the object does not
+// exist. Object stores served without list permission answer 403 rather than
+// 404 for a missing key, so both count. Treating a real 403 as missing is
+// safe: the retry reads the tile at another width, and every hash it returns
+// is still authenticated against the candidate root.
+func isMissingResource(err error) bool {
+	var fetchErr *ResourceFetchError
+	return errors.As(err, &fetchErr) && fetchErr.Kind == ResourceFetchHTTPStatus &&
+		(fetchErr.HTTPStatus == http.StatusNotFound || fetchErr.HTTPStatus == http.StatusForbidden)
 }
 
 func firstOr(values []string, index int) string {

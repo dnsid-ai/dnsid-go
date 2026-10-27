@@ -91,6 +91,8 @@ type countingTileFetcher struct {
 	mu        sync.Mutex
 	resources map[string][]byte
 	requests  []string
+	// missingStatus is the HTTP status for a missing object; zero means 404.
+	missingStatus int
 }
 
 func (f *countingTileFetcher) FetchBounded(_ context.Context, rawURL string, maximum int64) ([]byte, error) {
@@ -99,7 +101,11 @@ func (f *countingTileFetcher) FetchBounded(_ context.Context, rawURL string, max
 	f.requests = append(f.requests, rawURL)
 	data, ok := f.resources[strings.TrimPrefix(rawURL, tileTestPrefix)]
 	if !ok {
-		return nil, &ResourceFetchError{Kind: ResourceFetchHTTPStatus, URL: rawURL, HTTPStatus: http.StatusNotFound}
+		status := f.missingStatus
+		if status == 0 {
+			status = http.StatusNotFound
+		}
+		return nil, &ResourceFetchError{Kind: ResourceFetchHTTPStatus, URL: rawURL, HTTPStatus: status}
 	}
 	if int64(len(data)) > maximum {
 		return nil, &ResourceFetchError{Kind: ResourceFetchResponseLimit, URL: rawURL, MaximumBytes: maximum}
@@ -167,20 +173,23 @@ func TestScanSourceConsistencyReadsCurrentTileWhenPartialIsGone(t *testing.T) {
 	const old, next = 100, 600
 	// The log has grown and deleted its partial tiles for size 600
 	// (0/002.p/88 and 1/000.p/2): at 700 they are wider partials, at 1024
-	// level zero is full and level one is 1/000.p/4.
-	for _, current := range []int64{700, 1024} {
-		t.Run(strconv.FormatInt(current, 10), func(t *testing.T) {
-			resources := log.resources(t, current)
-			resources["/checkpoint"] = []byte("log.example/log\n" + strconv.FormatInt(current, 10) + "\nAAAA\n")
-			source, reference := tileTestSource(t, &countingTileFetcher{resources: resources})
-			hashes, err := source.proveCheckpointConsistency(context.Background(), reference, tileCheckpoint(old, log.root(t, old)), tileCheckpoint(next, log.root(t, next)))
-			if err != nil {
-				t.Fatalf("proveCheckpointConsistency: %v", err)
-			}
-			if err := proof.VerifyConsistency(rfc6962.DefaultHasher, old, next, hashes, log.root(t, old), log.root(t, next)); err != nil {
-				t.Fatalf("VerifyConsistency: %v", err)
-			}
-		})
+	// level zero is full and level one is 1/000.p/4. Object stores without
+	// list permission answer 403 for the deleted partial, so cover both.
+	for _, missingStatus := range []int{http.StatusNotFound, http.StatusForbidden} {
+		for _, current := range []int64{700, 1024} {
+			t.Run(fmt.Sprintf("%d-%d", missingStatus, current), func(t *testing.T) {
+				resources := log.resources(t, current)
+				resources["/checkpoint"] = []byte("log.example/log\n" + strconv.FormatInt(current, 10) + "\nAAAA\n")
+				source, reference := tileTestSource(t, &countingTileFetcher{resources: resources, missingStatus: missingStatus})
+				hashes, err := source.proveCheckpointConsistency(context.Background(), reference, tileCheckpoint(old, log.root(t, old)), tileCheckpoint(next, log.root(t, next)))
+				if err != nil {
+					t.Fatalf("proveCheckpointConsistency: %v", err)
+				}
+				if err := proof.VerifyConsistency(rfc6962.DefaultHasher, old, next, hashes, log.root(t, old), log.root(t, next)); err != nil {
+					t.Fatalf("VerifyConsistency: %v", err)
+				}
+			})
+		}
 	}
 }
 
@@ -227,8 +236,9 @@ func TestScanSourceConsistencyRejectsCandidateAboveTreeLimit(t *testing.T) {
 	checkpointCode(t, err, dnsid.VerificationCodeInvalidEvidence, false)
 }
 
-// The bundle path advances the trusted checkpoint from hash tiles alone, even
-// when raw-scan fallback is disabled, and rejects a contradicting trusted root.
+// The bundle path advances the trusted checkpoint from hash tiles alone, in
+// both prefer-bundle and require-bundle mode, rejects a contradicting trusted
+// root, and never falls back to a raw scan when the hash-tile proof fails.
 func TestFetchedStreamBundleSourceAdvancesCheckpointWithHashTiles(t *testing.T) {
 	vector := loadStreamBundleVector(t)
 	verifier, err := note.NewVerifier(vector.Trust.BundleVerifierKey)
@@ -265,17 +275,30 @@ func TestFetchedStreamBundleSourceAdvancesCheckpointWithHashTiles(t *testing.T) 
 	}
 	log := newTileLog(t, raw)
 
-	for _, test := range []struct {
-		name         string
-		oldSize      uint64
-		oldRoot      []byte
-		wantCode     dnsid.VerificationCode
-		wantAdvanced bool
-	}{
-		{name: "consistent", oldSize: 1, oldRoot: log.root(t, 1), wantAdvanced: true},
-		{name: "contradicting trusted root", oldSize: 1, oldRoot: make([]byte, 32), wantCode: dnsid.VerificationCodeLogInconsistent},
-		{name: "empty trusted tree with non-empty root", oldSize: 0, oldRoot: make([]byte, 32), wantCode: dnsid.VerificationCodeLogInconsistent},
-	} {
+	type advanceCase struct {
+		name          string
+		requireBundle bool
+		oldSize       uint64
+		oldRoot       []byte
+		tilesDown     bool
+		wantCode      dnsid.VerificationCode
+		wantTransient bool
+		wantAdvanced  bool
+	}
+	var cases []advanceCase
+	for _, requireBundle := range []bool{false, true} {
+		mode := "prefer"
+		if requireBundle {
+			mode = "require"
+		}
+		cases = append(cases,
+			advanceCase{name: mode + "/consistent", requireBundle: requireBundle, oldSize: 1, oldRoot: log.root(t, 1), wantAdvanced: true},
+			advanceCase{name: mode + "/contradicting trusted root", requireBundle: requireBundle, oldSize: 1, oldRoot: make([]byte, 32), wantCode: dnsid.VerificationCodeLogInconsistent},
+			advanceCase{name: mode + "/empty trusted tree with non-empty root", requireBundle: requireBundle, oldSize: 0, oldRoot: make([]byte, 32), wantCode: dnsid.VerificationCodeLogInconsistent},
+			advanceCase{name: mode + "/hash tiles unavailable", requireBundle: requireBundle, oldSize: 1, oldRoot: log.root(t, 1), tilesDown: true, wantCode: dnsid.VerificationCodeLogError, wantTransient: true},
+		)
+	}
+	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			store := NewMemoryTrustedC2spCheckpointStore()
 			old := TrustedC2spCheckpoint{Origin: origin, TreeSize: test.oldSize, RootHash: test.oldRoot, WitnessTime: time.Unix(1, 0)}
@@ -292,6 +315,9 @@ func TestFetchedStreamBundleSourceAdvancesCheckpointWithHashTiles(t *testing.T) 
 				if strings.Contains(rawURL, "/streams/") {
 					return []byte(vector.Bundle), nil
 				}
+				if test.tilesDown && strings.Contains(rawURL, "/tile/") {
+					return nil, &ResourceFetchError{Kind: ResourceFetchHTTPStatus, URL: rawURL, HTTPStatus: http.StatusServiceUnavailable, TransientFailure: true}
+				}
 				if data, ok := tiles[strings.TrimPrefix(rawURL, bundle.Reference.LogPrefix)]; ok {
 					return append([]byte(nil), data...), nil
 				}
@@ -301,7 +327,7 @@ func TestFetchedStreamBundleSourceAdvancesCheckpointWithHashTiles(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			source := &fetchedStreamBundleSource{fetcher: fetcher, fallback: scanner, trust: trust, requireBundle: true}
+			source := &fetchedStreamBundleSource{fetcher: fetcher, fallback: scanner, trust: trust, requireBundle: test.requireBundle}
 			client, err := New(bundle.Reference.String(), WithSource(source), WithPolicy(policy), WithTrustedCheckpointStore(store))
 			if err != nil {
 				t.Fatal(err)
@@ -312,7 +338,7 @@ func TestFetchedStreamBundleSourceAdvancesCheckpointWithHashTiles(t *testing.T) 
 					t.Fatalf("RebuildHistory: %v", err)
 				}
 			} else {
-				checkpointCode(t, err, test.wantCode, false)
+				checkpointCode(t, err, test.wantCode, test.wantTransient)
 			}
 			trusted, err := store.Load(origin)
 			if err != nil {
