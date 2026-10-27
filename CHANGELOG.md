@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.45.0] - 2026-10-27
+
+### Features
+
+- feat: verify C2SP checkpoint consistency with hash tiles ([#104](https://github.com/dnsid-ai/dnsid-go/pull/104))
+
+### Bug Fixes
+
+- fix: accept high-S ES256 and reject small-order Ed25519 keys ([#94](https://github.com/dnsid-ai/dnsid-go/pull/94))
+- fix: reject IPv4-literal gi values ([#93](https://github.com/dnsid-ai/dnsid-go/pull/93))
+
+### Testing
+
+- ci(security): pin shared workflow to v1.2.0 and drop duplicate lint/test ([#98](https://github.com/dnsid-ai/dnsid-go/pull/98))
+
+### Chores
+
+- refactor: remove prepared-event log reference header dependency ([#105](https://github.com/dnsid-ai/dnsid-go/pull/105))
+
 ## [0.44.1] - 2026-10-23
 
 ### Bug Fixes
