@@ -89,6 +89,43 @@ the Go module release; the two versions are intentionally separate.
 | `.../dnsid-go/oidc` | Mint and verify DNSid OIDC tokens. |
 | `.../dnsid-go/httpsig` · `.../webbotauth` | RFC 9421 HTTP Message Signatures and the Web Bot Auth profile. |
 
+## Negotiated signed responses
+
+Request signing alone does not authenticate the responder. Opt in through the
+HTTP-signature profile:
+
+```go
+client := profile.CreateSignedHTTPClient(baseClient, httpsig.SigningOptions{
+    ResponseSignature: &httpsig.ResponseSignatureOptions{
+        ExpectedDomain: "service.example",
+        AdditionalComponents: []httpsig.ComponentIdentifier{{Name: "content-type"}},
+    },
+})
+response, err := client.Do(request)
+```
+
+The client requires HTTPS and verifies every response, including HTTP errors,
+before returning its content. It uses a fresh challenge per send, rejects
+automatic redirects/replays, and does not cache responses. Negotiated mode requires
+a standard `*http.Transport`; it clones that transport and uses HTTP/1 without
+connection reuse or transparent decompression. See [OPERATIONS.md](OPERATIONS.md#negotiated-response-authentication)
+for bounds and hosting requirements.
+
+Servers explicitly call `profile.SignRequestedHTTPResponse(request, response)`
+before sending a finalized response. Servers must still verify and authorize
+requests; response signing does neither.
+
+Standalone request helpers only prepare negotiation. Retain an unmodified prepared
+request and an independent original response-policy snapshot, then call
+`VerifySignedHTTPResponse` with the current server connection's trusted peer
+evidence. The expected domain is local policy, may differ from the endpoint host,
+and does not replace configured entity acceptance.
+
+Only covered metadata is authenticated. `Content-Type`, `Content-Encoding`, and
+`Location` are not covered by default; request them through `AdditionalComponents`
+when needed. Response authentication occurs after request data is sent and does
+not replace TLS confidentiality.
+
 ## Next steps
 
 - **[QUICKSTART.md](QUICKSTART.md)** — sign as an agent, mint a JWT, and sign an HTTP request.
