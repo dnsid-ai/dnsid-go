@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -51,6 +52,7 @@ type managedIssuanceRegistry struct {
 	idempotencyKeys []string
 	submitErr       error
 	prepareErr      error
+	mutateEntry     func([]byte) []byte
 	persisted       func() bool
 	blocked         func() bool
 }
@@ -75,7 +77,10 @@ func (r *managedIssuanceRegistry) PrepareIssuance(ctx context.Context, domain, _
 	if err != nil {
 		return nil, err
 	}
-	return &dnsid.PreparedRegistryEvent{EntryBytes: entry, LogReference: r.client.ref.String()}, nil
+	if r.mutateEntry != nil {
+		entry = r.mutateEntry(entry)
+	}
+	return &dnsid.PreparedRegistryEvent{EntryBytes: entry}, nil
 }
 
 func (r *managedIssuanceRegistry) PrepareKeyRotation(context.Context, string, *dnsid.KeyRotationPreparationRequest, string) (*dnsid.PreparedRegistryEvent, error) {
@@ -143,6 +148,51 @@ func TestManagedIssuanceAcceptedRemainsBlockedUntilCompletion(t *testing.T) {
 	issuance, err = CompleteManagedIssuance(context.Background(), "agent.example.com", store, activation)
 	if err != nil || !issuance.Complete || issuance.ActivationBlocked || blocked {
 		t.Fatalf("CompleteManagedIssuance = %#v, %v blocked=%v", issuance, err, blocked)
+	}
+}
+
+func TestManagedIssuanceRejectsInvalidSignedLogReference(t *testing.T) {
+	for _, name := range []string{"missing", "malformed", "wrong type", "duplicate", "conflicting duplicate", "non-canonical", "unexpected reference"} {
+		t.Run(name, func(t *testing.T) {
+			client, entity, operational := managedIssuanceFixture(t)
+			registry := &managedIssuanceRegistry{
+				client: client, entity: entity, operational: operational.JWK(), governanceID: "example.com",
+				mutateEntry: func(entry []byte) []byte {
+					switch name {
+					case "duplicate", "conflicting duplicate":
+						lr := client.ref.String()
+						if name == "conflicting duplicate" {
+							lr = "c2sp-tlog:testnet:https://other.example#other"
+						}
+						// Put the configured lr last so a lenient decoder would accept it.
+						return append([]byte(fmt.Sprintf("{\"lr\":%q,", lr)), entry[1:]...)
+					case "non-canonical":
+						return append(entry, '\n')
+					default:
+						return canonicalEntryMutation(t, string(entry), func(payload map[string]any) {
+							switch name {
+							case "missing":
+								delete(payload, "lr")
+							case "malformed":
+								payload["lr"] = "not-a-reference"
+							case "wrong type":
+								payload["lr"] = 1
+							case "unexpected reference":
+								payload["lr"] = "c2sp-tlog:testnet:https://other.example#other"
+							}
+						})
+					}
+				},
+			}
+			_, err := BeginManagedIssuance(context.Background(), ManagedIssuanceOptions{
+				Domain: "agent.example.com", GovernanceID: "example.com", Client: client, EntityPublicKey: entity.JWK(),
+				KeyProvider: operational, RegistryClient: registry, IdempotencyKey: "issuance-1", Store: &memoryManagedIssuanceStore{},
+				ActivationControl: ManagedIssuanceActivationControllerFunc(func(context.Context, bool) error { return nil }),
+			})
+			if err == nil || len(registry.submissions) != 0 {
+				t.Fatalf("invalid lr error/submissions = %v/%d", err, len(registry.submissions))
+			}
+		})
 	}
 }
 

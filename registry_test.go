@@ -1,6 +1,7 @@
 package dnsid
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -1155,7 +1156,6 @@ func TestHTTPRegistryClient_PrepareAndSubmitKeyRotation(t *testing.T) {
 			if len(body) != 0 {
 				t.Errorf("issuance body = %q", body)
 			}
-			w.Header().Set("DNSID-Log-Reference", "c2sp-tlog:stream")
 			w.WriteHeader(http.StatusCreated)
 			w.Write(prepared)
 		case "/api/v1/agent/agent.example.com/tlog/key-rotation/prepare":
@@ -1166,7 +1166,6 @@ func TestHTTPRegistryClient_PrepareAndSubmitKeyRotation(t *testing.T) {
 			if request["previous_key_id"] != "old-kid" || request["public_key"] == nil {
 				t.Errorf("preparation request = %s", body)
 			}
-			w.Header().Set("DNSID-Log-Reference", "c2sp-tlog:stream")
 			w.WriteHeader(http.StatusCreated)
 			w.Write(prepared)
 		case "/api/v1/agent/agent.example.com/tlog/events":
@@ -1193,7 +1192,7 @@ func TestHTTPRegistryClient_PrepareAndSubmitKeyRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareKeyRotation: %v", err)
 	}
-	if string(response.EntryBytes) != string(prepared) || response.LogReference != "c2sp-tlog:stream" {
+	if string(response.EntryBytes) != string(prepared) {
 		t.Fatalf("prepared response = %#v", response)
 	}
 	result, err := client.SubmitPreparedEvent(context.Background(), "agent.example.com", completed, "rotation-1")
@@ -1211,6 +1210,38 @@ func TestHTTPRegistryClient_PrepareAndSubmitKeyRotation(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatal("private JWK was sent to registry")
+	}
+}
+
+func TestHTTPRegistryClient_PreparationIgnoresLogReferenceHeader(t *testing.T) {
+	// Transport must preserve even non-canonical bytes for the log binding to validate.
+	entry := []byte(" {\n\"lr\":\"c2sp-tlog:testnet:https://log.example#identity\"}\n")
+	for _, header := range []string{"", "c2sp-tlog:testnet:https://other.example#other"} {
+		name := "absent"
+		if header != "" {
+			name = "disagrees"
+		}
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if header != "" {
+					w.Header().Set("DNSID-Log-Reference", header)
+				}
+				w.WriteHeader(http.StatusCreated)
+				w.Write(entry)
+			}))
+			defer srv.Close()
+			client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client()}
+			issuance, err := client.PrepareIssuance(context.Background(), "agent.example.com", "issuance-1")
+			if err != nil || !bytes.Equal(issuance.EntryBytes, entry) {
+				t.Fatalf("PrepareIssuance = %#v, %v", issuance, err)
+			}
+			rotation, err := client.PrepareKeyRotation(context.Background(), "agent.example.com", &KeyRotationPreparationRequest{
+				PreviousKeyID: "old-kid", PublicKey: map[string]any{"kid": "new-kid"},
+			}, "rotation-1")
+			if err != nil || !bytes.Equal(rotation.EntryBytes, entry) {
+				t.Fatalf("PrepareKeyRotation = %#v, %v", rotation, err)
+			}
+		})
 	}
 }
 

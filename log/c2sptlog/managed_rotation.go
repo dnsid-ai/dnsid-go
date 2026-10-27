@@ -198,8 +198,8 @@ func RotateManagedOperationalKey(ctx context.Context, opts ManagedKeyRotationOpt
 	if err != nil {
 		return nil, err
 	}
-	if raw == nil || raw.LogReference != opts.Client.ref.String() {
-		return nil, dnsid.NewValidationError("dnsid: registry preparation returned an unexpected c2sp-tlog reference", nil)
+	if raw == nil {
+		return nil, dnsid.NewValidationError("dnsid: registry preparation returned no entry", nil)
 	}
 	prepared, err := opts.Client.ParsePreparedEvent(raw.EntryBytes)
 	if err != nil {
