@@ -330,6 +330,10 @@ func (c *Client) verifyCheckpointConsistency(ctx context.Context, old, next Trus
 		case err != nil:
 			return logVerificationError(fmt.Errorf("dnsid: proving c2sp-tlog consistency from hash tiles: %w", err), true)
 		default:
+			// RFC 6962 accepts any root for an empty tree; require the empty hash.
+			if old.TreeSize == 0 && !bytes.Equal(old.RootHash, merkleRoot(nil)) {
+				return checkpointAdvanceError(CheckpointAdvanceConsistencyFailed, old, next, fmt.Errorf("trusted empty tree has a non-empty root"))
+			}
 			// The hashes are authenticated against the candidate root, so a
 			// failure here contradicts the trusted checkpoint.
 			if err := proof.VerifyConsistency(rfc6962.DefaultHasher, old.TreeSize, next.TreeSize, hashes, old.RootHash, next.RootHash); err != nil {

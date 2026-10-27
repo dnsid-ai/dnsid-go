@@ -193,7 +193,7 @@ func TestScanSourceConsistencyRejectsCurrentLogNarrowerThanCandidate(t *testing.
 	if err == nil || !strings.Contains(err.Error(), "missing from current log") {
 		t.Fatalf("error = %v, want missing tile", err)
 	}
-	checkpointCode(t, err, dnsid.VerificationCodeInvalidEvidence, false)
+	checkpointCode(t, err, dnsid.VerificationCodeInvalidEvidence, true)
 }
 
 func TestScanSourceConsistencyRejectsTilesThatDoNotMatchCandidateRoot(t *testing.T) {
@@ -267,16 +267,18 @@ func TestFetchedStreamBundleSourceAdvancesCheckpointWithHashTiles(t *testing.T) 
 
 	for _, test := range []struct {
 		name         string
+		oldSize      uint64
 		oldRoot      []byte
 		wantCode     dnsid.VerificationCode
 		wantAdvanced bool
 	}{
-		{name: "consistent", oldRoot: log.root(t, 1), wantAdvanced: true},
-		{name: "contradicting trusted root", oldRoot: make([]byte, 32), wantCode: dnsid.VerificationCodeLogInconsistent},
+		{name: "consistent", oldSize: 1, oldRoot: log.root(t, 1), wantAdvanced: true},
+		{name: "contradicting trusted root", oldSize: 1, oldRoot: make([]byte, 32), wantCode: dnsid.VerificationCodeLogInconsistent},
+		{name: "empty trusted tree with non-empty root", oldSize: 0, oldRoot: make([]byte, 32), wantCode: dnsid.VerificationCodeLogInconsistent},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := NewMemoryTrustedC2spCheckpointStore()
-			old := TrustedC2spCheckpoint{Origin: origin, TreeSize: 1, RootHash: test.oldRoot, WitnessTime: time.Unix(1, 0)}
+			old := TrustedC2spCheckpoint{Origin: origin, TreeSize: test.oldSize, RootHash: test.oldRoot, WitnessTime: time.Unix(1, 0)}
 			if swapped, err := store.CompareAndSwap(origin, nil, old); err != nil || !swapped {
 				t.Fatalf("seed checkpoint = %v, %v", swapped, err)
 			}
@@ -316,7 +318,7 @@ func TestFetchedStreamBundleSourceAdvancesCheckpointWithHashTiles(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantSize := uint64(1)
+			wantSize := test.oldSize
 			if test.wantAdvanced {
 				wantSize = uint64(len(raw))
 			}

@@ -141,7 +141,8 @@ func (r *c2spTileReader) readTile(tile tlog.Tile) ([]byte, error) {
 		return nil, err
 	}
 	if current < tile.W {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: c2sp-tlog hash tile missing from current log", fmt.Errorf("tile %d/%d has width %d in the current log, want at least %d", tile.L, tile.N, current, tile.W))
+		// A stale cached checkpoint can cause this, so allow a retry.
+		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, true, "dnsid: c2sp-tlog hash tile missing from current log", fmt.Errorf("tile %d/%d has width %d in the current log, want at least %d", tile.L, tile.N, current, tile.W))
 	}
 	path := full
 	if current < 1<<c2spTileHeight {
