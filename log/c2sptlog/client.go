@@ -985,7 +985,9 @@ func (c *Client) PreloadHistory(ctx context.Context, domain string) (dnsidlog.Lo
 		return nil, logVerificationError(err, false)
 	}
 	history.entries = entries
-	history.scan = ctx.Value(scanEvidenceKey{}).(*scanEvidence).scan
+	if evidence, ok := ctx.Value(scanEvidenceKey{}).(*scanEvidence); ok {
+		history.scan = evidence.scan
+	}
 	reader := *c
 	reader.preloaded = history
 	return &reader, nil
@@ -1015,7 +1017,9 @@ func (c *Client) rebuildVerifiedHistory(ctx context.Context, domain string) (ver
 			return nil, nil, err
 		}
 		entries = history.entries
-		ctx.Value(scanEvidenceKey{}).(*scanEvidence).scan = history.scan
+		if evidence, ok := ctx.Value(scanEvidenceKey{}).(*scanEvidence); ok {
+			evidence.scan = history.scan
+		}
 	} else {
 		history = nil
 		entries, err = c.source.RebuildHistory(ctx, c.ref, domain)

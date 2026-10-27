@@ -147,11 +147,12 @@ func TestHashTiles_PartialRecoveryAndExactWidths(t *testing.T) {
 			resources := hashTileResources(entries, 300)
 			full := hashTileResources(entries, 512)["/tile/0/001"]
 			partial := "/tile/0/001.p/44"
-			if mode == "short partial" {
+			switch mode {
+			case "short partial":
 				resources[partial] = resources[partial][:31]
-			} else if mode == "long partial" {
+			case "long partial":
 				resources[partial] = append(resources[partial], 0)
-			} else {
+			default:
 				delete(resources, partial)
 				if mode != "missing full" {
 					resources["/tile/0/001"] = full

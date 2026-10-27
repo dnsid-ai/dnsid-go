@@ -639,7 +639,7 @@ func (c *Client) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (event dnsi
 ReadEvent reads and verifies the single event addressed by a final event reference \<lr\>@\<index\>. The entry's inclusion proof must verify, its index must match the reference, and the entry must appear in the domain's verified lifecycle history; otherwise an error is returned.
 
 <a name="Client.RebuildHistory"></a>
-### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L998>)
+### func \(\*Client\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L1000>)
 
 ```go
 func (c *Client) RebuildHistory(ctx context.Context, domain string) ([]dnsidlog.LogEvent, error)
