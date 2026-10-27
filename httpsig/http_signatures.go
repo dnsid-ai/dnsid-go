@@ -14,12 +14,11 @@ import (
 	"strings"
 	"time"
 
-	wbahttpsig "github.com/WebDecoy/web-bot-auth/httpsig"
 	"github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/internal/httputil"
 	"github.com/dnsid-ai/dnsid-go/internal/joseutil"
+	"github.com/dnsid-ai/dnsid-go/internal/sfv"
 	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/digest"
-	"github.com/forcebit/http-message-signatures-rfc9421-go/pkg/sfv"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
@@ -32,6 +31,8 @@ type Config struct {
 	// created parameter must be no older than MaxAge, and when an expires
 	// parameter is present its distance from created must not exceed
 	// MaxAge. Zero means the default of 5 minutes; negative is invalid.
+	// Response signing needs at least one second and uses a whole-second
+	// lifetime no greater than MaxAge.
 	MaxAge time.Duration
 
 	// ClockSkew is the tolerance applied to signature timestamp checks
@@ -72,8 +73,8 @@ type ComponentIdentifier struct {
 }
 
 // SignatureParameter is one ordered RFC 8941 parameter on a Signature-Input
-// inner list. Value is an RFC 8941 bare item: bool, int64, string, []byte, or
-// sfv.Token.
+// inner list. Value is an RFC 8941 bare item: bool, int64, float64 (decimal),
+// string, []byte, or github.com/forcebit/http-message-signatures-rfc9421-go/pkg/sfv.Token.
 type SignatureParameter struct {
 	Name  string
 	Value any
@@ -138,6 +139,9 @@ type SigningOptions struct {
 	// AdditionalComponentIDs lists extra components, with parameters, to
 	// cover beyond the profile's defaults.
 	AdditionalComponentIDs []ComponentIdentifier
+
+	// ResponseSignature enables mandatory negotiated response authentication.
+	ResponseSignature *ResponseSignatureOptions
 }
 
 // Profile implements the DNSid HTTP Message Signatures profile.
@@ -186,6 +190,10 @@ func NewFromIdentityManagerKeyProvider(manager identityManagerWithKeyProvider, c
 }
 
 // CreateSignedHTTPRequest signs req using the DNSid HTTP Message Signatures profile.
+// ResponseSignature prepares opt-in HTTPS response negotiation but does not send
+// or verify a response. Retain an unmodified prepared request and independent
+// original response-policy snapshot for VerifySignedHTTPResponse. Each explicit
+// attempt must start with a replayable original unsigned request.
 func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions) (*http.Request, error) {
 	if req == nil {
 		return nil, dnsid.NewArgumentError("dnsid: nil HTTP request", nil)
@@ -195,6 +203,12 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 	}
 	if _, err := p.httpSignatureConfig(); err != nil {
 		return nil, err
+	}
+	signed := req.Clone(req.Context())
+	if opts.ResponseSignature != nil {
+		if err := prepareResponseNegotiation(signed, *opts.ResponseSignature); err != nil {
+			return nil, err
+		}
 	}
 	kid, alg, err := joseutil.ActiveSigningMetadata(p.keys)
 	if err != nil {
@@ -207,8 +221,10 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 	if strings.Contains(kid, "#") {
 		return nil, dnsid.NewArgumentError("dnsid: signing key kid must not contain '#'", nil)
 	}
-	signed := req.Clone(req.Context())
 	components := []ComponentIdentifier{{Name: "@method"}, {Name: "@authority"}, {Name: "@target-uri"}}
+	if opts.ResponseSignature != nil {
+		components = append(components, ComponentIdentifier{Name: "accept-signature"})
+	}
 	if httpRequestHasBody(req) {
 		body, err := readBoundedBody(req.Body)
 		if err != nil {
@@ -270,11 +286,27 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 	if err := setStructuredDictionaryMember(signed.Header, "Signature", params.Label, sfv.Item{Value: sig.Signature}); err != nil {
 		return nil, err
 	}
+	if opts.ResponseSignature != nil {
+		if err := boundedResponseRequest(signed); err != nil {
+			return nil, err
+		}
+	}
 	return signed, nil
 }
 
 // CreateSignedHTTPClient wraps base so outbound requests are signed before dispatch.
+// With ResponseSignature enabled, it snapshots options and each outgoing request,
+// verifies every final response (including HTTP errors), and returns only verified
+// bounded content. It requires a *http.Transport (nil uses the default), clones it,
+// disables redirects, HTTP/2, connection reuse/retries, and transparent decoding,
+// and does not cache responses. Incompatible round trippers fail on Do with
+// ArgumentError. Sending, reads, and verification share the request context budget;
+// absent a deadline the default is dnsid.DefaultVerificationTimeout (30 seconds).
+// Each explicit retry needs a replayable original unsigned request.
 func (p *Profile) CreateSignedHTTPClient(base *http.Client, opts SigningOptions) *http.Client {
+	if opts.ResponseSignature != nil {
+		return p.negotiatedHTTPClient(base, opts)
+	}
 	if base == nil {
 		base = http.DefaultClient
 	}
@@ -335,19 +367,8 @@ func (p *Profile) verifyParsedHTTPRequest(ctx context.Context, req *http.Request
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	created := time.Unix(parsed.created, 0)
-	if created.After(now.Add(cfg.ClockSkew)) || now.Sub(created) > cfg.MaxAge {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: HTTP signature is outside freshness window", nil)
-	}
-	if parsed.hasExpires && parsed.expires < parsed.created {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: HTTP signature expires before created", nil)
-	}
-	if parsed.hasExpires && now.After(time.Unix(parsed.expires, 0).Add(cfg.ClockSkew)) {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: HTTP signature has expired", nil)
-	}
-	if parsed.hasExpires && parsed.expires-parsed.created > int64(cfg.MaxAge/time.Second) {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: HTTP signature expires lifetime exceeds maximum", nil)
+	if err := checkHTTPSignatureFreshness(parsed.created, parsed.expires, parsed.hasExpires, cfg, time.Now()); err != nil {
+		return nil, err
 	}
 	if err := requireHTTPComponents(req, parsed.components); err != nil {
 		return nil, err
@@ -462,7 +483,7 @@ func parseComponentIdentifier(s string) (ComponentIdentifier, error) {
 	if !ok {
 		return ComponentIdentifier{}, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed HTTP signature component", nil)
 	}
-	c := ComponentIdentifier{Name: strings.TrimSpace(name)}
+	c := ComponentIdentifier{Name: name}
 	if c.Name == "" {
 		return ComponentIdentifier{}, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: empty HTTP signature component", nil)
 	}
@@ -831,9 +852,6 @@ func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error) {
 	if sigInput == "" {
 		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: missing Signature-Input header", nil)
 	}
-	if err := validateUniqueDictionaryLabels(sigInput, "Signature-Input"); err != nil {
-		return nil, err
-	}
 	dict, err := sfv.NewParser(sigInput, sfv.DefaultLimits()).ParseDictionary()
 	if err != nil {
 		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed Signature-Input header", err)
@@ -850,7 +868,7 @@ func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error) {
 			if !ok {
 				return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed HTTP signature component", nil)
 			}
-			component := ComponentIdentifier{Name: strings.TrimSpace(name)}
+			component := ComponentIdentifier{Name: name}
 			for _, parameter := range item.Parameters {
 				if component.Params == nil {
 					component.Params = map[string]any{}
@@ -1035,7 +1053,7 @@ func signatureParamsInnerList(params SignatureParams) (sfv.InnerList, error) {
 }
 
 func validateComponentIdentifier(component ComponentIdentifier) error {
-	originalName := strings.TrimSpace(component.Name)
+	originalName := component.Name
 	name := strings.ToLower(originalName)
 	malformed := func(message string) error {
 		return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: "+message, nil)
@@ -1069,6 +1087,10 @@ func validateComponentIdentifier(component ComponentIdentifier) error {
 	case "@query-param":
 		if !hasName || hasKey {
 			return malformed("@query-param requires name parameter")
+		}
+		queryName, _ := component.Params["name"].(string)
+		if _, err := url.QueryUnescape(queryName); err != nil {
+			return malformed("malformed @query-param name encoding")
 		}
 	case "@status":
 		if hasReq || hasKey || hasName {
@@ -1136,9 +1158,6 @@ func formURLEncode(s string) string {
 
 // ParseSignature parses a Signature dictionary into bytes by label.
 func ParseSignature(input string) (map[string][]byte, error) {
-	if err := validateUniqueDictionaryLabels(input, "Signature"); err != nil {
-		return nil, err
-	}
 	dict, err := sfv.NewParser(input, sfv.DefaultLimits()).ParseDictionary()
 	if err != nil {
 		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed Signature header", err)
@@ -1156,28 +1175,6 @@ func ParseSignature(input string) (map[string][]byte, error) {
 		out[label] = sig
 	}
 	return out, nil
-}
-
-func validateUniqueDictionaryLabels(input, field string) error {
-	limits := sfv.DefaultLimits()
-	if limits.MaxInputLength > 0 && len(input) > limits.MaxInputLength {
-		return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed "+field+" header: input exceeds limit", nil)
-	}
-	members, err := wbahttpsig.ParseDictionaryHeader(input)
-	if err != nil {
-		return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed "+field+" header", err)
-	}
-	if limits.MaxDictionaryMembers > 0 && len(members) > limits.MaxDictionaryMembers {
-		return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: malformed "+field+" header: dictionary exceeds member limit", nil)
-	}
-	seen := make(map[string]struct{}, len(members))
-	for _, member := range members {
-		if _, duplicate := seen[member.Key]; duplicate {
-			return dnsid.NewVerificationError(dnsid.VerificationCodeMalformedToken, false, "dnsid: duplicate "+field+" label "+member.Key, nil)
-		}
-		seen[member.Key] = struct{}{}
-	}
-	return nil
 }
 
 // JoseAlgToHTTPSigAlg maps SDK JOSE algorithms to RFC 9421 algorithm names.
@@ -1233,7 +1230,7 @@ func isHTTPSignatureComponentName(component string) bool {
 		return false
 	}
 	for _, r := range component {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || strings.ContainsRune("!#$%&'*+-.^_`|~", r) {
 			continue
 		}
 		return false
@@ -1289,7 +1286,16 @@ func headerFieldValue(header http.Header, name string) (string, bool) {
 	if len(values) == 0 {
 		return "", false
 	}
-	return strings.Join(values, ", "), true
+	canonical := make([]string, len(values))
+	for i, value := range values {
+		for _, c := range []byte(value) {
+			if c < 0x20 && c != '\t' || c == 0x7f {
+				return "", false
+			}
+		}
+		canonical[i] = strings.Trim(value, " \t")
+	}
+	return strings.Join(canonical, ", "), true
 }
 
 func dictionaryMember(value, key string) (string, bool) {

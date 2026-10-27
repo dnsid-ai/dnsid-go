@@ -1,0 +1,9 @@
+WebDecoy web-bot-auth (Go)
+Copyright 2026 WebDecoy
+
+This product is a Go implementation of the Web Bot Auth protocol
+(draft-meunier-webbotauth-httpsig-protocol), ported from and
+cross-validated against cloudflare/web-bot-auth
+(https://github.com/cloudflare/web-bot-auth), which is licensed under
+the Apache License, Version 2.0. Test vectors under testdata/ and
+thumbprint/testdata/ are copied verbatim from that repository.
