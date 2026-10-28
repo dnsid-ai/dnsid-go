@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.46.0] - 2026-10-28
+
+### Features
+
+- feat!: negotiated RFC 9421 response signatures and ResponseSigningMiddleware; covered field values now drop leading and trailing whitespace, and a field containing a control character counts as absent ([#109](https://github.com/dnsid-ai/dnsid-go/pull/109))
+
+### Documentation
+
+- docs: mark negotiated response signatures breaking in release notes ([#110](https://github.com/dnsid-ai/dnsid-go/pull/110))
+
+### Testing
+
+- ci(security): bump shared workflow to v1.3.0; consolidate CodeQL ([#107](https://github.com/dnsid-ai/dnsid-go/pull/107))
+
 ## [0.45.0] - 2026-10-27
 
 ### Features
