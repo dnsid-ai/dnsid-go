@@ -30,6 +30,8 @@ split_commits = false
 commit_preprocessors = [
   # This breaking PR was merged as fix: without the ! marker.
   { pattern = "\\Afix: enforce checkpoint continuity and trusted-store contracts \\(#78\\)(\\n|\\z)", replace = "fix!: enforce checkpoint continuity and trusted-store contracts (#78)${1}" },
+  # #109 changed covered field values for request-only signatures too.
+  { pattern = "\\Afeat: negotiated response signatures \\(#109\\)(\\n|\\z)", replace = "feat!: negotiated RFC 9421 response signatures and ResponseSigningMiddleware; covered field values now drop leading and trailing whitespace, and a field containing a control character counts as absent (#109)${1}" },
   # Transform "Merge pull request #N from branch\n\nPR title" → "PR title ([#N](url))"
   { pattern = "Merge pull request #(\\d+) from [^\\n]+\\n\\n(.*)", replace = "${2} ([#${1}](https://github.com/dnsid-ai/dnsid-go/pull/${1}))" },
   # Fallback for body-less merge commits (no PR title in body): use the branch name so the PR still appears.
