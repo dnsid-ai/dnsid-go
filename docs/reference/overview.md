@@ -29,6 +29,7 @@ Start with the root package: `IdentityManager` is the facade for verifying domai
 | [Registry](https://docs.dnsid.ai/reference/go/dnsid-registry) | HTTPRegistryClient, publication workflows, and registry request/response types. |
 | [Lifecycle log](https://docs.dnsid.ai/reference/go/log) | Agent lifecycle log abstractions for DNSid. |
 | [Transparency log](https://docs.dnsid.ai/reference/go/log-c2sptlog) | C2SP transparency-log (tlog) client support for DNSid lifecycle logs. |
+| [Transparency log: committed index](https://docs.dnsid.ai/reference/go/log-c2sptlog-tlogindex) | Prototype encodings for a verifiable index committed into a C2SP transparency log: value logs, MPT proofs and index state entries. |
 | [Errors & enums](https://docs.dnsid.ai/reference/go/dnsid-errors) | Typed errors and verification codes returned across the SDK. |
 
 For a guided first verification see the [Quickstart](https://docs.dnsid.ai/quickstart); for multi-language walkthroughs of verification, OIDC tokens, and freshness see the [Libraries overview](https://docs.dnsid.ai/sdk-overview).

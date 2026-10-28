@@ -34,10 +34,10 @@ type hashTileKey struct {
 }
 
 type checkpointTiles struct {
-	source *ScanSource
-	ref    Reference
-	size   uint64
-	tiles  map[hashTileKey][]tlog.Hash
+	fetcher BoundedResourceFetcher
+	ref     Reference
+	size    uint64
+	tiles   map[hashTileKey][]tlog.Hash
 }
 
 func invalidHashTile(message string, cause error) error {
@@ -48,7 +48,7 @@ func (s *ScanSource) verifyTileConsistency(ctx context.Context, ref Reference, o
 	if next.TreeSize > s.maxTreeSize {
 		return invalidHashTile("checkpoint exceeds configured tree-size maximum", nil)
 	}
-	tiles := checkpointTiles{source: s, ref: ref, size: next.TreeSize, tiles: make(map[hashTileKey][]tlog.Hash)}
+	tiles := checkpointTiles{fetcher: s.fetcher, ref: ref, size: next.TreeSize, tiles: make(map[hashTileKey][]tlog.Hash)}
 	root, err := tiles.root(ctx, next.TreeSize)
 	if err != nil {
 		return err
@@ -110,7 +110,7 @@ func (t *checkpointTiles) fetchExact(ctx context.Context, path string, width uin
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := fetchBounded(t.source.fetcher, ctx, path, int64(width)*tlog.HashSize)
+	data, err := fetchBounded(t.fetcher, ctx, path, int64(width)*tlog.HashSize)
 	var fetchErr *ResourceFetchError
 	if errors.As(err, &fetchErr) && fetchErr.Kind == ResourceFetchResponseLimit {
 		return nil, invalidHashTile("hash tile exceeds requested width", err)

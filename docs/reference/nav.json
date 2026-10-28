@@ -12,5 +12,6 @@
   { "label": "Registry", "slug": "reference/go/dnsid-registry" },
   { "label": "Lifecycle log", "slug": "reference/go/log" },
   { "label": "Transparency log", "slug": "reference/go/log-c2sptlog" },
+  { "label": "Transparency log: committed index", "slug": "reference/go/log-c2sptlog-tlogindex" },
   { "label": "Errors & enums", "slug": "reference/go/dnsid-errors" }
 ]

@@ -165,15 +165,25 @@ func (s *ScanSource) discoverEntry(ctx context.Context, reference Reference, ind
 	if index >= treeSize {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog entry index %d outside checkpoint size %d", index, treeSize)
 	}
-	bundle := index / entriesPerC2spBundle
+	decoded, err := fetchEntryBundle(ctx, s.fetcher, reference.LogPrefix, index/entriesPerC2spBundle, treeSize, s.maxEntryBundleBytes)
+	if err != nil {
+		return nil, err
+	}
+	return decoded[index%entriesPerC2spBundle], nil
+}
+
+// fetchEntryBundle reads and decodes entry bundle number bundle of a tree of
+// treeSize entries, requiring exactly the width that size implies. It does not
+// authenticate the entries.
+func fetchEntryBundle(ctx context.Context, fetcher BoundedResourceFetcher, logPrefix string, bundle, treeSize uint64, maximum int64) ([][]byte, error) {
 	width := min(uint64(entriesPerC2spBundle), treeSize-bundle*entriesPerC2spBundle)
 	suffix := tileNumber(bundle)
 	if width < entriesPerC2spBundle {
 		suffix += ".p/" + strconv.FormatUint(width, 10)
 	}
-	bundleBytes, err := s.fetch(ctx, reference.LogPrefix+"/tile/entries/"+suffix, s.maxEntryBundleBytes)
+	bundleBytes, err := fetchBounded(fetcher, ctx, logPrefix+"/tile/entries/"+suffix, maximum)
 	if err != nil {
-		return nil, err
+		return nil, logVerificationError(err, true)
 	}
 	decoded, err := parseEntryBundle(bundleBytes)
 	if err != nil {
@@ -182,7 +192,7 @@ func (s *ScanSource) discoverEntry(ctx context.Context, reference Reference, ind
 	if uint64(len(decoded)) != width {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog entry bundle width %d, want %d", len(decoded), width)
 	}
-	return decoded[index%entriesPerC2spBundle], nil
+	return decoded, nil
 }
 
 // RebuildHistory implements Source by scanning the complete log once,
@@ -380,16 +390,25 @@ func merkleLevels(entries [][]byte) [][]tlog.Hash {
 	return levels
 }
 
+// candidateFQDN is the raw-scan candidate selection: an entry is a candidate
+// for domain when it is a canonical JSON object whose "fqdn" string equals
+// domain under Unicode case folding. Only a nesting-limit failure is an error.
 func candidateFQDN(entry []byte, domain string) (bool, error) {
+	fqdn, ok, err := candidateFQDNValue(entry)
+	return ok && strings.EqualFold(fqdn, domain), err
+}
+
+// candidateFQDNValue returns the "fqdn" string candidateFQDN compares.
+func candidateFQDNValue(entry []byte) (string, bool, error) {
 	payload, err := payloadObjectFromEntry(entry)
 	if errors.Is(err, jsonutil.ErrNestingLimit) {
-		return false, err
+		return "", false, err
 	}
 	if err != nil {
-		return false, nil
+		return "", false, nil
 	}
 	fqdn, ok := payload["fqdn"].(string)
-	return ok && strings.EqualFold(fqdn, domain), nil
+	return fqdn, ok, nil
 }
 
 func parseEntryBundle(data []byte) ([][]byte, error) {

@@ -157,6 +157,7 @@ PACKAGES=(
 	"webbotauth|.|./webbotauth|Profile: Web Bot Auth|Web Bot Auth profile: RFC 9421-signed HTTP requests identifying a DNSid agent."
 	"log|.|./log|Lifecycle log|Agent lifecycle log abstractions for DNSid."
 	"log-c2sptlog|.|./log/c2sptlog|Transparency log|C2SP transparency-log (tlog) client support for DNSid lifecycle logs."
+	"log-c2sptlog-tlogindex|.|./log/c2sptlog/tlogindex|Transparency log: committed index|Prototype encodings for a verifiable index committed into a C2SP transparency log: value logs, MPT proofs and index state entries."
 	"key-aws|key/aws|.|Key providers: AWS KMS|AWS KMS-backed key provider for DNSid."
 )
 
@@ -176,6 +177,7 @@ NAV_ORDER=(
 	dnsid-registry
 	log
 	log-c2sptlog
+	log-c2sptlog-tlogindex
 	dnsid-errors
 )
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,11 +23,13 @@ import (
 const (
 	// StreamBundleType is the required "type" value of a stream bundle.
 	StreamBundleType = "dnsid-c2sp-stream-bundle"
-	// StreamBundleVersion is the bundle format version this package
-	// produces and accepts.
+	// StreamBundleVersion is the signed bundle format version this package
+	// produces and accepts by default. Version 2 is accepted only on opt-in;
+	// see StreamBundleCommittedIndexVersion.
 	StreamBundleVersion = 1
-	// StreamBundleTrustedIndex is the only supported completeness mode: the
-	// producer asserts the bundle is complete through the checkpoint size.
+	// StreamBundleTrustedIndex is the version 1 completeness mode: the
+	// producer asserts, and signs, that the bundle is complete through the
+	// checkpoint size.
 	StreamBundleTrustedIndex          = "trusted-index"
 	defaultMaxStreamBundleBytes       = 8 << 20
 	defaultMaxStreamBundleEvents      = 10000
@@ -52,13 +55,19 @@ type StreamBundleTrust struct {
 	TrustedCheckpointStore TrustedC2spCheckpointStore
 	MigrationVerifier      MigrationVerifier
 	MigrationLimits        MigrationVerificationLimits
+	// CommittedIndex, when non-nil, additionally accepts version 2
+	// committed-index bundles, which carry no signature. Nil keeps version 1
+	// trusted-index behavior unchanged.
+	CommittedIndex *CommittedIndexTrust
 }
 
 // VerifiedStreamBundle is the result of VerifyStreamBundle: the verified
 // lifecycle events and materialized snapshot for one stream, its logged state,
 // the bundle's expiry and completeness bound, the accepted signer, and a Source
 // over the bundle's proven entries for further Client operations. LoggedState
-// is historical log state, not current protocol status.
+// is historical log state, not current protocol status. CompletenessMode is
+// "trusted-index" for a signed version 1 bundle and "committed-index" for a
+// version 2 bundle, which has no signer, so SignerKeyID is empty.
 type VerifiedStreamBundle struct {
 	Reference           Reference
 	FQDN                string
@@ -67,6 +76,7 @@ type VerifiedStreamBundle struct {
 	LoggedState         string
 	Expires             time.Time
 	CompleteThroughSize uint64
+	CompletenessMode    string
 	SignerKeyID         string
 	Source              *StreamBundleSource
 }
@@ -83,7 +93,19 @@ type StreamBundleSource struct {
 	checkpointFreshness time.Time
 	expires             time.Time
 	now                 func() time.Time
+	// globalCandidates is set for committed-index bundles, whose entries are
+	// every index candidate for the FQDN rather than one selected stream.
+	globalCandidates bool
 }
+
+var _ GlobalCandidateSource = (*StreamBundleSource)(nil)
+
+// GlobalCandidates implements GlobalCandidateSource. It is false for a
+// version 1 bundle, whose entries must all verify, and true for a
+// committed-index bundle, whose entries are the log's candidates for the FQDN,
+// so a Client skips candidates that belong to another stream or do not verify
+// as lifecycle events, exactly as it does for a raw log scan.
+func (s *StreamBundleSource) GlobalCandidates() bool { return s != nil && s.globalCandidates }
 
 // fetchedStreamBundleSource retrieves the current domain bundle from the
 // authenticated lr log prefix. Its fallback is the complete raw scanner.
@@ -92,6 +114,8 @@ type fetchedStreamBundleSource struct {
 	fallback      Source
 	trust         StreamBundleTrust
 	requireBundle bool
+	// committedIndex requests version 2 committed-index bundles.
+	committedIndex bool
 }
 
 // entryDiscoverySource reads one raw entry without a complete log scan.
@@ -187,6 +211,9 @@ func (s *fetchedStreamBundleSource) load(ctx context.Context, reference Referenc
 		maximum = defaultMaxStreamBundleBytes
 	}
 	endpoint := reference.LogPrefix + "/streams/" + url.PathEscape(normalized) + "?format=bundle"
+	if s.committedIndex {
+		endpoint += "&v=" + strconv.Itoa(StreamBundleCommittedIndexVersion)
+	}
 	data, err := fetchBounded(s.fetcher, ctx, endpoint, int64(maximum))
 	if err != nil {
 		if !s.requireBundle && s.fallback != nil && streamBundleFallbackAllowed(err) {
@@ -263,7 +290,8 @@ func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Referen
 }
 
 // RebuildCompleteHistory implements CompleteSource: a verified bundle's
-// trusted-index completeness assertion and entries share one checkpoint.
+// completeness bound (signed trusted-index, or committed-index) and entries
+// share one checkpoint.
 func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference Reference, domain string) (CompleteHistoryResult, error) {
 	if s == nil || reference.String() != s.reference.String() || !strings.EqualFold(domain, s.domain) {
 		return CompleteHistoryResult{}, fmt.Errorf("dnsid: stream bundle reference or fqdn mismatch")
@@ -281,8 +309,11 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 	}, nil
 }
 
-// VerifyStreamBundle verifies an offline stream bundle without network
-// access. It checks, in order: size and canonical JCS form, the accepted
+// VerifyStreamBundle verifies a stream bundle. A version 1 bundle is
+// verified offline, without network access. When trust.CommittedIndex is set,
+// a version 2 committed-index bundle is verified instead as described on
+// StreamBundleCommittedIndex, which reads the log's tiles after the committed
+// index through trust.CommittedIndex.Fetcher. For version 1 it checks, in order: size and canonical JCS form, the accepted
 // bundle signer's Ed25519 signature, format version and type, expiry against
 // local time and MaxBundleLifetime, that the bundle's policy hash matches the
 // verifier-supplied PolicyDocument, and then replays every bundled entry
@@ -299,6 +330,9 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	}
 	if maxBytes < 1 || len(data) > maxBytes {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle exceeds size limit")
+	}
+	if trust.CommittedIndex != nil && peekCommittedIndexBundle(data) {
+		return verifyCommittedIndexBundle(ctx, data, trust, maxBytes)
 	}
 	if trust.BundleVerifier == nil && len(trust.BundleVerifiers) == 0 {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle verifier is required")
@@ -401,17 +435,10 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if err != nil {
 		return nil, err
 	}
-	wantPolicyHash := sha256.Sum256(trust.PolicyDocument)
-	if !bytes.Equal(policyHash, wantPolicyHash[:]) {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle policy hash mismatch")
-	}
-	policy, err := ParsePolicy(trust.PolicyDocument)
+	policy, err := bundlePolicy(trust, policyHash)
 	if err != nil {
 		return nil, err
 	}
-	policy.Now = trust.Now
-	policy.MaxCheckpointAge = trust.MaxCheckpointAge
-	policy.ClockSkew = trust.ClockSkew
 
 	checkpointText, err := bundleString(object, "checkpoint")
 	if err != nil {
@@ -440,11 +467,7 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle requires events")
 	}
 	source := &StreamBundleSource{reference: reference, domain: fqdn, entries: entries}
-	clientOptions := []Option{WithSource(source), WithPolicy(policy), WithMigrationVerificationLimits(trust.MigrationLimits)}
-	if trust.MigrationVerifier != nil {
-		clientOptions = append(clientOptions, WithMigrationVerifier(trust.MigrationVerifier))
-	}
-	client, err := New(referenceText, clientOptions...)
+	client, err := newBundleReplayClient(referenceText, source, policy, trust)
 	if err != nil {
 		return nil, err
 	}
@@ -473,26 +496,8 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if err := verifyBundleState(object["state"], snapshot, events); err != nil {
 		return nil, err
 	}
-	if trust.TrustedCheckpointStore != nil {
-		client.checkpointStore = trust.TrustedCheckpointStore
-		if err := client.advanceTrustedCheckpoint(ctx, TrustedC2spCheckpoint{
-			Origin:      proof.Checkpoint.Origin,
-			TreeSize:    proof.Checkpoint.Size,
-			RootHash:    append([]byte(nil), proof.Checkpoint.Hash...),
-			WitnessTime: proof.CheckpointWitnessTime,
-		}); err != nil {
-			return nil, logVerificationError(err, false)
-		}
-	}
-	if err := ctx.Err(); err != nil {
+	if err := finishBundleVerification(ctx, client, trust, proof, expires); err != nil {
 		return nil, err
-	}
-	checkTime := time.Now()
-	if trust.Now != nil {
-		checkTime = trust.Now()
-	}
-	if !checkTime.Before(expires) {
-		return nil, fmt.Errorf("dnsid: stream bundle expired during verification")
 	}
 	source.expires, source.now = expires, trust.Now
 	return &VerifiedStreamBundle{
@@ -503,9 +508,65 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 		LoggedState:         snapshot.HistoricalState.String(),
 		Expires:             expires,
 		CompleteThroughSize: completeThrough,
+		CompletenessMode:    mode,
 		SignerKeyID:         kid,
 		Source:              source,
 	}, nil
+}
+
+// bundlePolicy checks the bundle's policy hash against the verifier-supplied
+// policy document and returns that document parsed with the trust's clock
+// and freshness settings.
+func bundlePolicy(trust StreamBundleTrust, policyHash []byte) (Policy, error) {
+	wantPolicyHash := sha256.Sum256(trust.PolicyDocument)
+	if !bytes.Equal(policyHash, wantPolicyHash[:]) {
+		return Policy{}, fmt.Errorf("dnsid: c2sp stream bundle policy hash mismatch")
+	}
+	policy, err := ParsePolicy(trust.PolicyDocument)
+	if err != nil {
+		return Policy{}, err
+	}
+	policy.Now = trust.Now
+	policy.MaxCheckpointAge = trust.MaxCheckpointAge
+	policy.ClockSkew = trust.ClockSkew
+	return policy, nil
+}
+
+// newBundleReplayClient returns the Client that replays bundle entries
+// through full lifecycle verification.
+func newBundleReplayClient(referenceText string, source Source, policy Policy, trust StreamBundleTrust) (*Client, error) {
+	clientOptions := []Option{WithSource(source), WithPolicy(policy), WithMigrationVerificationLimits(trust.MigrationLimits)}
+	if trust.MigrationVerifier != nil {
+		clientOptions = append(clientOptions, WithMigrationVerifier(trust.MigrationVerifier))
+	}
+	return New(referenceText, clientOptions...)
+}
+
+// finishBundleVerification advances the trusted checkpoint store, if any, to
+// the bundle's checkpoint and rechecks cancellation and expiry.
+func finishBundleVerification(ctx context.Context, client *Client, trust StreamBundleTrust, proof *VerifiedProof, expires time.Time) error {
+	if trust.TrustedCheckpointStore != nil {
+		client.checkpointStore = trust.TrustedCheckpointStore
+		if err := client.advanceTrustedCheckpoint(ctx, TrustedC2spCheckpoint{
+			Origin:      proof.Checkpoint.Origin,
+			TreeSize:    proof.Checkpoint.Size,
+			RootHash:    append([]byte(nil), proof.Checkpoint.Hash...),
+			WitnessTime: proof.CheckpointWitnessTime,
+		}); err != nil {
+			return logVerificationError(err, false)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	checkTime := time.Now()
+	if trust.Now != nil {
+		checkTime = trust.Now()
+	}
+	if !checkTime.Before(expires) {
+		return fmt.Errorf("dnsid: stream bundle expired during verification")
+	}
+	return nil
 }
 
 func acceptedBundleVerifier(trust StreamBundleTrust, kid string) note.Verifier {
@@ -555,33 +616,48 @@ func parseBundleEntries(value any, checkpoint []byte, configuredMax int) ([]Prov
 			return nil, fmt.Errorf("dnsid: c2sp stream bundle indexes must be strictly increasing")
 		}
 		previous = index
-		entryText, err := bundleString(item, "entry")
+		entry, err := parseBundleEntry(item, "events", checkpoint)
 		if err != nil {
 			return nil, err
 		}
-		entry, err := decodeBundleBase64("events.entry", entryText, 1, defaultMaxStreamBundleEventBytes)
-		if err != nil {
-			return nil, err
-		}
-		proofText, err := bundleString(item, "proof")
-		if err != nil {
-			return nil, err
-		}
-		proofBytes, err := decodeBundleBase64("events.proof", proofText, 0, defaultMaxStreamBundleProofHashes*sha256.Size)
-		if err != nil {
-			return nil, err
-		}
-		if len(proofBytes)%sha256.Size != 0 {
-			return nil, fmt.Errorf("dnsid: c2sp stream bundle proof length must be a multiple of 32")
-		}
-		hashes := make([][sha256.Size]byte, len(proofBytes)/sha256.Size)
-		for i := range hashes {
-			copy(hashes[i][:], proofBytes[i*sha256.Size:(i+1)*sha256.Size])
-		}
-		rawProof := formatproof.TLogProof{Index: index, Hashes: hashes, Checkpoint: checkpoint}.Marshal()
-		entries = append(entries, ProvenEntry{Index: index, Entry: entry, Proof: rawProof})
+		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+// parseBundleEntry decodes one {entry, index, proof} object into a
+// ProvenEntry bound to checkpoint. field names the containing bundle field in
+// error messages.
+func parseBundleEntry(item map[string]any, field string, checkpoint []byte) (ProvenEntry, error) {
+	index, err := bundleUint(item, "index")
+	if err != nil {
+		return ProvenEntry{}, err
+	}
+	entryText, err := bundleString(item, "entry")
+	if err != nil {
+		return ProvenEntry{}, err
+	}
+	entry, err := decodeBundleBase64(field+".entry", entryText, 1, defaultMaxStreamBundleEventBytes)
+	if err != nil {
+		return ProvenEntry{}, err
+	}
+	proofText, err := bundleString(item, "proof")
+	if err != nil {
+		return ProvenEntry{}, err
+	}
+	proofBytes, err := decodeBundleBase64(field+".proof", proofText, 0, defaultMaxStreamBundleProofHashes*sha256.Size)
+	if err != nil {
+		return ProvenEntry{}, err
+	}
+	if len(proofBytes)%sha256.Size != 0 {
+		return ProvenEntry{}, fmt.Errorf("dnsid: c2sp stream bundle proof length must be a multiple of 32")
+	}
+	hashes := make([][sha256.Size]byte, len(proofBytes)/sha256.Size)
+	for i := range hashes {
+		copy(hashes[i][:], proofBytes[i*sha256.Size:(i+1)*sha256.Size])
+	}
+	rawProof := formatproof.TLogProof{Index: index, Hashes: hashes, Checkpoint: checkpoint}.Marshal()
+	return ProvenEntry{Index: index, Entry: entry, Proof: rawProof}, nil
 }
 
 func verifyBundleState(value any, snapshot *dnsidlog.DomainSnapshot, events []dnsidlog.LogEvent) error {

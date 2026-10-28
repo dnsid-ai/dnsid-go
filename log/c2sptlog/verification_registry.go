@@ -75,6 +75,20 @@ type VerificationRegistryConfig struct {
 	// consistency checks. ReadEvent may use the scanner to discover the FQDN
 	// before requiring its bundle history.
 	RequireStreamBundle bool
+	// CommittedIndexBundles opts in to version 2 committed-index stream
+	// bundles, requested as "?format=bundle&v=2". They carry no signature, so
+	// BundleVerifiers is not required for them; MaxBundleLifetime still is.
+	// The verifier reads the log's own entry bundles and hash tiles after the
+	// committed index state through the same fetcher as the scanner. A fetch
+	// failure falls back to the raw scan exactly as for version 1 bundles,
+	// but a server that answers the v=2 request with a bundle that does not
+	// verify (for example a version 1 bundle when no BundleVerifiers are
+	// set) is an error, not a fallback, so a server that does not serve
+	// version 2 must answer such requests with 404.
+	// This is a prototype of a proposed design and is off by default.
+	CommittedIndexBundles bool
+	// MaxCommittedIndexTail bounds that tail scan. Zero uses 4096 entries.
+	MaxCommittedIndexTail uint64
 }
 
 // NewVerificationRegistry creates a LogRegistry ready for verification of
@@ -142,12 +156,22 @@ func NewVerificationRegistry(ctx context.Context, config VerificationRegistryCon
 	if err != nil {
 		return nil, dnsid.NewArgumentError("dnsid: invalid c2sp-tlog scanner options", err)
 	}
-	if len(config.BundleVerifiers) > 0 {
+	if len(config.BundleVerifiers) > 0 || config.CommittedIndexBundles {
+		var committedIndex *CommittedIndexTrust
+		if config.CommittedIndexBundles {
+			committedIndex = &CommittedIndexTrust{
+				Fetcher:             fetcher,
+				MaxTailEntries:      config.MaxCommittedIndexTail,
+				MaxEntryBundleBytes: scanConfig.MaxEntryBundleBytes,
+			}
+		}
 		source = &fetchedStreamBundleSource{
-			fetcher:       fetcher,
-			fallback:      source,
-			requireBundle: config.RequireStreamBundle,
+			fetcher:        fetcher,
+			fallback:       source,
+			requireBundle:  config.RequireStreamBundle,
+			committedIndex: config.CommittedIndexBundles,
 			trust: StreamBundleTrust{
+				CommittedIndex:         committedIndex,
 				PolicyDocument:         append([]byte(nil), document...),
 				BundleVerifiers:        append([]note.Verifier(nil), config.BundleVerifiers...),
 				MaxBundleLifetime:      config.MaxBundleLifetime,
@@ -194,10 +218,10 @@ func validateVerificationRegistryConfig(ctx context.Context, config Verification
 	if config.AllowedClockSkew < 0 {
 		return nil, 0, dnsid.NewArgumentError("dnsid: c2sp-tlog allowed clock skew must be non-negative", nil)
 	}
-	if config.RequireStreamBundle && len(config.BundleVerifiers) == 0 {
+	if config.RequireStreamBundle && len(config.BundleVerifiers) == 0 && !config.CommittedIndexBundles {
 		return nil, 0, dnsid.NewArgumentError("dnsid: required c2sp stream bundles need an accepted verifier", nil)
 	}
-	if len(config.BundleVerifiers) > 0 && config.MaxBundleLifetime <= 0 {
+	if (len(config.BundleVerifiers) > 0 || config.CommittedIndexBundles) && config.MaxBundleLifetime <= 0 {
 		return nil, 0, dnsid.NewArgumentError("dnsid: c2sp stream bundle maximum lifetime must be positive", nil)
 	}
 	if config.MaxStreamBundleBytes < 0 || config.MaxStreamBundleEvents < 0 {
