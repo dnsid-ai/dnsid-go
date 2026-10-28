@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.46.1] - 2026-10-28
+
+### Other
+
+- Pin shared security workflow to v1.4.0 and enable codeql-actions ([#111](https://github.com/dnsid-ai/dnsid-go/pull/111))
+
 ## [0.46.0] - 2026-10-28
 
 ### Features
