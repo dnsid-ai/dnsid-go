@@ -37,11 +37,13 @@ Response authentication is opt\-in; a signed request alone does not authenticate
 
 The server calls SignRequestedHTTPResponse after verifying the caller and authorizing the operation, before sending the finalized status, headers, and content. It uses the operational key, covers the originating request signature fields, sets SHA\-256 Content\-Digest, and adds Cache\-Control: no\-store. It does not authorize callers or permit unsigned fallback on signing errors.
 
-CreateSignedHTTPClient verifies responses automatically, including errors and redirects. Negotiated mode uses HTTP/1 without connection reuse, automatic redirects/replays, transparent content decoding, or response caching. Custom round trippers reject because the SDK cannot configure their retry/cache policy. Standalone CreateSignedHTTPRequest callers must retain an unmodified prepared request and independent original response\-policy snapshot, then call VerifySignedHTTPResponse with trusted current\-server peer evidence. Never use echoed request metadata, a discovery certificate, or a previous connection's certificate as that snapshot or evidence.
+The response covers the client's own request signature member through "signature\-input";req;key="\<label\>" and "signature";req;key="\<label\>", so an intermediary that adds its own request signature does not break it. Responses use a fixed 60\-second lifetime, independent of either peer's MaxAge. ResponseSigningMiddleware buffers and signs negotiated http.Handler responses.
+
+CreateSignedHTTPClient verifies responses automatically, including errors and redirects. Negotiated mode does not follow redirects, decode content, or cache responses. Connection reuse and HTTP/2 remain enabled. Custom round trippers are used as supplied; one that decodes, caches, or rewrites covered fields causes a verification failure. Standalone CreateSignedHTTPRequest callers must retain an unmodified prepared request and independent original response\-policy snapshot, then call VerifySignedHTTPResponse with trusted current\-server peer evidence. Never use echoed request metadata, a discovery certificate, or a previous connection's certificate as that snapshot or evidence.
 
 Only covered fields are authenticated. Content\-Type, Content\-Encoding, and Location are not covered by default; request them through AdditionalComponents when application behavior depends on them. Middleware must finalize content coding before signing and must not alter covered bytes afterward.
 
-Negotiation and signature fields are capped at 16 KiB each, combined headers at 1 MiB, request\-target inputs at 64 KiB, and response content at 8 MiB. The nonce is canonical unpadded base64url, 43 to 1024 characters, decoding to at least 32 bytes. Parsing permits at most 128 labels/components and 64 parameters. Sending, reads, and verification share a finite request context budget \(default 30 seconds\). Custom body readers/providers must be finite and interruptible; hosts must impose read deadlines. HEAD, 204, 205, and 304 digest empty content; an unavailable ordinary body is rejected, not treated as empty.
+Negotiation and signature fields are capped at 16 KiB each, combined headers at 1 MiB, request\-target inputs at 64 KiB, and response content at 8 MiB. The nonce is canonical unpadded base64url, 43 to 1024 characters, decoding to at least 32 bytes. Negotiation permits at most 64 components. Sending, reads, and verification share a finite request context budget \(default 30 seconds\). Custom body readers/providers must be finite and interruptible; hosts must impose read deadlines. HEAD, 204, 205, and 304 digest empty content; an unavailable ordinary body is rejected, not treated as empty.
 
 See https://docs.dnsid.ai for protocol guides and account setup.
 
@@ -113,6 +115,7 @@ signature present: true
   - [func NewFromIdentityManagerKeyProvider\(manager identityManagerWithKeyProvider, cfg Config\) \*Profile](<#NewFromIdentityManagerKeyProvider>)
   - [func \(p \*Profile\) CreateSignedHTTPClient\(base \*http.Client, opts SigningOptions\) \*http.Client](<#Profile.CreateSignedHTTPClient>)
   - [func \(p \*Profile\) CreateSignedHTTPRequest\(req \*http.Request, opts SigningOptions\) \(\*http.Request, error\)](<#Profile.CreateSignedHTTPRequest>)
+  - [func \(p \*Profile\) ResponseSigningMiddleware\(next http.Handler\) http.Handler](<#Profile.ResponseSigningMiddleware>)
   - [func \(p \*Profile\) SignRequestedHTTPResponse\(req \*http.Request, res \*http.Response\) \(\*http.Response, error\)](<#Profile.SignRequestedHTTPResponse>)
   - [func \(p \*Profile\) VerifyHTTPRequest\(ctx context.Context, req \*http.Request\) \(\*dnsid.VerifiedDomain, error\)](<#Profile.VerifyHTTPRequest>)
   - [func \(p \*Profile\) VerifySignedHTTPResponse\(ctx context.Context, req \*http.Request, res \*http.Response, opts ResponseSignatureOptions, peer ...dnsid.VerifyDomainOpts\) \(verified \*dnsid.VerifiedDomain, err error\)](<#Profile.VerifySignedHTTPResponse>)
@@ -123,7 +126,7 @@ signature present: true
 
 
 <a name="AppendComponent"></a>
-## func [AppendComponent](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1237>)
+## func [AppendComponent](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1242>)
 
 ```go
 func AppendComponent(components *[]ComponentIdentifier, component ComponentIdentifier) error
@@ -132,7 +135,7 @@ func AppendComponent(components *[]ComponentIdentifier, component ComponentIdent
 AppendComponent validates and appends one component.
 
 <a name="BuildSignatureInput"></a>
-## func [BuildSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L518>)
+## func [BuildSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L523>)
 
 ```go
 func BuildSignatureInput(msg any, params SignatureParams) (string, error)
@@ -141,7 +144,7 @@ func BuildSignatureInput(msg any, params SignatureParams) (string, error)
 BuildSignatureInput builds the RFC 9421 signature base for requests or responses.
 
 <a name="JoseAlgToHTTPSigAlg"></a>
-## func [JoseAlgToHTTPSigAlg](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1206>)
+## func [JoseAlgToHTTPSigAlg](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1211>)
 
 ```go
 func JoseAlgToHTTPSigAlg(alg dnsid.JoseAlg) (string, error)
@@ -150,7 +153,7 @@ func JoseAlgToHTTPSigAlg(alg dnsid.JoseAlg) (string, error)
 JoseAlgToHTTPSigAlg maps SDK JOSE algorithms to RFC 9421 algorithm names.
 
 <a name="ParseSignature"></a>
-## func [ParseSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1160>)
+## func [ParseSignature](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L1165>)
 
 ```go
 func ParseSignature(input string) (map[string][]byte, error)
@@ -159,7 +162,7 @@ func ParseSignature(input string) (map[string][]byte, error)
 ParseSignature parses a Signature dictionary into bytes by label.
 
 <a name="ParseSignatureInput"></a>
-## func [ParseSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L852>)
+## func [ParseSignatureInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L857>)
 
 ```go
 func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error)
@@ -168,7 +171,7 @@ func ParseSignatureInput(sigInput string) (map[string]SignatureParams, error)
 ParseSignatureInput parses a Signature\-Input dictionary.
 
 <a name="SignHTTPMessage"></a>
-## func [SignHTTPMessage](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L559>)
+## func [SignHTTPMessage](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L564>)
 
 ```go
 func SignHTTPMessage(msg any, params SignatureParams, kp dnsid.KeyProvider) error
@@ -203,7 +206,7 @@ type ComponentIdentifier struct {
 ```
 
 <a name="ParseComponentIdentifier"></a>
-### func [ParseComponentIdentifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L473>)
+### func [ParseComponentIdentifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L478>)
 
 ```go
 func ParseComponentIdentifier(s string) ComponentIdentifier
@@ -212,7 +215,7 @@ func ParseComponentIdentifier(s string) ComponentIdentifier
 ParseComponentIdentifier parses the subset of component identifiers this SDK emits.
 
 <a name="ComponentIdentifier.String"></a>
-### func \(ComponentIdentifier\) [String](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L429>)
+### func \(ComponentIdentifier\) [String](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L434>)
 
 ```go
 func (c ComponentIdentifier) String() string
@@ -231,8 +234,8 @@ type Config struct {
     // created parameter must be no older than MaxAge, and when an expires
     // parameter is present its distance from created must not exceed
     // MaxAge. Zero means the default of 5 minutes; negative is invalid.
-    // Response signing needs at least one second and uses a whole-second
-    // lifetime no greater than MaxAge.
+    // Response signatures use a fixed 60-second lifetime; MaxAge bounds only
+    // the age of their created parameter.
     MaxAge time.Duration
 
     // ClockSkew is the tolerance applied to signature timestamp checks
@@ -291,13 +294,13 @@ func NewFromIdentityManagerKeyProvider(manager identityManagerWithKeyProvider, c
 NewFromIdentityManagerKeyProvider constructs a profile from a manager that exposes its KeyProvider.
 
 <a name="Profile.CreateSignedHTTPClient"></a>
-### func \(\*Profile\) [CreateSignedHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L307>)
+### func \(\*Profile\) [CreateSignedHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L312>)
 
 ```go
 func (p *Profile) CreateSignedHTTPClient(base *http.Client, opts SigningOptions) *http.Client
 ```
 
-CreateSignedHTTPClient wraps base so outbound requests are signed before dispatch. With ResponseSignature enabled, it snapshots options and each outgoing request, verifies every final response \(including HTTP errors\), and returns only verified bounded content. It requires a \*http.Transport \(nil uses the default\), clones it, disables redirects, HTTP/2, connection reuse/retries, and transparent decoding, and does not cache responses. Incompatible round trippers fail on Do with ArgumentError. Sending, reads, and verification share the request context budget; absent a deadline the default is dnsid.DefaultVerificationTimeout \(30 seconds\). Each explicit retry needs a replayable original unsigned request.
+CreateSignedHTTPClient wraps base so outbound requests are signed before dispatch. With ResponseSignature enabled, it snapshots options and each outgoing request, verifies every final response \(including HTTP errors\), and returns only verified bounded content. It does not follow redirects or cache responses. A \*http.Transport \(nil uses the default\) is cloned with transparent decoding disabled; connection reuse and HTTP/2 remain enabled. Other round trippers are used as supplied: one that decodes, caches, or rewrites covered fields causes a verification failure. Sending, reads, and verification share the request context budget; absent a deadline the default is dnsid.DefaultVerificationTimeout \(30 seconds\). Each explicit retry needs a replayable original unsigned request.
 
 <a name="Profile.CreateSignedHTTPRequest"></a>
 ### func \(\*Profile\) [CreateSignedHTTPRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L198>)
@@ -308,8 +311,17 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 
 CreateSignedHTTPRequest signs req using the DNSid HTTP Message Signatures profile. ResponseSignature prepares opt\-in HTTPS response negotiation but does not send or verify a response. Retain an unmodified prepared request and independent original response\-policy snapshot for VerifySignedHTTPResponse. Each explicit attempt must start with a replayable original unsigned request.
 
+<a name="Profile.ResponseSigningMiddleware"></a>
+### func \(\*Profile\) [ResponseSigningMiddleware](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/response_middleware.go#L18>)
+
+```go
+func (p *Profile) ResponseSigningMiddleware(next http.Handler) http.Handler
+```
+
+ResponseSigningMiddleware signs responses for requests that carry Accept\-Signature. Requests without negotiation pass through unbuffered. Negotiated responses are buffered up to 8 MiB and signed with SignRequestedHTTPResponse before any header is sent. On a signing failure or an exceeded bound it sends a 500 without the handler's headers or content; it never sends the unsigned response. Place it after request verification and authorization, and after any middleware that changes the status, covered headers, or content coding. Buffered handlers cannot flush, hijack, or send informational responses.
+
 <a name="Profile.SignRequestedHTTPResponse"></a>
-### func \(\*Profile\) [SignRequestedHTTPResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/response_signatures.go#L363>)
+### func \(\*Profile\) [SignRequestedHTTPResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/response_signatures.go#L408>)
 
 ```go
 func (p *Profile) SignRequestedHTTPResponse(req *http.Request, res *http.Response) (*http.Response, error)
@@ -318,7 +330,7 @@ func (p *Profile) SignRequestedHTTPResponse(req *http.Request, res *http.Respons
 SignRequestedHTTPResponse fulfills one DNSid Accept\-Signature request using the current operational key. No negotiation returns res unchanged, even for verification\-only profiles. On success it returns a copy with finalized fields and replayable content. Call before sending headers, after content coding; middleware must not change covered bytes afterward. It does not authenticate or authorize the caller. Failures must not become unsigned\-success fallbacks.
 
 <a name="Profile.VerifyHTTPRequest"></a>
-### func \(\*Profile\) [VerifyHTTPRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L331>)
+### func \(\*Profile\) [VerifyHTTPRequest](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/http_signatures.go#L336>)
 
 ```go
 func (p *Profile) VerifyHTTPRequest(ctx context.Context, req *http.Request) (*dnsid.VerifiedDomain, error)
@@ -327,7 +339,7 @@ func (p *Profile) VerifyHTTPRequest(ctx context.Context, req *http.Request) (*dn
 VerifyHTTPRequest verifies a DNSid HTTP Message Signature and returns the verified signer domain. At most two eligible signatures may be supplied; applications should also rate\-limit inbound requests.
 
 <a name="Profile.VerifySignedHTTPResponse"></a>
-### func \(\*Profile\) [VerifySignedHTTPResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/response_signatures.go#L473>)
+### func \(\*Profile\) [VerifySignedHTTPResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/response_signatures.go#L514>)
 
 ```go
 func (p *Profile) VerifySignedHTTPResponse(ctx context.Context, req *http.Request, res *http.Response, opts ResponseSignatureOptions, peer ...dnsid.VerifyDomainOpts) (verified *dnsid.VerifiedDomain, err error)
@@ -336,7 +348,7 @@ func (p *Profile) VerifySignedHTTPResponse(ctx context.Context, req *http.Reques
 VerifySignedHTTPResponse verifies the requested label against local policy and the saved originating request, never res.Request. The caller must retain an unmodified prepared request and an independent original options snapshot when using standalone helpers. Supply only trusted current\-connection peer evidence in peer; discovery certificates cannot substitute for it. Response TLS evidence is used when peer is omitted. Rejected response bodies are closed. On success the content is restored for the caller, who owns closing it.
 
 <a name="ResponseSignatureOptions"></a>
-## type [ResponseSignatureOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/response_signatures.go#L32-L37>)
+## type [ResponseSignatureOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/httpsig/response_signatures.go#L36-L41>)
 
 ResponseSignatureOptions configures opt\-in RFC 9421 negotiated response authentication. Only covered fields are authenticated: Content\-Type, Content\-Encoding, and Location are not covered unless requested explicitly. ExpectedDomain is local policy, independent of the HTTP endpoint hostname. Configure entity acceptance separately on the identity resolver.
 

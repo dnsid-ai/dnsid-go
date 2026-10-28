@@ -105,12 +105,15 @@ func TestNegotiatedResponse_PreparationAndRequestOnly(t *testing.T) {
 	if len(inner.Items) != 10 || len(inner.Parameters) != 3 || inner.Parameters[0] != (sfv.Parameter{Key: "created", Value: true}) || inner.Parameters[1] != (sfv.Parameter{Key: "expires", Value: true}) {
 		t.Fatalf("negotiation = %+v", inner)
 	}
-	for i, want := range append(requiredResponseComponents(), ComponentIdentifier{Name: "content-type"}) {
+	for i, want := range append(requiredResponseComponents("sig1"), ComponentIdentifier{Name: "content-type"}) {
 		if inner.Items[i].Value != want.Name {
 			t.Fatalf("component %d = %+v", i, inner.Items[i])
 		}
-		if want.Params["req"] == true && (len(inner.Items[i].Parameters) != 1 || inner.Items[i].Parameters[0].Value != true) {
+		if want.Params["req"] == true && (len(inner.Items[i].Parameters) != len(want.Params) || inner.Items[i].Parameters[0] != (sfv.Parameter{Key: "req", Value: true})) {
 			t.Fatal("missing request context")
+		}
+		if key, ok := want.Params["key"]; ok && inner.Items[i].Parameters[1] != (sfv.Parameter{Key: "key", Value: key}) {
+			t.Fatal("request signature member is not key-selected")
 		}
 	}
 	nonce := inner.Parameters[2].Value.(string)
@@ -242,12 +245,13 @@ func TestNegotiatedResponse_MalformedNegotiation(t *testing.T) {
 		"unsupported-component":     strings.Replace(valid, `"@status"`, `"@unknown"`, 1),
 		"unsupported-param":         strings.Replace(valid, `"content-digest"`, `"content-digest";sf`, 1),
 		"false-req":                 strings.Replace(valid, `;req `, `;req=?0 `, 1),
-		"missing-required":          strings.Replace(valid, `"signature-input";req `, "", 1),
+		"missing-required":          strings.Replace(valid, `"signature-input";req;key="sig1" `, "", 1),
+		"mismatched-member-keys":    strings.Replace(valid, `"signature";req;key="sig1"`, `"signature";req;key="other"`, 1),
 		"short-nonce":               withoutNonce + `;nonce="AA"`,
 		"noncanonical-nonce":        withoutNonce + `;nonce="` + strings.Repeat("A", 42) + `B"`,
 		"wrong-nonce-type":          withoutNonce + `;nonce=?1`,
 		"space-in-component":        strings.Replace(valid, `"@status"`, `" @status "`, 1),
-		"extra-required-parameter":  strings.Replace(valid, `"signature";req`, `"signature";req;key="sig1"`, 1),
+		"unkeyed-request-signature": strings.Replace(valid, `"signature";req;key="sig1"`, `"signature";req`, 1),
 		"padded-nonce":              valid[:len(valid)-1] + `="`,
 		"token-nonce":               valid[:strings.Index(valid, `;nonce=`)] + `;nonce=token`,
 		"long-nonce":                valid[:strings.Index(valid, `;nonce=`)] + `;nonce="` + strings.Repeat("A", 1026) + `"`,
@@ -490,7 +494,7 @@ func TestNegotiatedResponse_SelectionAndFreshnessBoundaries(t *testing.T) {
 					params.Created += 400
 					params.Expires += 400
 				case "lifetime":
-					params.Expires = params.Created + 301
+					params.Expires = params.Created + 61
 				case "algorithm":
 					params.Alg = "rsa-pss-sha512"
 				case "missing-algorithm":

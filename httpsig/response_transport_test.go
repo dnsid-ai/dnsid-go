@@ -169,21 +169,13 @@ func TestNegotiatedResponse_ClientSnapshotsAndRepeatedAttempts(t *testing.T) {
 	}
 }
 
-func TestNegotiatedResponse_ClientNoAutomaticReplay(t *testing.T) {
+func TestNegotiatedResponse_ClientReusesConnectionsOverHTTP2(t *testing.T) {
 	f := newResponseFixture(t)
 	f.signer.resolver = f.checker.resolver
 	var calls, connections atomic.Int32
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if calls.Add(1) == 1 {
-			serveNegotiatedResponse(t, f, w, req, http.StatusOK)
-			return
-		}
-		conn, _, err := w.(http.Hijacker).Hijack()
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		conn.Close()
+		calls.Add(1)
+		serveNegotiatedResponse(t, f, w, req, http.StatusOK)
 	}))
 	server.EnableHTTP2 = true
 	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
@@ -197,24 +189,16 @@ func TestNegotiatedResponse_ClientNoAutomaticReplay(t *testing.T) {
 	client := f.signer.CreateSignedHTTPClient(base, SigningOptions{ResponseSignature: &f.opts})
 	for attempt := 0; attempt < 2; attempt++ {
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
-		req.Header.Set("Idempotency-Key", "same-logical-operation")
 		res, err := client.Do(req)
-		if attempt == 0 {
-			if err != nil {
-				t.Fatal(err)
-			}
-			if res.ProtoMajor != 1 {
-				t.Fatal("retry-capable HTTP/2 enabled")
-			}
-			res.Body.Close()
-		} else if err == nil || res != nil {
-			if res != nil {
-				res.Body.Close()
-			}
-			t.Fatal("transport failure replayed")
+		if err != nil {
+			t.Fatal(err)
 		}
+		if res.ProtoMajor != 2 {
+			t.Fatalf("protocol = %s", res.Proto)
+		}
+		res.Body.Close()
 	}
-	if calls.Load() != 2 || connections.Load() != 2 {
+	if calls.Load() != 2 || connections.Load() != 1 {
 		t.Fatalf("requests=%d connections=%d", calls.Load(), connections.Load())
 	}
 	original := base.Transport.(*http.Transport)
@@ -223,17 +207,33 @@ func TestNegotiatedResponse_ClientNoAutomaticReplay(t *testing.T) {
 	}
 }
 
-func TestNegotiatedResponse_ClientRejectsIncompatibleTransportBeforeSend(t *testing.T) {
+func TestNegotiatedResponse_ClientUsesCustomRoundTripper(t *testing.T) {
 	f := newResponseFixture(t)
+	f.signer.resolver = f.checker.resolver
 	var calls int
-	base := &http.Client{Transport: httpRoundTripperFunc(func(*http.Request) (*http.Response, error) { calls++; return responseMessage("unsigned"), nil })}
+	base := &http.Client{Transport: httpRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		res := f.response(t, req)
+		if calls == 2 {
+			res.Header.Set("Cache-Control", "max-age=60")
+		}
+		return res, nil
+	})}
 	client := f.signer.CreateSignedHTTPClient(base, SigningOptions{ResponseSignature: &f.opts})
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://gateway.example/", nil)
-	_, err := client.Do(req)
-	var argument *dnsid.ArgumentError
-	if !errors.As(err, &argument) || calls != 0 {
-		t.Fatalf("incompatible transport used: %v calls=%d", err, calls)
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
 	}
+	res.Body.Close()
+	// A round tripper that rewrites covered fields causes rejection, not success.
+	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, "https://gateway.example/", nil)
+	_, err = client.Do(req)
+	var verification *dnsid.VerificationError
+	if !errors.As(err, &verification) || calls != 2 {
+		t.Fatalf("rewritten response accepted: %v calls=%d", err, calls)
+	}
+	var argument *dnsid.ArgumentError
 	f.signer.resolver = nil
 	base.Transport = &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) {
 		calls++
@@ -241,7 +241,7 @@ func TestNegotiatedResponse_ClientRejectsIncompatibleTransportBeforeSend(t *test
 	}}
 	client = f.signer.CreateSignedHTTPClient(base, SigningOptions{ResponseSignature: &f.opts})
 	_, err = client.Do(req)
-	if !errors.As(err, &argument) || calls != 0 {
+	if !errors.As(err, &argument) || calls != 2 {
 		t.Fatalf("missing resolver was not rejected before send: %v calls=%d", err, calls)
 	}
 }

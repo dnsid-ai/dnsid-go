@@ -106,13 +106,14 @@ response, err := client.Do(request)
 
 The client requires HTTPS and verifies every response, including HTTP errors,
 before returning its content. It uses a fresh challenge per send, rejects
-automatic redirects/replays, and does not cache responses. Negotiated mode requires
-a standard `*http.Transport`; it clones that transport and uses HTTP/1 without
-connection reuse or transparent decompression. See [OPERATIONS.md](OPERATIONS.md#negotiated-response-authentication)
+automatic redirects, and does not cache responses. A standard `*http.Transport`
+is cloned with transparent decompression disabled; connection reuse and HTTP/2
+remain enabled. See [OPERATIONS.md](OPERATIONS.md#negotiated-response-authentication)
 for bounds and hosting requirements.
 
-Servers explicitly call `profile.SignRequestedHTTPResponse(request, response)`
-before sending a finalized response. Servers must still verify and authorize
+Servers wrap handlers with `profile.ResponseSigningMiddleware(handler)`, or
+explicitly call `profile.SignRequestedHTTPResponse(request, response)` before
+sending a finalized response. Servers must still verify and authorize
 requests; response signing does neither.
 
 Standalone request helpers only prepare negotiation. Retain an unmodified prepared

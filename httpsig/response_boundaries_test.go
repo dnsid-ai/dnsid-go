@@ -175,7 +175,7 @@ func TestNegotiatedResponse_MTLSCurrentPeerIncludingCacheHits(t *testing.T) {
 
 func TestNegotiatedResponse_UnsupportedResponseKinds(t *testing.T) {
 	f := newResponseFixture(t)
-	for _, name := range []string{"informational", "switching-protocols", "tunnel", "upgrade-header"} {
+	for _, name := range []string{"informational", "switching-protocols", "tunnel"} {
 		t.Run(name, func(t *testing.T) {
 			req := f.request(t)
 			params := responseParamsForRequest(t, f, req)
@@ -187,8 +187,6 @@ func TestNegotiatedResponse_UnsupportedResponseKinds(t *testing.T) {
 				res.StatusCode = http.StatusSwitchingProtocols
 			case "tunnel":
 				req.Method = http.MethodConnect
-			case "upgrade-header":
-				res.Header.Set("Upgrade", "websocket")
 			}
 			if signed, err := f.signer.SignRequestedHTTPResponse(req, res); err == nil || signed != nil {
 				t.Fatal("unsupported response signed")

@@ -39,10 +39,17 @@
 // fields, sets SHA-256 Content-Digest, and adds Cache-Control: no-store. It does
 // not authorize callers or permit unsigned fallback on signing errors.
 //
+// The response covers the client's own request signature member through
+// "signature-input";req;key="<label>" and "signature";req;key="<label>", so an
+// intermediary that adds its own request signature does not break it. Responses
+// use a fixed 60-second lifetime, independent of either peer's MaxAge.
+// ResponseSigningMiddleware buffers and signs negotiated http.Handler responses.
+//
 // CreateSignedHTTPClient verifies responses automatically, including errors and
-// redirects. Negotiated mode uses HTTP/1 without connection reuse, automatic
-// redirects/replays, transparent content decoding, or response caching. Custom
-// round trippers reject because the SDK cannot configure their retry/cache policy.
+// redirects. Negotiated mode does not follow redirects, decode content, or cache
+// responses. Connection reuse and HTTP/2 remain enabled. Custom round trippers are
+// used as supplied; one that decodes, caches, or rewrites covered fields causes a
+// verification failure.
 // Standalone CreateSignedHTTPRequest callers must retain an unmodified prepared
 // request and independent original response-policy snapshot, then call
 // VerifySignedHTTPResponse with trusted current-server peer evidence. Never use
@@ -57,7 +64,7 @@
 // Negotiation and signature fields are capped at 16 KiB each, combined headers
 // at 1 MiB, request-target inputs at 64 KiB, and response content at 8 MiB. The
 // nonce is canonical unpadded base64url, 43 to 1024 characters, decoding to at
-// least 32 bytes. Parsing permits at most 128 labels/components and 64 parameters.
+// least 32 bytes. Negotiation permits at most 64 components.
 // Sending, reads, and verification share a finite request context budget (default
 // 30 seconds). Custom body readers/providers must be finite and interruptible;
 // hosts must impose read deadlines. HEAD, 204, 205, and 304 digest empty content;

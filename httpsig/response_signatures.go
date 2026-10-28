@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -22,7 +21,12 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
-const maximumResponseNonceLength = 1024
+const (
+	maximumResponseNonceLength = 1024
+	maximumResponseComponents  = 64
+	// responseSignatureLifetime is fixed so peers with different MaxAge values interoperate.
+	responseSignatureLifetime = 60
+)
 
 // ResponseSignatureOptions configures opt-in RFC 9421 negotiated response
 // authentication. Only covered fields are authenticated: Content-Type,
@@ -36,28 +40,30 @@ type ResponseSignatureOptions struct {
 	AdditionalComponents []ComponentIdentifier
 }
 
-func requiredResponseComponents() []ComponentIdentifier {
+// requiredResponseComponents binds the response to the client's own request
+// signature member, selected by key so intermediary signatures do not affect it.
+func requiredResponseComponents(requestLabel string) []ComponentIdentifier {
 	return []ComponentIdentifier{
 		{Name: "@status"},
 		{Name: "@method", Params: map[string]any{"req": true}},
 		{Name: "@authority", Params: map[string]any{"req": true}},
 		{Name: "@target-uri", Params: map[string]any{"req": true}},
 		{Name: "accept-signature", Params: map[string]any{"req": true}},
-		{Name: "signature-input", Params: map[string]any{"req": true}},
-		{Name: "signature", Params: map[string]any{"req": true}},
+		{Name: "signature-input", Params: map[string]any{"req": true, "key": requestLabel}},
+		{Name: "signature", Params: map[string]any{"req": true, "key": requestLabel}},
 		{Name: "content-digest"}, {Name: "cache-control"},
 	}
 }
 
-func responsePolicy(opts ResponseSignatureOptions) (ResponseSignatureOptions, []ComponentIdentifier, error) {
+func responsePolicy(opts ResponseSignatureOptions, requestLabel string) (ResponseSignatureOptions, []ComponentIdentifier, error) {
 	domain, err := dnsid.NormalizeFQDN(opts.ExpectedDomain)
 	if err != nil {
 		return opts, nil, dnsid.NewArgumentError("dnsid: invalid expected response domain", err)
 	}
 	opts.ExpectedDomain = domain
-	components := requiredResponseComponents()
+	components := requiredResponseComponents(requestLabel)
 	limits := sfv.DefaultLimits()
-	if len(opts.AdditionalComponents) > limits.MaxInnerListMembers-len(components) {
+	if len(opts.AdditionalComponents) > maximumResponseComponents-len(components) {
 		return opts, nil, dnsid.NewArgumentError("dnsid: too many response components", nil)
 	}
 	for _, component := range opts.AdditionalComponents {
@@ -91,7 +97,7 @@ func checkResponseComponent(component ComponentIdentifier) error {
 	return nil
 }
 
-func prepareResponseNegotiation(req *http.Request, opts ResponseSignatureOptions) error {
+func prepareResponseNegotiation(req *http.Request, opts ResponseSignatureOptions, requestLabel string) error {
 	if hasResponseHeader(req.Header, "Accept-Signature") {
 		return dnsid.NewArgumentError("dnsid: Accept-Signature is already present", nil)
 	}
@@ -101,7 +107,7 @@ func prepareResponseNegotiation(req *http.Request, opts ResponseSignatureOptions
 	if err := boundedResponseRequest(req); err != nil {
 		return dnsid.NewArgumentError("dnsid: response request exceeds input limits", err)
 	}
-	_, components, err := responsePolicy(opts)
+	_, components, err := responsePolicy(opts, requestLabel)
 	if err != nil {
 		return err
 	}
@@ -244,12 +250,35 @@ func parseResponseNegotiation(req *http.Request) (SignatureParams, error) {
 		}
 		params.Components = append(params.Components, component)
 	}
-	for _, required := range requiredResponseComponents() {
+	if len(params.Components) > maximumResponseComponents {
+		return params, responseVerificationError("too many requested response components", nil)
+	}
+	requestLabel, err := requestedSignatureMember(params.Components)
+	if err != nil {
+		return params, err
+	}
+	for _, required := range requiredResponseComponents(requestLabel) {
 		if !containsComponent(params.Components, required) {
 			return params, responseVerificationError("missing required response component", nil)
 		}
 	}
 	return params, nil
+}
+
+// requestedSignatureMember returns the one request signature member that the
+// negotiation binds through matching signature-input and signature keys.
+func requestedSignatureMember(components []ComponentIdentifier) (string, error) {
+	keys := map[string][]string{}
+	for _, component := range components {
+		key, keyed := component.Params["key"].(string)
+		if component.Params["req"] == true && keyed && (component.Name == "signature-input" || component.Name == "signature") {
+			keys[component.Name] = append(keys[component.Name], key)
+		}
+	}
+	if len(keys["signature-input"]) != 1 || len(keys["signature"]) != 1 || keys["signature-input"][0] != keys["signature"][0] {
+		return "", responseVerificationError("response negotiation must bind one request signature member", nil)
+	}
+	return keys["signature"][0], nil
 }
 
 func checkHTTPSignatureFreshness(created, expires int64, hasExpires bool, cfg Config, now time.Time) error {
@@ -263,11 +292,27 @@ func checkHTTPSignatureFreshness(created, expires int64, hasExpires bool, cfg Co
 	return nil
 }
 
+// checkResponseFreshness applies the fixed response lifetime and local freshness.
+func checkResponseFreshness(params SignatureParams, cfg Config, now time.Time) error {
+	if lifetime := params.Expires - params.Created; lifetime <= 0 || lifetime > responseSignatureLifetime {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: response signature lifetime must be 1 to 60 seconds", nil)
+	}
+	if err := checkHTTPSignatureFreshness(params.Created, 0, false, cfg, now); err != nil {
+		return err
+	}
+	if now.After(time.Unix(params.Expires, 0).Add(cfg.ClockSkew)) {
+		return dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: response signature has expired", nil)
+	}
+	return nil
+}
+
+// finalResponse rejects informational responses and tunnels. An Upgrade field on
+// a final response only advertises protocols, so it is not rejected.
 func finalResponse(req *http.Request, res *http.Response) error {
 	if res == nil {
 		return dnsid.NewArgumentError("dnsid: nil HTTP response", nil)
 	}
-	if res.StatusCode < 200 || res.StatusCode > 599 || req.Method == http.MethodConnect && res.StatusCode < 300 || res.Header.Get("Upgrade") != "" {
+	if res.StatusCode < 200 || res.StatusCode > 599 || req.Method == http.MethodConnect && res.StatusCode < 300 {
 		return responseVerificationError("response is not an ordinary final HTTP response", nil)
 	}
 	if res.Uncompressed {
@@ -280,7 +325,7 @@ func responseContent(ctx context.Context, req *http.Request, res *http.Response)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if req.Method == http.MethodHead || res.StatusCode == http.StatusNoContent || res.StatusCode == http.StatusResetContent || res.StatusCode == http.StatusNotModified {
+	if req.Method == http.MethodHead || noResponseContent(res.StatusCode) {
 		return []byte{}, nil
 	}
 	if res.Body == nil {
@@ -377,12 +422,8 @@ func (p *Profile) SignRequestedHTTPResponse(req *http.Request, res *http.Respons
 	if err := p.requireLocalIdentity(); err != nil {
 		return nil, err
 	}
-	cfg, err := p.httpSignatureConfig()
-	if err != nil {
+	if _, err := p.httpSignatureConfig(); err != nil {
 		return nil, err
-	}
-	if cfg.MaxAge < time.Second {
-		return nil, dnsid.NewArgumentError("dnsid: integer response timestamps require max age of at least one second", nil)
 	}
 	for _, name := range []string{"Signature-Input", "Signature"} {
 		value := strings.Join(res.Header.Values(name), ", ")
@@ -421,7 +462,7 @@ func (p *Profile) SignRequestedHTTPResponse(req *http.Request, res *http.Respons
 	params.KeyID = p.localDomain + "#" + kid
 	params.ExpectedSignerKid, params.ExpectedSignerAlg = kid, alg
 	params.Created = time.Now().Unix()
-	params.Expires = params.Created + int64(cfg.MaxAge/time.Second)
+	params.Expires = params.Created + responseSignatureLifetime
 	ctx, cancel := dnsid.VerificationContext(req.Context())
 	defer cancel()
 	body, err := responseContent(ctx, req, res)
@@ -478,11 +519,18 @@ func (p *Profile) VerifySignedHTTPResponse(ctx context.Context, req *http.Reques
 			_ = res.Body.Close()
 		}
 	}()
-	opts, required, err := responsePolicy(opts)
-	if err != nil {
+	if _, _, err := responsePolicy(opts, dnsidHTTPSigLabel); err != nil {
 		return nil, err
 	}
 	requested, err := parseResponseNegotiation(req)
+	if err != nil {
+		return nil, err
+	}
+	requestLabel, err := requestedSignatureMember(requested.Components)
+	if err != nil {
+		return nil, err
+	}
+	opts, required, err := responsePolicy(opts, requestLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -514,10 +562,10 @@ func (p *Profile) VerifySignedHTTPResponse(ctx context.Context, req *http.Reques
 	if err != nil {
 		return nil, err
 	}
-	if !hasSignatureParameter(params, "created") || !hasSignatureParameter(params, "expires") || params.Created >= params.Expires || (params.Alg != "ed25519" && params.Alg != "ecdsa-p256-sha256") {
+	if !hasSignatureParameter(params, "created") || !hasSignatureParameter(params, "expires") || (params.Alg != "ed25519" && params.Alg != "ecdsa-p256-sha256") {
 		return nil, responseVerificationError("response requires timestamps and a supported algorithm", nil)
 	}
-	if err := checkHTTPSignatureFreshness(params.Created, params.Expires, true, cfg, time.Now()); err != nil {
+	if err := checkResponseFreshness(params, cfg, time.Now()); err != nil {
 		return nil, err
 	}
 	domain, kid, err := joseutil.SplitDNSIDKid(params.KeyID)
@@ -575,7 +623,7 @@ func (p *Profile) VerifySignedHTTPResponse(ctx context.Context, req *http.Reques
 	if !hasNoStore(strings.Join(res.Header.Values("Cache-Control"), ", ")) {
 		return nil, responseVerificationError("response requires signed Cache-Control: no-store", nil)
 	}
-	if err := checkHTTPSignatureFreshness(params.Created, params.Expires, true, cfg, time.Now()); err != nil {
+	if err := checkResponseFreshness(params, cfg, time.Now()); err != nil {
 		return nil, err
 	}
 	if err := vd.CheckFreshness(acquiredAfter); err != nil {
@@ -616,18 +664,10 @@ func (p *Profile) negotiatedHTTPClient(base *http.Client, opts SigningOptions) *
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	standard, compatible := transport.(*http.Transport)
-	if compatible {
+	if standard, ok := transport.(*http.Transport); ok {
+		// Verification needs the exact content bytes, so the SDK never decodes them.
 		isolated := standard.Clone()
-		isolated.DisableKeepAlives = true
 		isolated.DisableCompression = true
-		isolated.ForceAttemptHTTP2 = false
-		isolated.Protocols = new(http.Protocols)
-		isolated.Protocols.SetHTTP1(true)
-		isolated.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
-		if isolated.TLSClientConfig != nil {
-			isolated.TLSClientConfig.NextProtos = []string{"http/1.1"}
-		}
 		if isolated.MaxResponseHeaderBytes <= 0 || isolated.MaxResponseHeaderBytes > 1<<20 {
 			isolated.MaxResponseHeaderBytes = 1 << 20
 		}
@@ -643,9 +683,6 @@ func (p *Profile) negotiatedHTTPClient(base *http.Client, opts SigningOptions) *
 		}()
 		if p == nil || p.resolver == nil {
 			return nil, dnsid.NewArgumentError("dnsid: IdentityResolver is required for negotiated clients", nil)
-		}
-		if !compatible {
-			return nil, dnsid.NewArgumentError("dnsid: negotiated client requires a configurable *http.Transport without custom round trippers", nil)
 		}
 		ctx, cancel := dnsid.VerificationContext(req.Context())
 		defer cancel()

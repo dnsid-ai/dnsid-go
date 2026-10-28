@@ -32,8 +32,8 @@ type Config struct {
 	// created parameter must be no older than MaxAge, and when an expires
 	// parameter is present its distance from created must not exceed
 	// MaxAge. Zero means the default of 5 minutes; negative is invalid.
-	// Response signing needs at least one second and uses a whole-second
-	// lifetime no greater than MaxAge.
+	// Response signatures use a fixed 60-second lifetime; MaxAge bounds only
+	// the age of their created parameter.
 	MaxAge time.Duration
 
 	// ClockSkew is the tolerance applied to signature timestamp checks
@@ -207,7 +207,11 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 	}
 	signed := req.Clone(req.Context())
 	if opts.ResponseSignature != nil {
-		if err := prepareResponseNegotiation(signed, *opts.ResponseSignature); err != nil {
+		requestLabel := opts.Label
+		if requestLabel == "" {
+			requestLabel = dnsidHTTPSigLabel
+		}
+		if err := prepareResponseNegotiation(signed, *opts.ResponseSignature, requestLabel); err != nil {
 			return nil, err
 		}
 	}
@@ -298,10 +302,11 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 // CreateSignedHTTPClient wraps base so outbound requests are signed before dispatch.
 // With ResponseSignature enabled, it snapshots options and each outgoing request,
 // verifies every final response (including HTTP errors), and returns only verified
-// bounded content. It requires a *http.Transport (nil uses the default), clones it,
-// disables redirects, HTTP/2, connection reuse/retries, and transparent decoding,
-// and does not cache responses. Incompatible round trippers fail on Do with
-// ArgumentError. Sending, reads, and verification share the request context budget;
+// bounded content. It does not follow redirects or cache responses. A
+// *http.Transport (nil uses the default) is cloned with transparent decoding
+// disabled; connection reuse and HTTP/2 remain enabled. Other round trippers are
+// used as supplied: one that decodes, caches, or rewrites covered fields causes a
+// verification failure. Sending, reads, and verification share the request context budget;
 // absent a deadline the default is dnsid.DefaultVerificationTimeout (30 seconds).
 // Each explicit retry needs a replayable original unsigned request.
 func (p *Profile) CreateSignedHTTPClient(base *http.Client, opts SigningOptions) *http.Client {
