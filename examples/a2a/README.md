@@ -44,8 +44,15 @@ Expected Alice output includes:
 
 ```text
 verified: alice.test -> bob.test
+response signed by: bob.test
 reply: "[from: bob.test; verified sender: alice.test] hello from alice.test"
 ```
+
+Bob also signs every response, including the agent card and errors, with its
+DNSid operational key. Alice requests that signature and rejects any reply that
+is not signed by `bob.test`. Bob's server applies the response-signing
+middleware after restoring the public `https://bob.test` URL, because the
+signature covers the URL that Alice used.
 
 `dnsid local run` supplies the C2SP policy location separately as
 `DNSID_LOG_POLICY_URL`. `config.LoadEnvironment` treats that value as trusted
