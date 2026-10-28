@@ -85,7 +85,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr:              ":" + strconv.Itoa(port),
-		Handler:           app.routes(),
+		Handler:           app.publicRequests(app.signatures.ResponseSigningMiddleware(app.routes())),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	errCh := make(chan error, 1)
@@ -177,6 +177,18 @@ func (a *application) routes() http.Handler {
 	return mux
 }
 
+// publicRequests restores the public URL before request verification and
+// response signing. The testnet proxy forwards plain HTTP to this process, but
+// @target-uri and @authority cover the public HTTPS URL.
+func (a *application) publicRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		req.URL.Scheme = "https"
+		req.URL.Host = a.identity.Domain()
+		req.Host = a.identity.Domain()
+		next.ServeHTTP(w, req)
+	})
+}
+
 func (a *application) handleMessage(w http.ResponseWriter, req *http.Request) {
 	if req.Header.Get("A2A-Version") != a2aVersion {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "A2A-Version must be " + a2aVersion})
@@ -191,21 +203,14 @@ func (a *application) handleMessage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// The testnet proxy forwards plain HTTP to this process. Restore the public
-	// URL before verifying the signature, since @target-uri covered the HTTPS URL.
-	publicRequest := req.Clone(req.Context())
-	publicRequest.URL.Scheme = "https"
-	publicRequest.URL.Host = a.identity.Domain()
-	publicRequest.Host = a.identity.Domain()
-
-	verifiedSender, err := a.signatures.VerifyHTTPRequest(req.Context(), publicRequest)
+	verifiedSender, err := a.signatures.VerifyHTTPRequest(req.Context(), req)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
 
 	var rpc rpcRequest
-	if err := json.NewDecoder(publicRequest.Body).Decode(&rpc); err != nil || rpc.JSONRPC != "2.0" || rpc.Method != "SendMessage" {
+	if err := json.NewDecoder(req.Body).Decode(&rpc); err != nil || rpc.JSONRPC != "2.0" || rpc.Method != "SendMessage" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid A2A SendMessage request"})
 		return
 	}
@@ -292,11 +297,17 @@ func (a *application) sendHello(ctx context.Context, peer string) error {
 	req.Header.Set("A2A-Extensions", extensionURI)
 
 	// The signing client adds Content-Digest, Signature-Input, and Signature.
+	// ResponseSignature also requires Bob to sign the response with peer's DNSid
+	// key; the client rejects any response, including errors, that does not verify.
 	client := a.signatures.CreateSignedHTTPClient(a.httpClient, httpsig.SigningOptions{
 		Label:                "a2a",
 		ExpiresIn:            5 * time.Minute,
 		Tag:                  signatureTag,
 		AdditionalComponents: []string{"content-type", "a2a-version", "a2a-extensions"},
+		ResponseSignature: &httpsig.ResponseSignatureOptions{
+			ExpectedDomain:       peer,
+			AdditionalComponents: []httpsig.ComponentIdentifier{{Name: "content-type"}},
+		},
 	})
 	resp, err := client.Do(req)
 	if err != nil {
@@ -324,6 +335,7 @@ func (a *application) sendHello(ctx context.Context, peer string) error {
 	if response.Error != nil {
 		return fmt.Errorf("peer returned A2A error: %v", response.Error)
 	}
+	fmt.Printf("response signed by: %s\n", peer)
 	fmt.Printf("reply: %q\n", messageText(response.Result.Message))
 	return nil
 }

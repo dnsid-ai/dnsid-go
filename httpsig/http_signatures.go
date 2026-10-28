@@ -32,6 +32,8 @@ type Config struct {
 	// created parameter must be no older than MaxAge, and when an expires
 	// parameter is present its distance from created must not exceed
 	// MaxAge. Zero means the default of 5 minutes; negative is invalid.
+	// Response signatures use a fixed 60-second lifetime; MaxAge bounds only
+	// the age of their created parameter.
 	MaxAge time.Duration
 
 	// ClockSkew is the tolerance applied to signature timestamp checks
@@ -138,6 +140,9 @@ type SigningOptions struct {
 	// AdditionalComponentIDs lists extra components, with parameters, to
 	// cover beyond the profile's defaults.
 	AdditionalComponentIDs []ComponentIdentifier
+
+	// ResponseSignature enables mandatory negotiated response authentication.
+	ResponseSignature *ResponseSignatureOptions
 }
 
 // Profile implements the DNSid HTTP Message Signatures profile.
@@ -186,6 +191,10 @@ func NewFromIdentityManagerKeyProvider(manager identityManagerWithKeyProvider, c
 }
 
 // CreateSignedHTTPRequest signs req using the DNSid HTTP Message Signatures profile.
+// ResponseSignature prepares opt-in HTTPS response negotiation but does not send
+// or verify a response. Retain an unmodified prepared request and independent
+// original response-policy snapshot for VerifySignedHTTPResponse. Each explicit
+// attempt must start with a replayable original unsigned request.
 func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions) (*http.Request, error) {
 	if req == nil {
 		return nil, dnsid.NewArgumentError("dnsid: nil HTTP request", nil)
@@ -195,6 +204,16 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 	}
 	if _, err := p.httpSignatureConfig(); err != nil {
 		return nil, err
+	}
+	signed := req.Clone(req.Context())
+	if opts.ResponseSignature != nil {
+		requestLabel := opts.Label
+		if requestLabel == "" {
+			requestLabel = dnsidHTTPSigLabel
+		}
+		if err := prepareResponseNegotiation(signed, *opts.ResponseSignature, requestLabel); err != nil {
+			return nil, err
+		}
 	}
 	kid, alg, err := joseutil.ActiveSigningMetadata(p.keys)
 	if err != nil {
@@ -207,8 +226,10 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 	if strings.Contains(kid, "#") {
 		return nil, dnsid.NewArgumentError("dnsid: signing key kid must not contain '#'", nil)
 	}
-	signed := req.Clone(req.Context())
 	components := []ComponentIdentifier{{Name: "@method"}, {Name: "@authority"}, {Name: "@target-uri"}}
+	if opts.ResponseSignature != nil {
+		components = append(components, ComponentIdentifier{Name: "accept-signature"})
+	}
 	if httpRequestHasBody(req) {
 		body, err := readBoundedBody(req.Body)
 		if err != nil {
@@ -270,11 +291,28 @@ func (p *Profile) CreateSignedHTTPRequest(req *http.Request, opts SigningOptions
 	if err := setStructuredDictionaryMember(signed.Header, "Signature", params.Label, sfv.Item{Value: sig.Signature}); err != nil {
 		return nil, err
 	}
+	if opts.ResponseSignature != nil {
+		if err := boundedResponseRequest(signed); err != nil {
+			return nil, err
+		}
+	}
 	return signed, nil
 }
 
 // CreateSignedHTTPClient wraps base so outbound requests are signed before dispatch.
+// With ResponseSignature enabled, it snapshots options and each outgoing request,
+// verifies every final response (including HTTP errors), and returns only verified
+// bounded content. It does not follow redirects or cache responses. A
+// *http.Transport (nil uses the default) is cloned with transparent decoding
+// disabled; connection reuse and HTTP/2 remain enabled. Other round trippers are
+// used as supplied: one that decodes, caches, or rewrites covered fields causes a
+// verification failure. Sending, reads, and verification share the request context budget;
+// absent a deadline the default is dnsid.DefaultVerificationTimeout (30 seconds).
+// Each explicit retry needs a replayable original unsigned request.
 func (p *Profile) CreateSignedHTTPClient(base *http.Client, opts SigningOptions) *http.Client {
+	if opts.ResponseSignature != nil {
+		return p.negotiatedHTTPClient(base, opts)
+	}
 	if base == nil {
 		base = http.DefaultClient
 	}
@@ -335,19 +373,8 @@ func (p *Profile) verifyParsedHTTPRequest(ctx context.Context, req *http.Request
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	created := time.Unix(parsed.created, 0)
-	if created.After(now.Add(cfg.ClockSkew)) || now.Sub(created) > cfg.MaxAge {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: HTTP signature is outside freshness window", nil)
-	}
-	if parsed.hasExpires && parsed.expires < parsed.created {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: HTTP signature expires before created", nil)
-	}
-	if parsed.hasExpires && now.After(time.Unix(parsed.expires, 0).Add(cfg.ClockSkew)) {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: HTTP signature has expired", nil)
-	}
-	if parsed.hasExpires && parsed.expires-parsed.created > int64(cfg.MaxAge/time.Second) {
-		return nil, dnsid.NewVerificationError(dnsid.VerificationCodeTokenExpired, false, "dnsid: HTTP signature expires lifetime exceeds maximum", nil)
+	if err := checkHTTPSignatureFreshness(parsed.created, parsed.expires, parsed.hasExpires, cfg, time.Now()); err != nil {
+		return nil, err
 	}
 	if err := requireHTTPComponents(req, parsed.components); err != nil {
 		return nil, err
@@ -1289,7 +1316,17 @@ func headerFieldValue(header http.Header, name string) (string, bool) {
 	if len(values) == 0 {
 		return "", false
 	}
-	return strings.Join(values, ", "), true
+	// RFC 9421 section 2.1: strip OWS from each value, as net/http does on receipt.
+	canonical := make([]string, len(values))
+	for i, value := range values {
+		for _, c := range []byte(value) {
+			if c < 0x20 && c != '\t' || c == 0x7f {
+				return "", false
+			}
+		}
+		canonical[i] = strings.Trim(value, " \t")
+	}
+	return strings.Join(canonical, ", "), true
 }
 
 func dictionaryMember(value, key string) (string, bool) {
