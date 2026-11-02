@@ -87,7 +87,7 @@ func ParseStreamHead(text []byte) (StreamHead, error) {
 		return invalid("malformed expires line")
 	}
 	seconds, ok := parseStatementInteger(expires[0])
-	if !ok {
+	if !ok || seconds > maxJSONInteger {
 		return invalid("expires is not a canonical integer")
 	}
 	head.Expires = time.Unix(int64(seconds), 0).UTC()
