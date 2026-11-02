@@ -1049,6 +1049,9 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 	if source, ok := c.source.(GlobalCandidateSource); ok {
 		globalCandidates = source.GlobalCandidates()
 	}
+	// Bundles may contain unrelated candidates, but their proof failures remain fatal.
+	_, bundleCandidates := c.source.(*StreamBundleSource)
+	ignoreInvalidCandidates := globalCandidates || bundleCandidates
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
@@ -1081,7 +1084,7 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 			if errors.Is(err, jsonutil.ErrNestingLimit) {
 				return nil, nil, dnsid.NewVerificationError(dnsid.VerificationCodeInvalidEvidence, false, "dnsid: c2sp-tlog verification resource limit exceeded", err)
 			}
-			if !globalCandidates {
+			if !ignoreInvalidCandidates {
 				return nil, nil, err
 			}
 			continue
@@ -1091,7 +1094,7 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 			continue
 		} // Unparseable envelopes and malformed role signatures cannot authenticate a payload.
 		if parsed.event.Domain != domain {
-			if !globalCandidates {
+			if !ignoreInvalidCandidates {
 				return nil, nil, fmt.Errorf("dnsid: supplied bundle event is for another domain")
 			}
 			continue
@@ -1104,7 +1107,7 @@ func (c *Client) verifyHistoryEntries(ctx context.Context, domain string, entrie
 		}
 		signed, err := CanonicalFromEntry(entry.Entry)
 		if err != nil {
-			if !globalCandidates {
+			if !ignoreInvalidCandidates {
 				return nil, nil, err
 			}
 			continue

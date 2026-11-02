@@ -69,8 +69,11 @@ This SDK targets DNSid C2SP method revision
   Servers must serve v2 there before clients upgrade; a 404 falls back to
   scanning in preferred-bundle mode.
 - `BundleVerifiers` and `bundle_verifier_keys` keep their names and now verify
-  stream-head statements. Their key names must differ from every log origin and
-  witness name in the policy.
+  stream-head statements. Their key names and public keys must differ from
+  the log and witness keys in the policy, including with direct configuration.
+- Bundle replay ignores unrelated entries only after verifying their inclusion
+  proofs. The SDK's 256 MiB reconstructed-history limit is enforced before
+  allocating checkpoint copies for the entry proofs.
 - C2SP pins move to `tlog-checkpoint@v1.1.0`, `tlog-tiles@v1.0.0`,
   `tlog-witness@v1.1.0`, `tlog-cosignature@v1.1.0`, `signed-note@v1.1.0`,
   `tlog-mirror@v0.1.0`, and the latest `tlog-proof` and `tlog-policy`

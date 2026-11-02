@@ -125,6 +125,9 @@ func NewVerificationRegistry(ctx context.Context, config VerificationRegistryCon
 		}
 		return nil, dnsid.NewArgumentError(fmt.Sprintf("dnsid: c2sp-tlog policy log key %q does not match log origin %q", name, config.ExpectedOrigin), nil)
 	}
+	if err := requireIndependentStreamHeadKeys(policy, config.BundleVerifiers); err != nil {
+		return nil, dnsid.NewArgumentError("dnsid: invalid c2sp-tlog stream-head trust", err)
+	}
 	policy.MaxCheckpointAge = config.CheckpointMaxAge
 	policy.ClockSkew = config.AllowedClockSkew
 

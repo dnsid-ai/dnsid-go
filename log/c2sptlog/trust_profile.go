@@ -77,11 +77,6 @@ func (p TrustProfile) validate() ([]note.Verifier, error) {
 		if seenKeys[string(publicKey)] || seenIDs[kid] {
 			return nil, fmt.Errorf("dnsid: c2sp-tlog trust profile bundle verifier keys must have distinct public keys and key IDs")
 		}
-		for _, checkpointKey := range policy.trustedPublicKeys {
-			if bytes.Equal(publicKey, checkpointKey) {
-				return nil, fmt.Errorf("dnsid: c2sp-tlog trust profile bundle signer must be independent of checkpoint policy keys")
-			}
-		}
 		seenKeys[string(publicKey)] = true
 		seenIDs[kid] = true
 		verifiers = append(verifiers, verifier)

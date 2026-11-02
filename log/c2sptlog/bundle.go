@@ -3,6 +3,7 @@ package c2sptlog
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -469,8 +470,8 @@ func streamHeadDomain(entries []ProvenEntry, headID string) (string, error) {
 	return "", fmt.Errorf("dnsid: c2sp stream bundle does not contain the stream-head event")
 }
 
-// requireIndependentStreamHeadKeys rejects a stream-head key whose name is a
-// log origin or witness name in the policy (method §12.1.1).
+// requireIndependentStreamHeadKeys rejects stream-head keys that reuse a
+// policy log or witness name or public key (method §12.1.1).
 func requireIndependentStreamHeadKeys(policy Policy, verifiers []note.Verifier) error {
 	names := map[string]bool{}
 	if policy.LogVerifier != nil {
@@ -485,6 +486,20 @@ func requireIndependentStreamHeadKeys(policy Policy, verifiers []note.Verifier) 
 		}
 		if names[verifier.Name()] {
 			return fmt.Errorf("dnsid: c2sp stream-head key name must differ from every policy log and witness name")
+		}
+		for _, publicKey := range policy.trustedPublicKeys {
+			// Recompute the Ed25519 key ID under the stream-head name to detect renamed keys.
+			key, err := note.NewEd25519VerifierKey(verifier.Name(), ed25519.PublicKey(publicKey))
+			if err != nil {
+				return err
+			}
+			checkpointVerifier, err := note.NewVerifier(key)
+			if err != nil {
+				return err
+			}
+			if verifier.KeyHash() == checkpointVerifier.KeyHash() {
+				return fmt.Errorf("dnsid: c2sp stream-head signer must be independent of checkpoint policy keys")
+			}
 		}
 	}
 	return nil
@@ -502,7 +517,12 @@ func parseBundleEntries(value any, checkpoint []byte, configuredMax int) ([]Prov
 	if maxEvents < 1 || len(items) > maxEvents {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle event count exceeds limit")
 	}
+	// Each portable proof copies the checkpoint; bound that expansion before allocating it.
+	if len(items) > 0 && int64(len(checkpoint)) > defaultScanMaxTotalEntryBytes/int64(len(items)) {
+		return nil, fmt.Errorf("dnsid: c2sp stream bundle reconstructed history exceeds byte limit")
+	}
 	entries := make([]ProvenEntry, 0, len(items))
+	var total int64
 	var previous uint64
 	for i, value := range items {
 		item, ok := value.(map[string]any)
@@ -543,7 +563,12 @@ func parseBundleEntries(value any, checkpoint []byte, configuredMax int) ([]Prov
 		for i := range hashes {
 			copy(hashes[i][:], proofBytes[i*sha256.Size:(i+1)*sha256.Size])
 		}
-		rawProof := formatproof.TLogProof{Index: index, Hashes: hashes, Checkpoint: checkpoint}.Marshal()
+		rawProof := formatproof.TLogProof{Index: index, Hashes: hashes}.Marshal()
+		total += int64(len(entry)) + int64(len(rawProof)) + int64(len(checkpoint))
+		if total > defaultScanMaxTotalEntryBytes {
+			return nil, fmt.Errorf("dnsid: c2sp stream bundle reconstructed history exceeds byte limit")
+		}
+		rawProof = append(rawProof, checkpoint...)
 		entries = append(entries, ProvenEntry{Index: index, Entry: entry, Proof: rawProof})
 	}
 	return entries, nil

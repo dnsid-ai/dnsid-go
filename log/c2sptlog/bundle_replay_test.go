@@ -18,9 +18,8 @@ import (
 	"golang.org/x/mod/sumdb/tlog"
 )
 
-// Add copy occurrences to the shared fixture at test time; lifecycle signatures
-// remain untouched except for the deliberately invalid new_op countersignature.
-func streamBundleWithCopies(t *testing.T) streamBundleVector {
+// Build a four-entry fixture with optional mutations before signing its checkpoint.
+func streamBundleWithCopies(t *testing.T, mutations ...func([][]byte)) streamBundleVector {
 	t.Helper()
 	v := loadStreamBundleVector(t)
 	object, err := decodeJSONObject([]byte(v.Bundle))
@@ -41,6 +40,9 @@ func streamBundleWithCopies(t *testing.T) streamBundleVector {
 	}
 	bad := canonicalEntryMutation(t, string(entries[1]), func(p map[string]any) { p["sigs"].(map[string]any)["new_op"].(map[string]any)["sig"] = "AA" })
 	entries = append(entries, entries[1], bad)
+	for _, mutate := range mutations {
+		mutate(entries)
+	}
 	leaves := []tlog.Hash{LeafHash(entries[0]), LeafHash(entries[1]), LeafHash(entries[2]), LeafHash(entries[3])}
 	parents := []tlog.Hash{tlog.NodeHash(leaves[0], leaves[1]), tlog.NodeHash(leaves[2], leaves[3])}
 	root := tlog.NodeHash(parents[0], parents[1])
