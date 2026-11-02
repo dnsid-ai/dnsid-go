@@ -1840,7 +1840,7 @@ func PinnedSpecificationVersions() SpecificationVersions
 PinnedSpecificationVersions returns the exact C2SP and DNSid envelope versions implemented by this package.
 
 <a name="StreamBundleSource"></a>
-## type [StreamBundleSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L76-L86>)
+## type [StreamBundleSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L77-L87>)
 
 StreamBundleSource adapts verified bundle evidence to Source and CompleteSource without trusting the producer's event parsing.
 
@@ -1851,7 +1851,7 @@ type StreamBundleSource struct {
 ```
 
 <a name="StreamBundleSource.ReadEvent"></a>
-### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L235>)
+### func \(\*StreamBundleSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L236>)
 
 ```go
 func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (ProvenEntry, error)
@@ -1860,7 +1860,7 @@ func (s *StreamBundleSource) ReadEvent(_ context.Context, ref dnsidlog.LogRef) (
 ReadEvent implements Source over the bundle's entries. It returns an error if ref does not address this bundle's reference or names an index the bundle does not contain.
 
 <a name="StreamBundleSource.RebuildCompleteHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L267>)
+### func \(\*StreamBundleSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L268>)
 
 ```go
 func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference Reference, domain string) (CompleteHistoryResult, error)
@@ -1869,7 +1869,7 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 RebuildCompleteHistory implements CompleteSource: a verified bundle's trusted\-index completeness assertion and entries share one checkpoint.
 
 <a name="StreamBundleSource.RebuildHistory"></a>
-### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L254>)
+### func \(\*StreamBundleSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L255>)
 
 ```go
 func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Reference, domain string) ([]ProvenEntry, error)
@@ -1878,7 +1878,7 @@ func (s *StreamBundleSource) RebuildHistory(_ context.Context, reference Referen
 RebuildHistory implements Source over the bundle's entries. It returns copies of every bundled entry, or an error if reference or domain does not match the bundle.
 
 <a name="StreamBundleTrust"></a>
-## type [StreamBundleTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L41-L55>)
+## type [StreamBundleTrust](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L42-L56>)
 
 StreamBundleTrust contains verifier\-controlled inputs. PolicyDocument is parsed as tlog\-policy; it is never taken from the bundle. BundleVerifier and BundleVerifiers are the accepted stream\-head statement keys; several keys may overlap during signer rotation. Their names must differ from every log and witness name in the policy.
 
@@ -2082,7 +2082,7 @@ type VerifiedProof struct {
 ```
 
 <a name="VerifiedStreamBundle"></a>
-## type [VerifiedStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L62-L72>)
+## type [VerifiedStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L63-L73>)
 
 VerifiedStreamBundle is the result of VerifyStreamBundle: the verified lifecycle events and materialized snapshot for one stream, its logged state, the bundle's expiry and completeness bound, the accepted signer, and a Source over the bundle's proven entries for further Client operations. LoggedState is historical log state, not current protocol status.
 
@@ -2101,7 +2101,7 @@ type VerifiedStreamBundle struct {
 ```
 
 <a name="VerifyStreamBundle"></a>
-### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L293>)
+### func [VerifyStreamBundle](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/bundle.go#L294>)
 
 ```go
 func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrust) (*VerifiedStreamBundle, error)
