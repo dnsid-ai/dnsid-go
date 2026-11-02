@@ -2,9 +2,13 @@ package c2sptlog
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -134,5 +138,63 @@ func TestTrustProfileRejectsStreamHeadKeyNamedAsWitness(t *testing.T) {
 	}
 	if _, err := ParseTrustProfile(profile("dnsid-stream-bundle")); err == nil || !strings.Contains(err.Error(), "must differ") {
 		t.Fatalf("colliding key name error = %v", err)
+	}
+}
+
+// Shared vectors copied verbatim from dnsid-sdk-compliance/fixtures/c2sp-stream-bundle-v2.json.
+func TestVerifyStreamBundleSharedVectors(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "c2sp-stream-bundle-v2.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vector struct {
+		streamBundleVector
+		ValidVariants   []struct{ Name, Reason, Bundle string } `json:"valid_variants"`
+		NegativeVectors []struct{ Name, Reason, Bundle string } `json:"negative_vectors"`
+		StatementVector struct {
+			VerifierKey string `json:"verifier_key"`
+			SignedNote  string `json:"signed_note"`
+		} `json:"statement_vector"`
+		ReferenceVectors []struct {
+			LR    string `json:"lr"`
+			Valid bool   `json:"valid"`
+		} `json:"reference_vectors"`
+	}
+	if err := json.Unmarshal(data, &vector); err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := note.NewVerifier(vector.Trust.BundleVerifierKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trust := StreamBundleTrust{
+		PolicyDocument:    []byte(vector.Policy),
+		BundleVerifier:    verifier,
+		Now:               func() time.Time { return time.Unix(vector.Trust.Now, 0).UTC() },
+		MaxBundleLifetime: time.Duration(vector.Trust.MaxBundleLifetime) * time.Millisecond,
+		MaxCheckpointAge:  time.Duration(vector.Trust.CheckpointFreshness) * time.Millisecond,
+	}
+	for _, valid := range vector.ValidVariants {
+		verified, err := VerifyStreamBundle(context.Background(), []byte(valid.Bundle), trust)
+		if err != nil || len(verified.Events) != vector.Expected.EventCount || verified.LoggedState != vector.Expected.Status {
+			t.Errorf("valid %s (%s): %v", valid.Name, valid.Reason, err)
+		}
+	}
+	for _, negative := range vector.NegativeVectors {
+		if _, err := VerifyStreamBundle(context.Background(), []byte(negative.Bundle), trust); err == nil {
+			t.Errorf("negative %s (%s) accepted", negative.Name, negative.Reason)
+		}
+	}
+	statementVerifier, err := note.NewVerifier(vector.StatementVector.VerifierKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := OpenStreamHead([]byte(vector.StatementVector.SignedNote), []note.Verifier{statementVerifier}); err != nil {
+		t.Errorf("statement vector: %v", err)
+	}
+	for _, reference := range vector.ReferenceVectors {
+		if _, err := ParseReference(reference.LR); (err == nil) != reference.Valid {
+			t.Errorf("ParseReference(%d bytes) error = %v, want valid %v", len(reference.LR), err, reference.Valid)
+		}
 	}
 }

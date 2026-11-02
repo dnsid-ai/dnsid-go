@@ -75,6 +75,9 @@ This SDK targets DNSid C2SP method revision
   `tlog-witness@v1.1.0`, `tlog-cosignature@v1.1.0`, `signed-note@v1.1.0`,
   `tlog-mirror@v0.1.0`, and the latest `tlog-proof` and `tlog-policy`
   revisions. `C2SPMirrorRevision` is renamed `C2SPMirrorSpecification`.
+- `log/c2sptlog/testdata/c2sp-stream-bundle-v2.json` is copied verbatim from
+  `dnsid-sdk-compliance/fixtures/c2sp-stream-bundle-v2.json`; regenerate it
+  there, not in this SDK.
 - Checkpoints, signed notes, and `tlog-proof` values with non-canonical base64
   or integers are rejected. An `lr` longer than 1024 bytes, or an origin longer
   than 255 bytes or with control characters, is rejected.
