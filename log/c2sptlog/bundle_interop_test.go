@@ -3,13 +3,13 @@ package c2sptlog
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +26,7 @@ type streamBundleVector struct {
 		ActiveOperationalThumbprint string `json:"active_operational_thumbprint"`
 		BundleSignerKID             string `json:"bundle_signer_kid"`
 		EventCount                  int    `json:"event_count"`
+		HeadEventID                 string `json:"head_event_id"`
 		Status                      string `json:"status"`
 	} `json:"expected"`
 	Trust struct {
@@ -34,16 +35,10 @@ type streamBundleVector struct {
 		MaxBundleLifetime   int64  `json:"max_bundle_lifetime_ms"`
 		Now                 int64  `json:"now"`
 	} `json:"trust"`
-	NegativeMutations []struct {
-		Name   string          `json:"name"`
-		Path   string          `json:"path"`
-		Append string          `json:"append"`
-		Value  json.RawMessage `json:"value"`
-	} `json:"negative_mutations"`
 }
 
 func TestVerifyStreamBundleCorrectedVector(t *testing.T) {
-	path := filepath.Join("testdata", "c2sp-stream-bundle-logical-v1.json")
+	path := filepath.Join("testdata", "c2sp-stream-bundle-v2.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -102,33 +97,26 @@ func TestVerifyStreamBundleEnforcesTreeSizeLimit(t *testing.T) {
 	}
 }
 
-type acceptingBundleVerifier struct{}
-
-func (acceptingBundleVerifier) Name() string                   { return "bundle.test" }
-func (acceptingBundleVerifier) KeyHash() uint32                { return 1 }
-func (acceptingBundleVerifier) Verify(_ []byte, _ []byte) bool { return true }
-
 func TestVerifyStreamBundleAdvancesCheckpointOnlyAfterFullValidation(t *testing.T) {
 	vector := loadStreamBundleVector(t)
-	verifier := acceptingBundleVerifier{}
+	verifier, err := note.NewVerifier(vector.Trust.BundleVerifierKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	object, err := decodeJSONObject([]byte(vector.Bundle))
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := bundleObject(object, "state")
+	// A valid statement whose head is a bundled event but not the replayed head.
+	first, err := base64.RawURLEncoding.DecodeString(object["events"].([]any)[0].(map[string]any)["entry"].(string))
 	if err != nil {
 		t.Fatal(err)
 	}
-	state["logged_state"] = "REVOKED"
-	signature, err := bundleObject(object, "sig")
+	firstSigned, err := CanonicalFromEntry(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	signature["kid"] = fmt.Sprintf("%s+%08x", verifier.Name(), verifier.KeyHash())
-	invalid, err := canonicalJSON(object)
-	if err != nil {
-		t.Fatal(err)
-	}
+	invalid := signTestBundle(t, object, func(head *StreamHead) { head.HeadEventID = EventID(firstSigned) })
 	store := NewMemoryTrustedC2spCheckpointStore()
 	trust := StreamBundleTrust{
 		PolicyDocument:         []byte(vector.Policy),
@@ -138,13 +126,10 @@ func TestVerifyStreamBundleAdvancesCheckpointOnlyAfterFullValidation(t *testing.
 		MaxCheckpointAge:       time.Duration(vector.Trust.CheckpointFreshness) * time.Millisecond,
 		TrustedCheckpointStore: store,
 	}
-	if _, err := VerifyStreamBundle(context.Background(), invalid, trust); err == nil || !strings.Contains(err.Error(), "state does not match") {
-		t.Fatalf("VerifyStreamBundle state error = %v", err)
+	if _, err := VerifyStreamBundle(context.Background(), invalid, trust); err == nil || !strings.Contains(err.Error(), "does not end at the stream-head") {
+		t.Fatalf("VerifyStreamBundle head error = %v", err)
 	}
-	referenceText, err := bundleString(object, "lr")
-	if err != nil {
-		t.Fatal(err)
-	}
+	referenceText := testBundleHead(t, object).LR
 	reference, err := ParseReference(referenceText)
 	if err != nil {
 		t.Fatal(err)
@@ -157,11 +142,7 @@ func TestVerifyStreamBundleAdvancesCheckpointOnlyAfterFullValidation(t *testing.
 		t.Fatalf("checkpoint after rejected bundle = %#v, %v", checkpoint, err)
 	}
 
-	state["logged_state"] = vector.Expected.Status
-	valid, err := canonicalJSON(object)
-	if err != nil {
-		t.Fatal(err)
-	}
+	valid := []byte(vector.Bundle)
 	if _, err := VerifyStreamBundle(context.Background(), valid, trust); err != nil {
 		t.Fatalf("VerifyStreamBundle valid bundle: %v", err)
 	}
@@ -217,9 +198,8 @@ func TestFetchedStreamBundleSourceUsesBoundReferenceEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lr, _ := bundleString(object, "lr")
-	fqdn, _ := bundleString(object, "fqdn")
-	reference, err := ParseReference(lr)
+	fqdn := "agent.example.com"
+	reference, err := ParseReference(testBundleHead(t, object).LR)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +225,7 @@ func TestFetchedStreamBundleSourceUsesBoundReferenceEndpoint(t *testing.T) {
 	if len(entries) != vector.Expected.EventCount {
 		t.Fatalf("entries = %d, want %d", len(entries), vector.Expected.EventCount)
 	}
-	if want := reference.LogPrefix + "/streams/" + fqdn + "?format=bundle"; requested != want {
+	if want := reference.LogPrefix + "/streams/" + fqdn + "?format=bundle-v2"; requested != want {
 		t.Fatalf("bundle URL = %q, want %q", requested, want)
 	}
 }
@@ -446,7 +426,7 @@ func TestVerifyStreamBundleRejectsAmbiguousSignerKeyID(t *testing.T) {
 	}
 }
 
-func TestVerifyStreamBundleRejectsPythonInteropMutations(t *testing.T) {
+func TestVerifyStreamBundleRejectsMutations(t *testing.T) {
 	vector := loadStreamBundleVector(t)
 	verifier, err := note.NewVerifier(vector.Trust.BundleVerifierKey)
 	if err != nil {
@@ -459,37 +439,115 @@ func TestVerifyStreamBundleRejectsPythonInteropMutations(t *testing.T) {
 		MaxBundleLifetime: time.Duration(vector.Trust.MaxBundleLifetime) * time.Millisecond,
 		MaxCheckpointAge:  time.Duration(vector.Trust.CheckpointFreshness) * time.Millisecond,
 	}
-	for _, mutation := range vector.NegativeMutations {
-		t.Run(mutation.Name, func(t *testing.T) {
-			object, err := decodeJSONObject([]byte(vector.Bundle))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var value any
-			if len(mutation.Value) != 0 {
-				decoder := json.NewDecoder(bytes.NewReader(mutation.Value))
-				decoder.UseNumber()
-				if err := decoder.Decode(&value); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := applyBundleVectorMutation(object, mutation.Path, mutation.Append, value); err != nil {
-				t.Fatal(err)
-			}
-			mutated, err := canonicalJSON(object)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := VerifyStreamBundle(context.Background(), mutated, trust); err == nil {
-				t.Fatal("VerifyStreamBundle accepted negative cross-SDK mutation")
+	load := func(t *testing.T) map[string]any {
+		object, err := decodeJSONObject([]byte(vector.Bundle))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return object
+	}
+	events := func(object map[string]any) []any { return object["events"].([]any) }
+	setHead := func(text string) func(*testing.T, map[string]any) []byte {
+		return func(t *testing.T, object map[string]any) []byte {
+			object["head"] = signTestNote(t, "bundle.example", testStreamHeadSeed, []byte(text))
+			encoded, _ := json.Marshal(object)
+			return encoded
+		}
+	}
+	head := testBundleHead(t, load(t))
+	root := base64.StdEncoding.EncodeToString(head.RootHash)
+	valid := fmt.Sprintf("%s\nlr %s\ncheckpoint %d %s\nhead %s\nexpires %d\n", StreamHeadStatementType, head.LR, head.TreeSize, root, head.HeadEventID, head.Expires.Unix())
+	if _, err := VerifyStreamBundle(context.Background(), setHead(valid)(t, load(t)), trust); err != nil {
+		t.Fatalf("hand-built statement rejected: %v", err)
+	}
+	resign := func(edit func(*StreamHead)) func(*testing.T, map[string]any) []byte {
+		return func(t *testing.T, object map[string]any) []byte { return signTestBundle(t, object, edit) }
+	}
+	unsigned := func(edit func(map[string]any)) func(*testing.T, map[string]any) []byte {
+		return func(t *testing.T, object map[string]any) []byte {
+			edit(object)
+			encoded, _ := json.Marshal(object)
+			return encoded
+		}
+	}
+	for name, mutate := range map[string]func(*testing.T, map[string]any) []byte{
+		"padded head":        unsigned(func(o map[string]any) { o["head"] = o["head"].(string) + "=" }),
+		"version 1":          unsigned(func(o map[string]any) { o["v"] = json.Number("1") }),
+		"wrong type":         unsigned(func(o map[string]any) { o["type"] = "other" }),
+		"extra member":       unsigned(func(o map[string]any) { o["fqdn"] = "agent.example.com" }),
+		"missing member":     unsigned(func(o map[string]any) { delete(o, "events") }),
+		"out-of-order index": unsigned(func(o map[string]any) { events(o)[1].(map[string]any)["index"] = json.Number("0") }),
+		"index beyond tree":  unsigned(func(o map[string]any) { events(o)[1].(map[string]any)["index"] = json.Number("2") }),
+		"proof length":       unsigned(func(o map[string]any) { events(o)[0].(map[string]any)["proof"] = "AA" }),
+		"entry mismatch": unsigned(func(o map[string]any) {
+			events(o)[0].(map[string]any)["entry"] = events(o)[1].(map[string]any)["entry"]
+		}),
+		"omitted final event":  unsigned(func(o map[string]any) { o["events"] = events(o)[:1] }),
+		"omitted middle event": unsigned(func(o map[string]any) { o["events"] = events(o)[1:] }),
+		"unaccepted key": func(t *testing.T, o map[string]any) []byte {
+			text, _ := head.MarshalText()
+			o["head"] = signTestNote(t, "bundle.example", bytes.Repeat([]byte{9}, 32), text)
+			encoded, _ := json.Marshal(o)
+			return encoded
+		},
+		"log key": func(t *testing.T, o map[string]any) []byte {
+			text, _ := head.MarshalText()
+			o["head"] = signTestNote(t, "log.example", bytes.Repeat([]byte{4}, 32), text)
+			encoded, _ := json.Marshal(o)
+			return encoded
+		},
+		"lr mismatch":          resign(func(h *StreamHead) { h.LR = "c2sp-tlog:public:https://log.example#other" }),
+		"tree size mismatch":   resign(func(h *StreamHead) { h.TreeSize++ }),
+		"root mismatch":        resign(func(h *StreamHead) { h.RootHash = make([]byte, 32) }),
+		"expired":              resign(func(h *StreamHead) { h.Expires = time.Unix(vector.Trust.Now, 0) }),
+		"beyond lifetime":      resign(func(h *StreamHead) { h.Expires = time.Unix(vector.Trust.Now, 0).Add(24 * time.Hour) }),
+		"extra line":           setHead(valid + "extra\n"),
+		"missing line":         setHead(strings.Replace(valid, fmt.Sprintf("expires %d\n", head.Expires.Unix()), "", 1)),
+		"reordered lines":      setHead(strings.Replace(valid, "head "+head.HeadEventID+"\nexpires", "expires", 1) + "head " + head.HeadEventID + "\n"),
+		"leading zero":         setHead(strings.Replace(valid, fmt.Sprintf("checkpoint %d ", head.TreeSize), fmt.Sprintf("checkpoint 0%d ", head.TreeSize), 1)),
+		"double space":         setHead(strings.Replace(valid, "lr ", "lr  ", 1)),
+		"non-canonical root":   setHead(strings.Replace(valid, root, root[:len(root)-2]+string(root[len(root)-2]+1)+"=", 1)),
+		"wrong statement type": setHead(strings.Replace(valid, StreamHeadStatementType, "dnsid-c2sp-stream-head@v2", 1)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := VerifyStreamBundle(context.Background(), mutate(t, load(t)), trust); err == nil {
+				t.Fatal("VerifyStreamBundle accepted an invalid bundle")
 			}
 		})
 	}
 }
 
+func TestVerifyStreamBundleAcceptsReencodedBundle(t *testing.T) {
+	vector := loadStreamBundleVector(t)
+	verifier, err := note.NewVerifier(vector.Trust.BundleVerifierKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]any
+	decoder := json.NewDecoder(strings.NewReader(vector.Bundle))
+	decoder.UseNumber()
+	if err := decoder.Decode(&object); err != nil {
+		t.Fatal(err)
+	}
+	reencoded, err := json.MarshalIndent(object, " ", "\t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = VerifyStreamBundle(context.Background(), reencoded, StreamBundleTrust{
+		PolicyDocument:    []byte(vector.Policy),
+		BundleVerifiers:   []note.Verifier{verifier},
+		Now:               func() time.Time { return time.Unix(vector.Trust.Now, 0).UTC() },
+		MaxBundleLifetime: time.Duration(vector.Trust.MaxBundleLifetime) * time.Millisecond,
+		MaxCheckpointAge:  time.Duration(vector.Trust.CheckpointFreshness) * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("re-encoded bundle rejected: %v", err)
+	}
+}
+
 func loadStreamBundleVector(t *testing.T) streamBundleVector {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "c2sp-stream-bundle-logical-v1.json"))
+	data, err := os.ReadFile(filepath.Join("testdata", "c2sp-stream-bundle-v2.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,45 +556,6 @@ func loadStreamBundleVector(t *testing.T) streamBundleVector {
 		t.Fatal(err)
 	}
 	return vector
-}
-
-func applyBundleVectorMutation(object map[string]any, path, appendText string, value any) error {
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	var current any = object
-	for _, part := range parts[:len(parts)-1] {
-		switch node := current.(type) {
-		case map[string]any:
-			current = node[part]
-		case []any:
-			index, err := strconv.Atoi(part)
-			if err != nil || index < 0 || index >= len(node) {
-				return fmt.Errorf("invalid mutation path %q", path)
-			}
-			current = node[index]
-		default:
-			return fmt.Errorf("invalid mutation path %q", path)
-		}
-	}
-	last := parts[len(parts)-1]
-	set := func(old any) any {
-		if appendText == "" {
-			return value
-		}
-		return old.(string) + appendText
-	}
-	switch node := current.(type) {
-	case map[string]any:
-		node[last] = set(node[last])
-	case []any:
-		index, err := strconv.Atoi(last)
-		if err != nil || index < 0 || index >= len(node) {
-			return fmt.Errorf("invalid mutation path %q", path)
-		}
-		node[index] = set(node[index])
-	default:
-		return fmt.Errorf("invalid mutation path %q", path)
-	}
-	return nil
 }
 
 type discoveringSource struct {

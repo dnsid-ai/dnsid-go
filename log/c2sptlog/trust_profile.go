@@ -11,7 +11,8 @@ import (
 )
 
 // TrustProfile binds one exact C2SP log to its independently distributed trust
-// policy and accepted stream-bundle signers. Runtime freshness and resource
+// policy and accepted stream-head statement signers. BundleVerifierKeys keeps
+// its earlier name; the keys verify dnsid-c2sp-stream-head@v1 statements. Runtime freshness and resource
 // limits remain caller configuration.
 type TrustProfile struct {
 	Version            int      `json:"version"`
@@ -84,6 +85,9 @@ func (p TrustProfile) validate() ([]note.Verifier, error) {
 		seenKeys[string(publicKey)] = true
 		seenIDs[kid] = true
 		verifiers = append(verifiers, verifier)
+	}
+	if err := requireIndependentStreamHeadKeys(policy, verifiers); err != nil {
+		return nil, err
 	}
 	return verifiers, nil
 }

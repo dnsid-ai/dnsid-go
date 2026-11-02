@@ -23,7 +23,7 @@ const (
 // identity's untrusted lr value.
 type VerificationRegistryConfig struct {
 	// TrustProfile binds one exact scope and log prefix to an independently
-	// distributed policy document and bundle signer keys.
+	// distributed policy document and stream-head signer keys.
 	TrustProfile *TrustProfile
 	// PolicyDocument contains an independently trusted C2SP tlog-policy
 	// document. The bytes are parsed locally and are not fetched from the log.
@@ -62,7 +62,7 @@ type VerificationRegistryConfig struct {
 	// AllowedClockSkew permits this much future skew in checkpoint witness
 	// timestamps. Zero is the default and negative values are rejected.
 	AllowedClockSkew time.Duration
-	// BundleVerifiers are independently trusted stream-bundle signer keys.
+	// BundleVerifiers are independently trusted stream-head statement keys.
 	// When non-empty, bundles are preferred over raw global-log scans.
 	BundleVerifiers []note.Verifier
 	// MaxBundleLifetime is required when BundleVerifiers is non-empty.

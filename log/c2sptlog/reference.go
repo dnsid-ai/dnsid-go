@@ -22,6 +22,8 @@ const (
 	maxEntrySize   = 65535
 	maxJSONInteger = 9007199254740991
 	streamIDBytes  = 16
+	maxLRBytes     = 1024
+	maxOriginBytes = 255
 )
 
 // Reference is the parsed DNSid c2sp-tlog lr value:
@@ -95,6 +97,9 @@ func (r Reference) Validate() (err error) {
 	case strings.HasPrefix(r.Scope, "private-") && validPrivateScope(r.Scope):
 	default:
 		return fmt.Errorf("dnsid: invalid c2sp-tlog scope %q", r.Scope)
+	}
+	if len(r.String()) > maxLRBytes {
+		return fmt.Errorf("dnsid: c2sp-tlog reference exceeds %d bytes", maxLRBytes)
 	}
 	u, err := url.Parse(r.LogPrefix)
 	if err != nil || u == nil || !u.IsAbs() || u.Host == "" {
@@ -222,8 +227,8 @@ func (r Reference) Origin() (origin string, err error) {
 		host = net.JoinHostPort(u.Hostname(), u.Port())
 	}
 	origin = host + path
-	if strings.ContainsRune(origin, '+') || strings.IndexFunc(origin, unicode.IsSpace) >= 0 {
-		return "", fmt.Errorf("dnsid: c2sp-tlog origin is not a valid signed-note key name")
+	if len(origin) > maxOriginBytes || strings.ContainsRune(origin, '+') || strings.IndexFunc(origin, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return "", fmt.Errorf("dnsid: c2sp-tlog origin is not a valid tlog-cosignature log origin")
 	}
 	return origin, nil
 }

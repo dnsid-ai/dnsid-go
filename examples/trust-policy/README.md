@@ -3,7 +3,7 @@
 A verification-only manager with a 30-second status cache interval, one
 governance ID and entity-key pin, and an independently supplied C2SP trust
 profile. The profile contains the accepted log scope/prefix, checkpoint policy
-and stream-bundle signer keys. Checkpoint maximum age is 10 minutes; maximum
+and stream-head signer keys. Checkpoint maximum age is 10 minutes; maximum
 bundle lifetime is 5 minutes.
 
 From the SDK repository root:

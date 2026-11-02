@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,8 +110,11 @@ func TestManagedPartnersPolicyVerifiesPartnerCheckpoint(t *testing.T) {
 	}
 }
 
-// Reviewed service fixture from Identity-Digital/dnsid#2639, captured 2026-10-02.
-func TestManagedPartnersProfileVerifiesPartnerStreamBundle(t *testing.T) {
+// Reviewed service fixture from Identity-Digital/dnsid#2639, captured
+// 2026-10-02. It is a version 1 bundle, which verifiers must reject.
+// shortcut: no partner-signed v2 bundle exists yet; capture one after the
+// server serves format=bundle-v2 and assert that it verifies.
+func TestManagedPartnersProfileRejectsVersion1StreamBundle(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("testdata", "c2sp-partners-stream-bundle.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -123,18 +127,15 @@ func TestManagedPartnersProfileVerifiesPartnerStreamBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	verified, err := VerifyStreamBundle(context.Background(), data, StreamBundleTrust{
+	_, err = VerifyStreamBundle(context.Background(), data, StreamBundleTrust{
 		PolicyDocument:    []byte(profile.PolicyDocument),
 		BundleVerifier:    verifier,
 		Now:               func() time.Time { return time.Unix(1790958018-60, 0) },
 		MaxBundleLifetime: managedVerificationFreshness,
 		MaxCheckpointAge:  managedVerificationFreshness,
 	})
-	if err != nil {
-		t.Fatalf("pinned partners profile rejects a partner-signed stream bundle: %v", err)
-	}
-	if verified.Reference.LogPrefix != "https://log.partners.dnsid.ai" || verified.LoggedState != "ACTIVE" || len(verified.Events) != 1 {
-		t.Fatalf("unexpected partner bundle: %+v", verified)
+	if err == nil || !strings.Contains(err.Error(), "unknown or missing fields") {
+		t.Fatalf("partner version 1 bundle error = %v", err)
 	}
 }
 

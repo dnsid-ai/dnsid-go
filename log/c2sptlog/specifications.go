@@ -3,17 +3,17 @@ package c2sptlog
 // Exact C2SP versions and source revisions implemented by this binding.
 // Source revisions identify the named specification file in C2SP/C2SP.
 const (
-	C2SPCheckpointSpecification  = "https://c2sp.org/tlog-checkpoint@v1.0.0"
-	C2SPTilesSpecification       = "https://c2sp.org/tlog-tiles@v0.1.0"
-	C2SPProofRevision            = "ab17a74116563005f908b9167e6421cc929a5c2b"
-	C2SPPolicyRevision           = "1896a5aea5559b3203d275d0206d872f59348cf5"
-	C2SPWitnessSpecification     = "https://c2sp.org/tlog-witness@v1.0.0"
-	C2SPCosignatureSpecification = "https://c2sp.org/tlog-cosignature@v1.0.1"
-	C2SPMirrorRevision           = "d0fe789122c75b903bfc1680b0b8b8dc570f0db3"
-	C2SPSignedNoteSpecification  = "https://c2sp.org/signed-note@v1.0.0"
+	C2SPCheckpointSpecification  = "https://c2sp.org/tlog-checkpoint@v1.1.0"
+	C2SPTilesSpecification       = "https://c2sp.org/tlog-tiles@v1.0.0"
+	C2SPProofRevision            = "0fb2b5543ec04c7909dd58f00691c76dbebe4c6a"
+	C2SPPolicyRevision           = "9787c327021255dc0c273a7d0e957e420256f5f8"
+	C2SPWitnessSpecification     = "https://c2sp.org/tlog-witness@v1.1.0"
+	C2SPCosignatureSpecification = "https://c2sp.org/tlog-cosignature@v1.1.0"
+	C2SPMirrorSpecification      = "https://c2sp.org/tlog-mirror@v0.1.0"
+	C2SPSignedNoteSpecification  = "https://c2sp.org/signed-note@v1.1.0"
 	DNSidEventEnvelopeVersion    = 1
 	// DNSidMethodRevision pins the breaking logical-identity contract in dnsid-ietf-spec.
-	DNSidMethodRevision = "d5a65d06f76eff4db81e50f8767a600d2ca7fc2a"
+	DNSidMethodRevision = "972f5f19222e0a55e3ee8f8be28dd087764c144e"
 )
 
 // SpecificationVersions is a read-only snapshot of the exact standards
@@ -41,7 +41,7 @@ func PinnedSpecificationVersions() SpecificationVersions {
 		Policy:        C2SPPolicyRevision,
 		Witness:       C2SPWitnessSpecification,
 		Cosignature:   C2SPCosignatureSpecification,
-		Mirror:        C2SPMirrorRevision,
+		Mirror:        C2SPMirrorSpecification,
 		SignedNote:    C2SPSignedNoteSpecification,
 		EventEnvelope: DNSidEventEnvelopeVersion,
 	}

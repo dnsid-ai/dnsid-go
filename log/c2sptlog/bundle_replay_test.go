@@ -6,7 +6,11 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,8 +49,8 @@ func streamBundleWithCopies(t *testing.T) streamBundleVector {
 		proof := append(append([]byte(nil), leaves[i^1][:]...), parents[(i/2)^1][:]...)
 		events = append(events, map[string]any{"index": i, "entry": base64.RawURLEncoding.EncodeToString(entry), "proof": base64.RawURLEncoding.EncodeToString(proof)})
 	}
-	object["events"], object["complete_through_size"] = events, 4
-	checkpoint := fmt.Sprintf("log.example\n4\n%s\n", root)
+	object["events"] = events
+	checkpoint := fmt.Sprintf("log.example\n4\n%s\n", base64.StdEncoding.EncodeToString(root[:]))
 	var signatures string
 	for i, verifier := range []note.Verifier{policy.LogVerifier, policy.WitnessVerifiers[0]} {
 		input := []byte(checkpoint)
@@ -63,17 +67,84 @@ func streamBundleWithCopies(t *testing.T) streamBundleVector {
 	return v
 }
 
-func signTestBundle(t *testing.T, object map[string]any) []byte {
+// testStreamHeadSeed is the disposable Ed25519 seed of the fixture stream-head
+// key bundle.example+b0fef33a.
+var testStreamHeadSeed = bytes.Repeat([]byte{6}, 32)
+
+func signTestStreamHead(t *testing.T, head StreamHead) string {
 	t.Helper()
-	sig := object["sig"].(map[string]any)
-	delete(object, "sig")
-	unsigned, err := canonicalJSON(object)
+	text, err := head.MarshalText()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sig["value"] = base64.RawURLEncoding.EncodeToString(ed25519.Sign(ed25519.NewKeyFromSeed(bytes.Repeat([]byte{6}, 32)), unsigned))
-	object["sig"] = sig
-	encoded, err := canonicalJSON(object)
+	return signTestNote(t, "bundle.example", testStreamHeadSeed, text)
+}
+
+// signTestNote signs text as a signed note and returns it as unpadded base64url.
+func signTestNote(t *testing.T, name string, seed []byte, text []byte) string {
+	t.Helper()
+	public := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	verifierKey, err := note.NewEd25519VerifierKey(name, public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := note.NewVerifier(verifierKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signerKey := fmt.Sprintf("PRIVATE+KEY+%s+%08x+%s", name, verifier.KeyHash(), base64.StdEncoding.EncodeToString(append([]byte{1}, seed...)))
+	signer, err := note.NewSigner(signerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := note.Sign(&note.Note{Text: string(text)}, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(signed)
+}
+
+// testBundleHead returns the unverified statement carried by object.
+func testBundleHead(t *testing.T, object map[string]any) StreamHead {
+	t.Helper()
+	raw, err := base64.RawURLEncoding.DecodeString(object["head"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := note.Open(raw, note.VerifierList())
+	var unverified *note.UnverifiedNoteError
+	if !errors.As(err, &unverified) {
+		t.Fatalf("opening fixture head: %v", err)
+	}
+	opened = unverified.Note
+	head, err := ParseStreamHead([]byte(opened.Text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return head
+}
+
+// signTestBundle re-signs object's statement for its current checkpoint and
+// optionally changes the statement before signing.
+func signTestBundle(t *testing.T, object map[string]any, edits ...func(*StreamHead)) []byte {
+	t.Helper()
+	head := testBundleHead(t, object)
+	checkpoint, err := base64.RawURLEncoding.DecodeString(object["checkpoint"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitN(string(checkpoint), "\n", 4)
+	if head.TreeSize, err = strconv.ParseUint(lines[1], 10, 64); err != nil {
+		t.Fatal(err)
+	}
+	if head.RootHash, err = base64.StdEncoding.DecodeString(lines[2]); err != nil {
+		t.Fatal(err)
+	}
+	for _, edit := range edits {
+		edit(&head)
+	}
+	object["head"] = signTestStreamHead(t, head)
+	encoded, err := json.Marshal(object)
 	if err != nil {
 		t.Fatal(err)
 	}

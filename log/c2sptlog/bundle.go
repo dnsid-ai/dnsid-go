@@ -22,11 +22,10 @@ import (
 const (
 	// StreamBundleType is the required "type" value of a stream bundle.
 	StreamBundleType = "dnsid-c2sp-stream-bundle"
-	// StreamBundleVersion is the bundle format version this package
-	// produces and accepts.
-	StreamBundleVersion = 1
-	// StreamBundleTrustedIndex is the only supported completeness mode: the
-	// producer asserts the bundle is complete through the checkpoint size.
+	// StreamBundleVersion is the bundle format version this package accepts.
+	StreamBundleVersion = 2
+	// StreamBundleTrustedIndex is the completeness mode of a verified bundle:
+	// the stream-head signer asserts completeness through the checkpoint size.
 	StreamBundleTrustedIndex          = "trusted-index"
 	defaultMaxStreamBundleBytes       = 8 << 20
 	defaultMaxStreamBundleEvents      = 10000
@@ -35,9 +34,10 @@ const (
 )
 
 // StreamBundleTrust contains verifier-controlled inputs. PolicyDocument is
-// hashed byte-for-byte and parsed as tlog-policy; it is never taken from the
-// bundle. BundleVerifier is retained for single-key callers; BundleVerifiers
-// allows independently configured keys to overlap during signer rotation.
+// parsed as tlog-policy; it is never taken from the bundle. BundleVerifier and
+// BundleVerifiers are the accepted stream-head statement keys; several keys
+// may overlap during signer rotation. Their names must differ from every log
+// and witness name in the policy.
 type StreamBundleTrust struct {
 	PolicyDocument         []byte
 	BundleVerifier         note.Verifier
@@ -186,7 +186,7 @@ func (s *fetchedStreamBundleSource) load(ctx context.Context, reference Referenc
 	if maximum == 0 {
 		maximum = defaultMaxStreamBundleBytes
 	}
-	endpoint := reference.LogPrefix + "/streams/" + url.PathEscape(normalized) + "?format=bundle"
+	endpoint := reference.LogPrefix + "/streams/" + url.PathEscape(normalized) + "?format=bundle-v2"
 	data, err := fetchBounded(s.fetcher, ctx, endpoint, int64(maximum))
 	if err != nil {
 		if !s.requireBundle && s.fallback != nil && streamBundleFallbackAllowed(err) {
@@ -281,15 +281,15 @@ func (s *StreamBundleSource) RebuildCompleteHistory(_ context.Context, reference
 	}, nil
 }
 
-// VerifyStreamBundle verifies an offline stream bundle without network
-// access. It checks, in order: size and canonical JCS form, the accepted
-// bundle signer's Ed25519 signature, format version and type, expiry against
-// local time and MaxBundleLifetime, that the bundle's policy hash matches the
-// verifier-supplied PolicyDocument, and then replays every bundled entry
-// through full Client verification (inclusion proofs against the embedded
-// checkpoint, lifecycle signatures, and stream chain). The bundle's own
-// state summary must match the replayed result. Nothing in data is trusted
-// until all checks pass.
+// VerifyStreamBundle verifies an offline dnsid-c2sp-stream-bundle@v2 without
+// network access (method §12.1.3). It checks the exact member set, opens the
+// signed stream-head statement with the accepted verifiers, verifies the
+// checkpoint under PolicyDocument and requires it to match the statement,
+// replays every bundled entry through full Client verification (inclusion
+// proofs, lifecycle signatures, and stream chain), and requires the last
+// applied event ID to equal the statement head. Expiry is checked against
+// local time and MaxBundleLifetime. Nothing in data is trusted until all
+// checks pass. The bundle JSON need not be canonical.
 func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrust) (*VerifiedStreamBundle, error) {
 	ctx, cancel := dnsid.VerificationContext(ctx)
 	defer cancel()
@@ -300,58 +300,20 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if maxBytes < 1 || len(data) > maxBytes {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle exceeds size limit")
 	}
-	if trust.BundleVerifier == nil && len(trust.BundleVerifiers) == 0 {
+	verifiers := trust.BundleVerifiers
+	if trust.BundleVerifier != nil {
+		verifiers = append([]note.Verifier{trust.BundleVerifier}, verifiers...)
+	}
+	if len(verifiers) == 0 {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle verifier is required")
 	}
 	object, err := decodeJSONObject(data)
 	if err != nil {
 		return nil, fmt.Errorf("dnsid: parsing c2sp stream bundle: %w", err)
 	}
-	if err := requireExactFields(object, "checkpoint", "complete_through_size", "completeness_mode", "events", "expires", "fqdn", "lr", "policy_hash", "sig", "state", "type", "v"); err != nil {
+	if err := requireExactFields(object, "checkpoint", "events", "head", "type", "v"); err != nil {
 		return nil, err
 	}
-	canonical, err := canonicalJSON(object)
-	if err != nil || !bytes.Equal(canonical, data) {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle is not canonical JCS")
-	}
-
-	sigObject, err := bundleObject(object, "sig")
-	if err != nil {
-		return nil, err
-	}
-	if err := requireExactFields(sigObject, "alg", "kid", "value"); err != nil {
-		return nil, err
-	}
-	alg, err := bundleString(sigObject, "alg")
-	if err != nil || alg != "EdDSA" {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle signature algorithm must be EdDSA")
-	}
-	kid, err := bundleString(sigObject, "kid")
-	if err != nil {
-		return nil, err
-	}
-	verifier := acceptedBundleVerifier(trust, kid)
-	if verifier == nil {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle signer is not accepted")
-	}
-	signatureText, err := bundleString(sigObject, "value")
-	if err != nil {
-		return nil, err
-	}
-	signature, err := decodeBundleBase64("sig.value", signatureText, 64, 64)
-	if err != nil {
-		return nil, err
-	}
-	delete(object, "sig")
-	unsigned, err := canonicalJSON(object)
-	if err != nil {
-		return nil, err
-	}
-	object["sig"] = sigObject
-	if !verifier.Verify(unsigned, signature) {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle signature verification failed")
-	}
-
 	version, err := bundleUint(object, "v")
 	if err != nil || version != StreamBundleVersion {
 		return nil, fmt.Errorf("dnsid: unsupported c2sp stream bundle version")
@@ -360,19 +322,30 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if err != nil || typeName != StreamBundleType {
 		return nil, fmt.Errorf("dnsid: unsupported c2sp stream bundle type")
 	}
-	mode, err := bundleString(object, "completeness_mode")
-	if err != nil || mode != StreamBundleTrustedIndex {
-		return nil, fmt.Errorf("dnsid: unsupported c2sp stream bundle completeness mode")
-	}
-	fqdn, err := bundleString(object, "fqdn")
+	policy, err := ParsePolicy(trust.PolicyDocument)
 	if err != nil {
 		return nil, err
 	}
-	referenceText, err := bundleString(object, "lr")
+	if err := requireIndependentStreamHeadKeys(policy, verifiers); err != nil {
+		return nil, err
+	}
+	policy.Now = trust.Now
+	policy.MaxCheckpointAge = trust.MaxCheckpointAge
+	policy.ClockSkew = trust.ClockSkew
+
+	headText, err := bundleString(object, "head")
 	if err != nil {
 		return nil, err
 	}
-	reference, err := ParseReference(referenceText)
+	headNote, err := decodeBundleBase64("head", headText, 1, maxBytes)
+	if err != nil {
+		return nil, err
+	}
+	head, signerKeyID, err := OpenStreamHead(headNote, verifiers)
+	if err != nil {
+		return nil, err
+	}
+	reference, err := ParseReference(head.LR)
 	if err != nil {
 		return nil, err
 	}
@@ -381,37 +354,13 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if trust.Now != nil {
 		now = trust.Now()
 	}
-	expiresUnix, err := bundleUint(object, "expires")
-	if err != nil {
-		return nil, err
-	}
-	expires := time.Unix(int64(expiresUnix), 0).UTC()
+	expires := head.Expires
 	if !expires.After(now) {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle expired")
 	}
 	if trust.MaxBundleLifetime <= 0 {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle maximum lifetime is required")
 	}
-
-	policyHashText, err := bundleString(object, "policy_hash")
-	if err != nil {
-		return nil, err
-	}
-	policyHash, err := decodeBundleBase64("policy_hash", policyHashText, sha256.Size, sha256.Size)
-	if err != nil {
-		return nil, err
-	}
-	wantPolicyHash := sha256.Sum256(trust.PolicyDocument)
-	if !bytes.Equal(policyHash, wantPolicyHash[:]) {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle policy hash mismatch")
-	}
-	policy, err := ParsePolicy(trust.PolicyDocument)
-	if err != nil {
-		return nil, err
-	}
-	policy.Now = trust.Now
-	policy.MaxCheckpointAge = trust.MaxCheckpointAge
-	policy.ClockSkew = trust.ClockSkew
 
 	checkpointText, err := bundleString(object, "checkpoint")
 	if err != nil {
@@ -421,65 +370,62 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if err != nil {
 		return nil, err
 	}
-	completeThrough, err := bundleUint(object, "complete_through_size")
-	if err != nil {
-		return nil, err
-	}
 	maxTreeSize := trust.MaxTreeSize
 	if maxTreeSize == 0 {
 		maxTreeSize = defaultScanMaxTreeSize
 	}
-	if completeThrough > maxTreeSize {
+	if head.TreeSize > maxTreeSize {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle checkpoint exceeds configured tree-size maximum")
+	}
+	accepted, err := policy.verifyCheckpoint(reference, checkpoint)
+	if err != nil {
+		return nil, err
+	}
+	if accepted.Checkpoint.Size != head.TreeSize || !bytes.Equal(accepted.Checkpoint.Hash, head.RootHash) {
+		return nil, fmt.Errorf("dnsid: c2sp stream bundle checkpoint does not match stream-head statement")
+	}
+	if expires.After(accepted.CheckpointFreshnessTime.Add(trust.MaxBundleLifetime)) {
+		return nil, fmt.Errorf("dnsid: c2sp stream bundle lifetime exceeds checkpoint-relative policy")
 	}
 	entries, err := parseBundleEntries(object["events"], checkpoint, trust.MaxEvents)
 	if err != nil {
 		return nil, err
 	}
-	if len(entries) == 0 {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle requires events")
+	fqdn, err := streamHeadDomain(entries, head.HeadEventID)
+	if err != nil {
+		return nil, err
 	}
 	source := &StreamBundleSource{reference: reference, domain: fqdn, entries: entries}
 	clientOptions := []Option{WithSource(source), WithPolicy(policy), WithMigrationVerificationLimits(trust.MigrationLimits)}
 	if trust.MigrationVerifier != nil {
 		clientOptions = append(clientOptions, WithMigrationVerifier(trust.MigrationVerifier))
 	}
-	client, err := New(referenceText, clientOptions...)
+	client, err := New(head.LR, clientOptions...)
 	if err != nil {
 		return nil, err
 	}
-	events, err := client.RebuildHistory(ctx, fqdn)
+	applied, events, err := client.rebuildVerifiedHistory(ctx, fqdn)
 	if err != nil {
 		return nil, err
 	}
-	proof, err := policy.VerifyProof(reference, entries[0].Entry, entries[0].Proof)
-	if err != nil {
-		return nil, err
-	}
-	if expires.After(proof.CheckpointFreshnessTime.Add(trust.MaxBundleLifetime)) {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle lifetime exceeds checkpoint-relative policy")
-	}
-	if completeThrough != proof.Checkpoint.Size {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle complete_through_size does not match checkpoint")
+	if len(applied) == 0 || EventID(applied[len(applied)-1].signed) != head.HeadEventID {
+		return nil, fmt.Errorf("dnsid: c2sp stream bundle replay does not end at the stream-head statement head")
 	}
 	source.checkpoint = append([]byte(nil), checkpoint...)
-	source.completeThrough = completeThrough
-	source.completenessMode = mode
-	source.checkpointFreshness = proof.CheckpointFreshnessTime
+	source.completeThrough = accepted.Checkpoint.Size
+	source.completenessMode = StreamBundleTrustedIndex
+	source.checkpointFreshness = accepted.CheckpointFreshnessTime
 	snapshot, err := dnsidlog.NewDomainLog(fqdn, events).SnapshotAt(now)
 	if err != nil {
-		return nil, err
-	}
-	if err := verifyBundleState(object["state"], snapshot, events); err != nil {
 		return nil, err
 	}
 	if trust.TrustedCheckpointStore != nil {
 		client.checkpointStore = trust.TrustedCheckpointStore
 		if err := client.advanceTrustedCheckpoint(ctx, TrustedC2spCheckpoint{
-			Origin:      proof.Checkpoint.Origin,
-			TreeSize:    proof.Checkpoint.Size,
-			RootHash:    append([]byte(nil), proof.Checkpoint.Hash...),
-			WitnessTime: proof.CheckpointWitnessTime,
+			Origin:      accepted.Checkpoint.Origin,
+			TreeSize:    accepted.Checkpoint.Size,
+			RootHash:    append([]byte(nil), accepted.Checkpoint.Hash...),
+			WitnessTime: accepted.CheckpointWitnessTime,
 		}); err != nil {
 			return nil, logVerificationError(err, false)
 		}
@@ -502,27 +448,46 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 		Snapshot:            snapshot,
 		LoggedState:         snapshot.HistoricalState.String(),
 		Expires:             expires,
-		CompleteThroughSize: completeThrough,
-		SignerKeyID:         kid,
+		CompleteThroughSize: accepted.Checkpoint.Size,
+		SignerKeyID:         signerKeyID,
 		Source:              source,
 	}, nil
 }
 
-func acceptedBundleVerifier(trust StreamBundleTrust, kid string) note.Verifier {
-	verifiers := trust.BundleVerifiers
-	if trust.BundleVerifier != nil {
-		verifiers = append([]note.Verifier{trust.BundleVerifier}, verifiers...)
-	}
-	var accepted note.Verifier
-	for _, verifier := range verifiers {
-		if verifier != nil && kid == fmt.Sprintf("%s+%08x", verifier.Name(), verifier.KeyHash()) {
-			if accepted != nil {
-				return nil
-			}
-			accepted = verifier
+// streamHeadDomain returns the FQDN of the bundled entry whose logical event
+// ID is the statement head. Replay then authenticates that entry.
+func streamHeadDomain(entries []ProvenEntry, headID string) (string, error) {
+	for _, entry := range entries {
+		signed, err := CanonicalFromEntry(entry.Entry)
+		if err != nil || EventID(signed) != headID {
+			continue
+		}
+		if event, err := LogEventFromEntry(entry.Entry); err == nil {
+			return event.Domain, nil
 		}
 	}
-	return accepted
+	return "", fmt.Errorf("dnsid: c2sp stream bundle does not contain the stream-head event")
+}
+
+// requireIndependentStreamHeadKeys rejects a stream-head key whose name is a
+// log origin or witness name in the policy (method §12.1.1).
+func requireIndependentStreamHeadKeys(policy Policy, verifiers []note.Verifier) error {
+	names := map[string]bool{}
+	if policy.LogVerifier != nil {
+		names[policy.LogVerifier.Name()] = true
+	}
+	for _, witness := range policy.WitnessVerifiers {
+		names[witness.Name()] = true
+	}
+	for _, verifier := range verifiers {
+		if verifier == nil {
+			return fmt.Errorf("dnsid: c2sp stream bundle verifier must not be nil")
+		}
+		if names[verifier.Name()] {
+			return fmt.Errorf("dnsid: c2sp stream-head key name must differ from every policy log and witness name")
+		}
+	}
+	return nil
 }
 
 func parseBundleEntries(value any, checkpoint []byte, configuredMax int) ([]ProvenEntry, error) {
@@ -584,32 +549,6 @@ func parseBundleEntries(value any, checkpoint []byte, configuredMax int) ([]Prov
 	return entries, nil
 }
 
-func verifyBundleState(value any, snapshot *dnsidlog.DomainSnapshot, events []dnsidlog.LogEvent) error {
-	state, ok := value.(map[string]any)
-	if !ok {
-		return fmt.Errorf("dnsid: c2sp stream bundle state must be an object")
-	}
-	if err := requireExactFields(state, "event_count", "last_event_type", "logged_state"); err != nil {
-		return err
-	}
-	count, err := bundleUint(state, "event_count")
-	if err != nil {
-		return err
-	}
-	lastType, err := bundleString(state, "last_event_type")
-	if err != nil {
-		return err
-	}
-	loggedState, err := bundleString(state, "logged_state")
-	if err != nil {
-		return err
-	}
-	if count != uint64(len(events)) || len(events) == 0 || lastType != string(events[len(events)-1].Type) || loggedState != snapshot.HistoricalState.String() {
-		return fmt.Errorf("dnsid: c2sp stream bundle state does not match replay")
-	}
-	return nil
-}
-
 func requireExactFields(object map[string]any, fields ...string) error {
 	if len(object) != len(fields) {
 		return fmt.Errorf("dnsid: c2sp stream bundle contains unknown or missing fields")
@@ -626,14 +565,6 @@ func bundleString(object map[string]any, field string) (string, error) {
 	value, ok := object[field].(string)
 	if !ok {
 		return "", fmt.Errorf("dnsid: c2sp stream bundle field %q must be a string", field)
-	}
-	return value, nil
-}
-
-func bundleObject(object map[string]any, field string) (map[string]any, error) {
-	value, ok := object[field].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("dnsid: c2sp stream bundle field %q must be an object", field)
 	}
 	return value, nil
 }

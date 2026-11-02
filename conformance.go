@@ -1,6 +1,6 @@
 package dnsid
 
-const c2spTLogBinding = "profile=1;tlog-checkpoint=https://c2sp.org/tlog-checkpoint@v1.0.0;tlog-tiles=https://c2sp.org/tlog-tiles@v0.1.0;tlog-proof=ab17a74116563005f908b9167e6421cc929a5c2b;tlog-policy=1896a5aea5559b3203d275d0206d872f59348cf5;tlog-witness=https://c2sp.org/tlog-witness@v1.0.0;tlog-cosignature=https://c2sp.org/tlog-cosignature@v1.0.1;tlog-mirror=d0fe789122c75b903bfc1680b0b8b8dc570f0db3;signed-note=https://c2sp.org/signed-note@v1.0.0;dnsid-method=d5a65d06f76eff4db81e50f8767a600d2ca7fc2a"
+const c2spTLogBinding = "profile=1;tlog-checkpoint=https://c2sp.org/tlog-checkpoint@v1.1.0;tlog-tiles=https://c2sp.org/tlog-tiles@v1.0.0;tlog-proof=0fb2b5543ec04c7909dd58f00691c76dbebe4c6a;tlog-policy=9787c327021255dc0c273a7d0e957e420256f5f8;tlog-witness=https://c2sp.org/tlog-witness@v1.1.0;tlog-cosignature=https://c2sp.org/tlog-cosignature@v1.1.0;tlog-mirror=https://c2sp.org/tlog-mirror@v0.1.0;signed-note=https://c2sp.org/signed-note@v1.1.0;dnsid-method=972f5f19222e0a55e3ee8f8be28dd087764c144e"
 
 // SDKConformanceMetadata describes the exact protocol behavior and log-binding
 // revisions implemented by this SDK release.

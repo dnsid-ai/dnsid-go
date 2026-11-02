@@ -55,6 +55,30 @@ failed attempts from `RegistrationError` with the same request and key; a failur
 does not establish that no agent exists. Publication configuration is not trust
 policy. Managed Live remains the separate HTTP 202 operation.
 
+### Unreleased: breaking C2SP stream bundle v2 and C2SP pin update
+
+This SDK targets DNSid C2SP method revision
+`972f5f19222e0a55e3ee8f8be28dd087764c144e`.
+
+- `VerifyStreamBundle` accepts only `dnsid-c2sp-stream-bundle@v2` and rejects
+  version 1 bundles. The indexer signs only a `dnsid-c2sp-stream-head@v1`
+  signed-note statement (`StreamHead`, `OpenStreamHead`); the members `sig`,
+  `policy_hash`, `fqdn`, `lr`, `state`, `expires`, `complete_through_size`,
+  and `completeness_mode` are removed. The bundle JSON need not be JCS.
+- The bundle source fetches `{log-prefix}/streams/{fqdn}?format=bundle-v2`.
+  Servers must serve v2 there before clients upgrade; a 404 falls back to
+  scanning in preferred-bundle mode.
+- `BundleVerifiers` and `bundle_verifier_keys` keep their names and now verify
+  stream-head statements. Their key names must differ from every log origin and
+  witness name in the policy.
+- C2SP pins move to `tlog-checkpoint@v1.1.0`, `tlog-tiles@v1.0.0`,
+  `tlog-witness@v1.1.0`, `tlog-cosignature@v1.1.0`, `signed-note@v1.1.0`,
+  `tlog-mirror@v0.1.0`, and the latest `tlog-proof` and `tlog-policy`
+  revisions. `C2SPMirrorRevision` is renamed `C2SPMirrorSpecification`.
+- Checkpoints, signed notes, and `tlog-proof` values with non-canonical base64
+  or integers are rejected. An `lr` longer than 1024 bytes, or an origin longer
+  than 255 bytes or with control characters, is rejected.
+
 ### Since v0.36.0: breaking C2SP logical-identity correction
 
 This SDK targets DNSid C2SP method revision
@@ -83,11 +107,9 @@ envelope `v:1`, bundle `@v1`, and base C2SP dependency pins are unchanged.
   require a nonempty `kid`. See [OPERATIONS.md](OPERATIONS.md) for peer inputs,
   explicit duration options, cache namespaces, and resource limits.
 
-CI pins the shared compliance workflow to a commit. The checked-in corrected bundle
-is copied verbatim from `dnsid-sdk-compliance/fixtures/c2sp-stream-bundle-logical-v1.json`;
-regeneration belongs there, not in this SDK. The old bundle remains only a
-rejection regression. Shared selection and portable-bundle tests cover the
-corrected chains; they do not establish full recursive-migration interoperability.
+CI pins the shared compliance workflow to a commit. Shared selection and
+portable-bundle tests cover the corrected chains; they do not establish full
+recursive-migration interoperability.
 
 ### Migrating from the standalone `log/c2sptlog` module
 

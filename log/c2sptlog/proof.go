@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
@@ -74,6 +75,10 @@ func (p Policy) VerifyProof(ref Reference, entry, rawProof []byte) (*VerifiedPro
 	if err := proof.Unmarshal(rawProof); err != nil {
 		return nil, fmt.Errorf("dnsid: parsing c2sp-tlog proof: %w", err)
 	}
+	// The parser decodes base64 and integers leniently; tlog-proof requires canonical encodings.
+	if !bytes.Equal(proof.Marshal(), rawProof) {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog proof is not canonically encoded")
+	}
 	verified, err := p.verifyCheckpoint(ref, proof.Checkpoint)
 	if err != nil {
 		return nil, err
@@ -112,9 +117,16 @@ func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (verified 
 	if err != nil {
 		return nil, err
 	}
+	if err := requireCanonicalNoteSignatures(rawCheckpoint); err != nil {
+		return nil, err
+	}
 	cp, _, checkpointNote, err := formatlog.ParseCheckpoint(rawCheckpoint, origin, p.LogVerifier, p.WitnessVerifiers...)
 	if err != nil {
 		return nil, fmt.Errorf("dnsid: verifying c2sp-tlog checkpoint: %w", err)
+	}
+	// The parser accepts leading zeros and non-canonical base64; tlog-checkpoint v1.1.0 does not.
+	if !strings.HasPrefix(checkpointNote.Text, string(cp.Marshal())) {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint size or root hash is not canonical")
 	}
 	if cp.Size > math.MaxInt64 {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint size exceeds int64 range")

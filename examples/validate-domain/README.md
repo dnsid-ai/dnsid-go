@@ -3,7 +3,7 @@
 Verifies a DNSid domain with an `IdentityManager` built entirely from the
 `DNSID_*` environment via `config.IdentityManagerFromEnvironment`. Prefer an
 independently distributed trust profile containing the exact log policy and all
-accepted stream-bundle signer keys:
+accepted stream-head signer keys:
 
 ```sh
 DNSID_LOG_TRUST_PROFILE_FILE=/etc/dnsid/production-trust.json \
@@ -13,7 +13,7 @@ DNSID_LOG_TRUST_PROFILE_FILE=/etc/dnsid/production-trust.json \
 The version 1 JSON profile contains `version`, `scope`, `log_prefix`,
 `tlog_policy`, and `bundle_verifier_keys`. The key array permits old and new
 signers to overlap during rotation. A profile enables verified stream bundles
-with raw-log scan fallback; the bundle signer keys come only from the profile,
+with raw-log scan fallback; the stream-head signer keys come only from the profile,
 never from the log origin.
 
 A bare policy is also accepted, as a file or an HTTPS URL. Exactly one trust

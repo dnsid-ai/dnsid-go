@@ -7,14 +7,14 @@ import (
 
 func TestPinnedSpecificationVersions(t *testing.T) {
 	want := SpecificationVersions{
-		Checkpoint:    "https://c2sp.org/tlog-checkpoint@v1.0.0",
-		Tiles:         "https://c2sp.org/tlog-tiles@v0.1.0",
-		Proof:         "ab17a74116563005f908b9167e6421cc929a5c2b",
-		Policy:        "1896a5aea5559b3203d275d0206d872f59348cf5",
-		Witness:       "https://c2sp.org/tlog-witness@v1.0.0",
-		Cosignature:   "https://c2sp.org/tlog-cosignature@v1.0.1",
-		Mirror:        "d0fe789122c75b903bfc1680b0b8b8dc570f0db3",
-		SignedNote:    "https://c2sp.org/signed-note@v1.0.0",
+		Checkpoint:    "https://c2sp.org/tlog-checkpoint@v1.1.0",
+		Tiles:         "https://c2sp.org/tlog-tiles@v1.0.0",
+		Proof:         "0fb2b5543ec04c7909dd58f00691c76dbebe4c6a",
+		Policy:        "9787c327021255dc0c273a7d0e957e420256f5f8",
+		Witness:       "https://c2sp.org/tlog-witness@v1.1.0",
+		Cosignature:   "https://c2sp.org/tlog-cosignature@v1.1.0",
+		Mirror:        "https://c2sp.org/tlog-mirror@v0.1.0",
+		SignedNote:    "https://c2sp.org/signed-note@v1.1.0",
 		EventEnvelope: 1,
 	}
 	if got := PinnedSpecificationVersions(); !reflect.DeepEqual(got, want) {

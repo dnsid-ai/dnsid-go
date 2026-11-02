@@ -323,7 +323,7 @@ func TestRebuildHistory_AuthenticatesBeforeRejectingSemanticErrors(t *testing.T)
 }
 
 func TestHistoricalBundle_IsNotCorrectedChainEvidence(t *testing.T) {
-	data, err := os.ReadFile("testdata/c2sp-stream-bundle-v1.json")
+	data, err := os.ReadFile("testdata/c2sp-stream-bundle-precorrection-v2.json")
 	if err != nil {
 		t.Fatal(err)
 	}
