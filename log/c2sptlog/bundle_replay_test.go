@@ -113,12 +113,12 @@ func testBundleHead(t *testing.T, object map[string]any) StreamHead {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opened, err := note.Open(raw, note.VerifierList())
+	_, err = note.Open(raw, note.VerifierList())
 	var unverified *note.UnverifiedNoteError
 	if !errors.As(err, &unverified) {
 		t.Fatalf("opening fixture head: %v", err)
 	}
-	opened = unverified.Note
+	opened := unverified.Note
 	head, err := ParseStreamHead([]byte(opened.Text))
 	if err != nil {
 		t.Fatal(err)
