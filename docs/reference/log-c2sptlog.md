@@ -68,6 +68,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(c \*Client\) Canonical\(event dnsidlog.LogEvent\) \(\[\]byte, error\)](<#Client.Canonical>)
   - [func \(c \*Client\) CanonicalWithChain\(event dnsidlog.LogEvent, chain Chain\) \(\[\]byte, error\)](<#Client.CanonicalWithChain>)
   - [func \(c \*Client\) ChainForWrite\(ctx context.Context, event dnsidlog.LogEvent\) \(Chain, error\)](<#Client.ChainForWrite>)
+  - [func \(c \*Client\) CheckAppend\(ctx context.Context, history \[\]\[\]byte, candidate \[\]byte\) \(StreamHead, error\)](<#Client.CheckAppend>)
   - [func \(c \*Client\) EntryBytes\(event dnsidlog.LogEvent\) \(\[\]byte, error\)](<#Client.EntryBytes>)
   - [func \(c \*Client\) EntryBytesWithChain\(event dnsidlog.LogEvent, chain Chain\) \(\[\]byte, error\)](<#Client.EntryBytesWithChain>)
   - [func \(c \*Client\) KeyTimestamp\(ctx context.Context, domain, keyThumbprint string\) \(timestamp time.Time, err error\)](<#Client.KeyTimestamp>)
@@ -94,6 +95,8 @@ See https://docs.dnsid.ai for protocol guides and account setup.
 - [type ContextTrustedC2spCheckpointStore](<#ContextTrustedC2spCheckpointStore>)
 - [type DnsidManagedVerificationConfig](<#DnsidManagedVerificationConfig>)
 - [type GlobalCandidateSource](<#GlobalCandidateSource>)
+- [type LifecycleState](<#LifecycleState>)
+  - [func \(s LifecycleState\) Hash\(\) string](<#LifecycleState.Hash>)
 - [type LocalPublicationVerifier](<#LocalPublicationVerifier>)
 - [type ManagedIssuanceActivationController](<#ManagedIssuanceActivationController>)
 - [type ManagedIssuanceActivationControllerFunc](<#ManagedIssuanceActivationControllerFunc>)
@@ -186,6 +189,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(s \*StreamBundleSource\) RebuildCompleteHistory\(\_ context.Context, reference Reference, domain string\) \(CompleteHistoryResult, error\)](<#StreamBundleSource.RebuildCompleteHistory>)
   - [func \(s \*StreamBundleSource\) RebuildHistory\(\_ context.Context, reference Reference, domain string\) \(\[\]ProvenEntry, error\)](<#StreamBundleSource.RebuildHistory>)
 - [type StreamBundleTrust](<#StreamBundleTrust>)
+- [type StreamHead](<#StreamHead>)
 - [type TrustProfile](<#TrustProfile>)
   - [func ParseTrustProfile\(data \[\]byte\) \(TrustProfile, error\)](<#ParseTrustProfile>)
 - [type TrustedC2spCheckpoint](<#TrustedC2spCheckpoint>)
@@ -238,7 +242,7 @@ const (
     C2SPSignedNoteSpecification  = "https://c2sp.org/signed-note@v1.0.0"
     DNSidEventEnvelopeVersion    = 1
     // DNSidMethodRevision pins the breaking logical-identity contract in dnsid-ietf-spec.
-    DNSidMethodRevision = "d5a65d06f76eff4db81e50f8767a600d2ca7fc2a"
+    DNSidMethodRevision = "1cd7119c901012f3dc15e09d2f6e2c847d2831ed"
 )
 ```
 
@@ -569,6 +573,17 @@ func (c *Client) ChainForWrite(ctx context.Context, event dnsidlog.LogEvent) (Ch
 
 ChainForWrite derives the logical stream\-chain metadata for event from the client's verified history. ISSUANCE derives seq=0 without reading history.
 
+<a name="Client.CheckAppend"></a>
+### func \(\*Client\) [CheckAppend](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/check_append.go#L58>)
+
+```go
+func (c *Client) CheckAppend(ctx context.Context, history [][]byte, candidate []byte) (StreamHead, error)
+```
+
+CheckAppend reports whether candidate, appended after history, is applied as the stream's next logical event, and returns the head after it. history is the stream's entries in log order. Replay uses the same rules as verification, without inclusion proofs, checkpoints, or inbound MIGRATION support: a MIGRATION candidate is never applied.
+
+Errors are \*dnsid.ParseError or \*dnsid.ValidationError for malformed entries or entries for another stream, and \*dnsid.VerificationError otherwise: VerificationCodeSignatureInvalid when the candidate is not authorized by the stream's keys, VerificationCodeChainContinuity for a stale or unknown predecessor, VerificationCodeTerminalState, VerificationCodeDuplicateIssuance, or VerificationCodeKeyContinuity for an invalid transition, and VerificationCodeInvalidEvidence for other invalid candidates. History that does not replay cleanly is an error.
+
 <a name="Client.EntryBytes"></a>
 ### func \(\*Client\) [EntryBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L412>)
 
@@ -831,6 +846,29 @@ type GlobalCandidateSource interface {
     GlobalCandidates() bool
 }
 ```
+
+<a name="LifecycleState"></a>
+## type [LifecycleState](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/check_append.go#L14-L19>)
+
+LifecycleState is a stream's computed state after a logical event \(method Section 13\). Its Hash is the next event's prev\_state\_hash.
+
+```go
+type LifecycleState struct {
+    FQDN             string
+    Status           string // ACTIVE, REVOKED, or RETIRED
+    EntityThumb      string
+    OperationalThumb string
+}
+```
+
+<a name="LifecycleState.Hash"></a>
+### func \(LifecycleState\) [Hash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/check_append.go#L31>)
+
+```go
+func (s LifecycleState) Hash() string
+```
+
+Hash returns base64url\-no\-pad\(SHA\-256\("dnsid\-c2sp\-state\-v1" || JCS\(state\)\)\).
 
 <a name="LocalPublicationVerifier"></a>
 ## type [LocalPublicationVerifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L97-L99>)
@@ -1888,6 +1926,22 @@ type StreamBundleTrust struct {
     TrustedCheckpointStore TrustedC2spCheckpointStore
     MigrationVerifier      MigrationVerifier
     MigrationLimits        MigrationVerificationLimits
+}
+```
+
+<a name="StreamHead"></a>
+## type [StreamHead](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/check_append.go#L35-L42>)
+
+StreamHead is the last applied logical event of a stream and the state it leaves.
+
+```go
+type StreamHead struct {
+    Seq     uint64
+    EventID string
+    Type    dnsidlog.LogEventType
+    State   LifecycleState
+    // GovernanceID is the gi recorded by the stream's genesis.
+    GovernanceID string
 }
 ```
 
