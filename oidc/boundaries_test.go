@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dnsid-ai/dnsid-go"
@@ -28,15 +29,18 @@ func TestOIDC_StrictCompactAndDateBoundaries(t *testing.T) {
 			t.Fatalf("fraction/zero lost: %v", v)
 		}
 	}
-	now := float64(time.Now().UnixNano()) / 1e9
-	for _, claims := range []map[string]any{{"iat": now - 1, "exp": now}, {"iat": now + .1, "exp": now + 60}, {"iat": now - 1, "exp": now + 60, "nbf": now + .1}} {
-		if err := validateTimes(claims, 0); err == nil {
-			t.Fatalf("accepted invalid time %v", claims)
+	// Freeze time at an exact second so float rounding cannot move exp into the future.
+	synctest.Test(t, func(t *testing.T) {
+		now := float64(time.Now().Unix())
+		for _, claims := range []map[string]any{{"iat": now - 1, "exp": now}, {"iat": now + .1, "exp": now + 60}, {"iat": now - 1, "exp": now + 60, "nbf": now + .1}} {
+			if err := validateTimes(claims, 0); err == nil {
+				t.Fatalf("accepted invalid time %v", claims)
+			}
 		}
-	}
-	if err := validateTimes(map[string]any{"iat": now - 1, "exp": now}, time.Hour); err == nil {
-		t.Fatal("skew extended expiry")
-	}
+		if err := validateTimes(map[string]any{"iat": now - 1, "exp": now}, time.Hour); err == nil {
+			t.Fatal("skew extended expiry")
+		}
+	})
 	for _, cfg := range []Config{{ClockSkew: -1}, {AssertionLifetime: -1}, {MaxAssertionLifetime: -1}, Config{}.WithAssertionLifetime(0), Config{}.WithMaxAssertionLifetime(0)} {
 		if _, err := New(nil, "example.com", dnsid.GenerateES256KeyProvider(), cfg).CreateOIDCAssertion(OIDCAssertionOptions{Issuer: "https://issuer.example"}); err == nil {
 			t.Fatalf("accepted invalid config: %v", cfg)
