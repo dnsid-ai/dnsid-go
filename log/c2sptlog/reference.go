@@ -83,6 +83,8 @@ func ParseReference(lr string) (refResult Reference, err error) {
 // scope, an absolute lowercase http(s) LogPrefix with no userinfo, query,
 // fragment, dot segments, trailing slash, default port, or non-canonical
 // percent-encodings, and a non-empty StreamID. Public scopes require https.
+// The complete reference is at most 1024 printable ASCII bytes, without
+// spaces or semicolons, as required for a DNSid TXT tag value.
 // It returns a *dnsid.ValidationError describing the first violation.
 func (r Reference) Validate() (err error) {
 	defer func() {
@@ -90,6 +92,15 @@ func (r Reference) Validate() (err error) {
 			err = dnsid.NewValidationError("dnsid: invalid c2sp-tlog reference", err)
 		}
 	}()
+	lr := r.String()
+	if len(lr) > 1024 {
+		return fmt.Errorf("dnsid: c2sp-tlog reference exceeds 1024 bytes")
+	}
+	for i := range len(lr) {
+		if lr[i] < 0x21 || lr[i] > 0x7e || lr[i] == ';' {
+			return fmt.Errorf("dnsid: c2sp-tlog reference must be a printable ASCII TXT tag value without spaces or semicolons")
+		}
+	}
 	switch {
 	case r.Scope == "public", r.Scope == "testnet":
 	case strings.HasPrefix(r.Scope, "private-") && validPrivateScope(r.Scope):

@@ -1541,7 +1541,7 @@ type Reference struct {
 ```
 
 <a name="ParseFinalEventRef"></a>
-### func [ParseFinalEventRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L240>)
+### func [ParseFinalEventRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L251>)
 
 ```go
 func ParseFinalEventRef(ref dnsidlog.LogRef) (reference Reference, indexResult uint64, err error)
@@ -1559,7 +1559,7 @@ func ParseReference(lr string) (refResult Reference, err error)
 ParseReference parses and validates an lr value into a Reference. It returns a \*dnsid.ParseError if lr is malformed or fails Validate.
 
 <a name="Reference.FinalEventRef"></a>
-### func \(Reference\) [FinalEventRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L233>)
+### func \(Reference\) [FinalEventRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L244>)
 
 ```go
 func (r Reference) FinalEventRef(index uint64) dnsidlog.LogRef
@@ -1568,7 +1568,7 @@ func (r Reference) FinalEventRef(index uint64) dnsidlog.LogRef
 FinalEventRef returns the reference of the entry at index in this stream, in the form \<lr\>@\<index\>.
 
 <a name="Reference.Origin"></a>
-### func \(Reference\) [Origin](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L206>)
+### func \(Reference\) [Origin](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L217>)
 
 ```go
 func (r Reference) Origin() (origin string, err error)
@@ -1577,7 +1577,7 @@ func (r Reference) Origin() (origin string, err error)
 Origin returns the C2SP checkpoint origin derived from LogPrefix.
 
 <a name="Reference.String"></a>
-### func \(Reference\) [String](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L201>)
+### func \(Reference\) [String](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L212>)
 
 ```go
 func (r Reference) String() string
@@ -1586,13 +1586,13 @@ func (r Reference) String() string
 String returns the reference in lr form: c2sp\-tlog:\<scope\>:\<log\-prefix\>\#\<stream\-id\>.
 
 <a name="Reference.Validate"></a>
-### func \(Reference\) [Validate](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L87>)
+### func \(Reference\) [Validate](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L89>)
 
 ```go
 func (r Reference) Validate() (err error)
 ```
 
-Validate checks that the reference is well formed and canonical: a known scope, an absolute lowercase http\(s\) LogPrefix with no userinfo, query, fragment, dot segments, trailing slash, default port, or non\-canonical percent\-encodings, and a non\-empty StreamID. Public scopes require https. It returns a \*dnsid.ValidationError describing the first violation.
+Validate checks that the reference is well formed and canonical: a known scope, an absolute lowercase http\(s\) LogPrefix with no userinfo, query, fragment, dot segments, trailing slash, default port, or non\-canonical percent\-encodings, and a non\-empty StreamID. Public scopes require https. The complete reference is at most 1024 printable ASCII bytes, without spaces or semicolons, as required for a DNSid TXT tag value. It returns a \*dnsid.ValidationError describing the first violation.
 
 <a name="ResourceFetchError"></a>
 ## type [ResourceFetchError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L67-L74>)
