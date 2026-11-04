@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.46.1] - 2026-11-04
+
+### Features
+
+- Feat/c2sp check append ([#119](https://github.com/dnsid-ai/dnsid-go/pull/119))
+
+### Bug Fixes
+
+- fix: address security scan findings from PR 119 ([#120](https://github.com/dnsid-ai/dnsid-go/pull/120))
+
+### Other
+
+- Pin shared security workflow to v1.4.0 and enable codeql-actions ([#111](https://github.com/dnsid-ai/dnsid-go/pull/111))
+
 ## [0.46.0] - 2026-10-28
 
 ### Features
