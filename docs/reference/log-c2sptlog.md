@@ -68,6 +68,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(c \*Client\) Canonical\(event dnsidlog.LogEvent\) \(\[\]byte, error\)](<#Client.Canonical>)
   - [func \(c \*Client\) CanonicalWithChain\(event dnsidlog.LogEvent, chain Chain\) \(\[\]byte, error\)](<#Client.CanonicalWithChain>)
   - [func \(c \*Client\) ChainForWrite\(ctx context.Context, event dnsidlog.LogEvent\) \(Chain, error\)](<#Client.ChainForWrite>)
+  - [func \(c \*Client\) CheckAppend\(ctx context.Context, history \[\]\[\]byte, candidate \[\]byte\) \(StreamHead, error\)](<#Client.CheckAppend>)
   - [func \(c \*Client\) EntryBytes\(event dnsidlog.LogEvent\) \(\[\]byte, error\)](<#Client.EntryBytes>)
   - [func \(c \*Client\) EntryBytesWithChain\(event dnsidlog.LogEvent, chain Chain\) \(\[\]byte, error\)](<#Client.EntryBytesWithChain>)
   - [func \(c \*Client\) KeyTimestamp\(ctx context.Context, domain, keyThumbprint string\) \(timestamp time.Time, err error\)](<#Client.KeyTimestamp>)
@@ -94,6 +95,8 @@ See https://docs.dnsid.ai for protocol guides and account setup.
 - [type ContextTrustedC2spCheckpointStore](<#ContextTrustedC2spCheckpointStore>)
 - [type DnsidManagedVerificationConfig](<#DnsidManagedVerificationConfig>)
 - [type GlobalCandidateSource](<#GlobalCandidateSource>)
+- [type LifecycleState](<#LifecycleState>)
+  - [func \(s LifecycleState\) Hash\(\) string](<#LifecycleState.Hash>)
 - [type LocalPublicationVerifier](<#LocalPublicationVerifier>)
 - [type ManagedIssuanceActivationController](<#ManagedIssuanceActivationController>)
 - [type ManagedIssuanceActivationControllerFunc](<#ManagedIssuanceActivationControllerFunc>)
@@ -144,6 +147,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func WithTrustedCheckpointStore\(store TrustedC2spCheckpointStore\) Option](<#WithTrustedCheckpointStore>)
 - [type Policy](<#Policy>)
   - [func ParsePolicy\(document \[\]byte\) \(policyResult Policy, errResult error\)](<#ParsePolicy>)
+  - [func \(p Policy\) VerifyCheckpoint\(ref Reference, rawCheckpoint \[\]byte\) \(\*VerifiedProof, error\)](<#Policy.VerifyCheckpoint>)
   - [func \(p Policy\) VerifyProof\(ref Reference, entry, rawProof \[\]byte\) \(\*VerifiedProof, error\)](<#Policy.VerifyProof>)
 - [type PreparedEvent](<#PreparedEvent>)
   - [func \(p \*PreparedEvent\) Bytes\(\) \(\[\]byte, error\)](<#PreparedEvent.Bytes>)
@@ -186,6 +190,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func \(s \*StreamBundleSource\) RebuildCompleteHistory\(\_ context.Context, reference Reference, domain string\) \(CompleteHistoryResult, error\)](<#StreamBundleSource.RebuildCompleteHistory>)
   - [func \(s \*StreamBundleSource\) RebuildHistory\(\_ context.Context, reference Reference, domain string\) \(\[\]ProvenEntry, error\)](<#StreamBundleSource.RebuildHistory>)
 - [type StreamBundleTrust](<#StreamBundleTrust>)
+- [type StreamHead](<#StreamHead>)
 - [type TrustProfile](<#TrustProfile>)
   - [func ParseTrustProfile\(data \[\]byte\) \(TrustProfile, error\)](<#ParseTrustProfile>)
 - [type TrustedC2spCheckpoint](<#TrustedC2spCheckpoint>)
@@ -296,7 +301,7 @@ func GenerateStreamID() (string, error)
 GenerateStreamID returns an opaque identity\-instance stream identifier with 128 bits of cryptographically secure randomness, encoded as unpadded base64url. Callers must generate a new value for each replacement identity.
 
 <a name="LeafHash"></a>
-## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L266>)
+## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L275>)
 
 ```go
 func LeafHash(entry []byte) tlog.Hash
@@ -569,6 +574,17 @@ func (c *Client) ChainForWrite(ctx context.Context, event dnsidlog.LogEvent) (Ch
 
 ChainForWrite derives the logical stream\-chain metadata for event from the client's verified history. ISSUANCE derives seq=0 without reading history.
 
+<a name="Client.CheckAppend"></a>
+### func \(\*Client\) [CheckAppend](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/check_append.go#L58>)
+
+```go
+func (c *Client) CheckAppend(ctx context.Context, history [][]byte, candidate []byte) (StreamHead, error)
+```
+
+CheckAppend reports whether candidate, appended after history, is applied as the stream's next logical event, and returns the head after it. history is the stream's entries in log order. Replay uses the same rules as verification, without inclusion proofs, checkpoints, or inbound MIGRATION support: a MIGRATION candidate is never applied.
+
+Errors are \*dnsid.ParseError or \*dnsid.ValidationError for malformed entries or entries for another stream, and \*dnsid.VerificationError otherwise: VerificationCodeSignatureInvalid when the candidate is not authorized by the stream's keys, VerificationCodeChainContinuity for a stale or unknown predecessor, VerificationCodeTerminalState, VerificationCodeDuplicateIssuance, or VerificationCodeKeyContinuity for an invalid transition, and VerificationCodeInvalidEvidence for other invalid candidates. History that does not replay cleanly is an error.
+
 <a name="Client.EntryBytes"></a>
 ### func \(\*Client\) [EntryBytes](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/client.go#L412>)
 
@@ -831,6 +847,29 @@ type GlobalCandidateSource interface {
     GlobalCandidates() bool
 }
 ```
+
+<a name="LifecycleState"></a>
+## type [LifecycleState](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/check_append.go#L14-L19>)
+
+LifecycleState is a stream's computed state after a logical event \(method Section 13\). Its Hash is the next event's prev\_state\_hash.
+
+```go
+type LifecycleState struct {
+    FQDN             string
+    Status           string // ACTIVE, REVOKED, or RETIRED
+    EntityThumb      string
+    OperationalThumb string
+}
+```
+
+<a name="LifecycleState.Hash"></a>
+### func \(LifecycleState\) [Hash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/check_append.go#L31>)
+
+```go
+func (s LifecycleState) Hash() string
+```
+
+Hash returns base64url\-no\-pad\(SHA\-256\("dnsid\-c2sp\-state\-v1" || JCS\(state\)\)\).
 
 <a name="LocalPublicationVerifier"></a>
 ## type [LocalPublicationVerifier](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/managed_rotation.go#L97-L99>)
@@ -1392,6 +1431,15 @@ func ParsePolicy(document []byte) (policyResult Policy, errResult error)
 
 ParsePolicy parses the official line\-oriented C2SP tlog\-policy format for a verification\-only client. Witness URLs are optional transport hints and are ignored. Definitions are ordered: groups and quorum may reference only preceding witnesses or groups.
 
+<a name="Policy.VerifyCheckpoint"></a>
+### func \(Policy\) [VerifyCheckpoint](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L105>)
+
+```go
+func (p Policy) VerifyCheckpoint(ref Reference, rawCheckpoint []byte) (*VerifiedProof, error)
+```
+
+VerifyCheckpoint verifies rawCheckpoint as a signed checkpoint of the log identified by ref: its log signature, witness quorum, and freshness under the policy, as VerifyProof does for a proof's checkpoint. The result has no Index. A log uses it to check its own checkpoints against the policy that verifiers apply.
+
 <a name="Policy.VerifyProof"></a>
 ### func \(Policy\) [VerifyProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L69>)
 
@@ -1493,7 +1541,7 @@ type Reference struct {
 ```
 
 <a name="ParseFinalEventRef"></a>
-### func [ParseFinalEventRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L240>)
+### func [ParseFinalEventRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L251>)
 
 ```go
 func ParseFinalEventRef(ref dnsidlog.LogRef) (reference Reference, indexResult uint64, err error)
@@ -1511,7 +1559,7 @@ func ParseReference(lr string) (refResult Reference, err error)
 ParseReference parses and validates an lr value into a Reference. It returns a \*dnsid.ParseError if lr is malformed or fails Validate.
 
 <a name="Reference.FinalEventRef"></a>
-### func \(Reference\) [FinalEventRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L233>)
+### func \(Reference\) [FinalEventRef](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L244>)
 
 ```go
 func (r Reference) FinalEventRef(index uint64) dnsidlog.LogRef
@@ -1520,7 +1568,7 @@ func (r Reference) FinalEventRef(index uint64) dnsidlog.LogRef
 FinalEventRef returns the reference of the entry at index in this stream, in the form \<lr\>@\<index\>.
 
 <a name="Reference.Origin"></a>
-### func \(Reference\) [Origin](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L206>)
+### func \(Reference\) [Origin](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L217>)
 
 ```go
 func (r Reference) Origin() (origin string, err error)
@@ -1529,7 +1577,7 @@ func (r Reference) Origin() (origin string, err error)
 Origin returns the C2SP checkpoint origin derived from LogPrefix.
 
 <a name="Reference.String"></a>
-### func \(Reference\) [String](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L201>)
+### func \(Reference\) [String](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L212>)
 
 ```go
 func (r Reference) String() string
@@ -1538,13 +1586,13 @@ func (r Reference) String() string
 String returns the reference in lr form: c2sp\-tlog:\<scope\>:\<log\-prefix\>\#\<stream\-id\>.
 
 <a name="Reference.Validate"></a>
-### func \(Reference\) [Validate](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L87>)
+### func \(Reference\) [Validate](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/reference.go#L89>)
 
 ```go
 func (r Reference) Validate() (err error)
 ```
 
-Validate checks that the reference is well formed and canonical: a known scope, an absolute lowercase http\(s\) LogPrefix with no userinfo, query, fragment, dot segments, trailing slash, default port, or non\-canonical percent\-encodings, and a non\-empty StreamID. Public scopes require https. It returns a \*dnsid.ValidationError describing the first violation.
+Validate checks that the reference is well formed and canonical: a known scope, an absolute lowercase http\(s\) LogPrefix with no userinfo, query, fragment, dot segments, trailing slash, default port, or non\-canonical percent\-encodings, and a non\-empty StreamID. Public scopes require https. The complete reference is at most 1024 printable ASCII bytes, without spaces or semicolons, as required for a DNSid TXT tag value. It returns a \*dnsid.ValidationError describing the first violation.
 
 <a name="ResourceFetchError"></a>
 ## type [ResourceFetchError](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/resource_fetcher.go#L67-L74>)
@@ -1888,6 +1936,22 @@ type StreamBundleTrust struct {
     TrustedCheckpointStore TrustedC2spCheckpointStore
     MigrationVerifier      MigrationVerifier
     MigrationLimits        MigrationVerificationLimits
+}
+```
+
+<a name="StreamHead"></a>
+## type [StreamHead](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/check_append.go#L35-L42>)
+
+StreamHead is the last applied logical event of a stream and the state it leaves.
+
+```go
+type StreamHead struct {
+    Seq     uint64
+    EventID string
+    Type    dnsidlog.LogEventType
+    State   LifecycleState
+    // GovernanceID is the gi recorded by the stream's genesis.
+    GovernanceID string
 }
 ```
 
