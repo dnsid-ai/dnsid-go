@@ -13,7 +13,7 @@ const (
 	C2SPSignedNoteSpecification  = "https://c2sp.org/signed-note@v1.0.0"
 	DNSidEventEnvelopeVersion    = 1
 	// DNSidMethodRevision pins the breaking logical-identity contract in dnsid-ietf-spec.
-	DNSidMethodRevision = "d5a65d06f76eff4db81e50f8767a600d2ca7fc2a"
+	DNSidMethodRevision = "1cd7119c901012f3dc15e09d2f6e2c847d2831ed"
 )
 
 // SpecificationVersions is a read-only snapshot of the exact standards
