@@ -115,15 +115,22 @@ func (c *Client) CheckAppend(ctx context.Context, history [][]byte, candidate []
 	if err != nil {
 		return StreamHead{}, err
 	}
+	fqdn, fqdnOK := state["fqdn"].(string)
+	status, statusOK := state["status"].(string)
+	entityThumb, entityOK := state["entity_thumb"].(string)
+	operationalThumb, operationalOK := state["operational_thumb"].(string)
+	if !fqdnOK || !statusOK || !entityOK || !operationalOK {
+		return StreamHead{}, fmt.Errorf("dnsid: c2sp-tlog computed lifecycle state has invalid field types")
+	}
 	return StreamHead{
 		Seq:     *last.chain.sequence,
 		EventID: EventID(last.signed),
 		Type:    last.event.Type,
 		State: LifecycleState{
-			FQDN:             state["fqdn"].(string),
-			Status:           state["status"].(string),
-			EntityThumb:      state["entity_thumb"].(string),
-			OperationalThumb: state["operational_thumb"].(string),
+			FQDN:             fqdn,
+			Status:           status,
+			EntityThumb:      entityThumb,
+			OperationalThumb: operationalThumb,
 		},
 		GovernanceID: applied[0].event.GovernanceID,
 	}, nil

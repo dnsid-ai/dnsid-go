@@ -60,8 +60,7 @@ policy. Managed Live remains the separate HTTP 202 operation.
 This SDK targets DNSid C2SP method revision
 `d5a65d06f76eff4db81e50f8767a600d2ca7fc2a` of the C2SP TLog log-method specification (`log-method-extensions/c2sp-tlog-log-method.md` in the DNSid specification repository).
 `SDKConformance().LogBindings` now includes that method pin.
-The pin later moved to `1cd7119c901012f3dc15e09d2f6e2c847d2831ed`, which makes
-`kid` a label and selects keys by role; verification behavior is unchanged. The method name,
+Verification selects keys by role and treats `kid` as a label. The method name,
 envelope `v:1`, bundle `@v1`, and base C2SP dependency pins are unchanged.
 
 - Replace `Chain.PreviousIndex` / `PreviousLeafHash` with `PreviousEventID`.
