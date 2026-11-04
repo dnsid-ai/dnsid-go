@@ -1793,7 +1793,7 @@ func httpClientWithTransportConfig(cfg TransportConfig) (*http.Client, error) {
 }
 
 func httpClientWithCABundle(path string) (*http.Client, error) {
-	pem, err := os.ReadFile(path)
+	pem, err := os.ReadFile(path) // #nosec G304 -- The application selects its CA bundle; this is not a peer-supplied path.
 	if err != nil {
 		return nil, NewParseError(fmt.Sprintf("dnsid: reading CA bundle %q", path), err)
 	}
@@ -1804,6 +1804,6 @@ func httpClientWithCABundle(path string) (*http.Client, error) {
 	if ok := pool.AppendCertsFromPEM(pem); !ok {
 		return nil, NewParseError(fmt.Sprintf("dnsid: CA bundle %q contains no certificates", path), nil)
 	}
-	base := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
+	base := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}}
 	return newSafeHTTPClientFrom(base), nil
 }

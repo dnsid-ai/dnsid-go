@@ -18,7 +18,7 @@ import (
 // source and accepts only non-secret key-source settings, never credentials. Durations
 // use Go duration strings. Scalar zero values remain absent during Merge.
 func LoadDeploymentFile(path string) (Loaded, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- The application selects its deployment document.
 	if err != nil {
 		return Loaded{}, dnsid.NewParseError("dnsid: reading deployment file", err)
 	}

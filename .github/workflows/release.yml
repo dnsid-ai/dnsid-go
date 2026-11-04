@@ -21,6 +21,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -31,10 +32,12 @@ jobs:
         run: echo "version=$(cat .release-version)" >> "$GITHUB_OUTPUT"
 
       - name: Tag release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          VERSION="${{ steps.version.outputs.version }}"
           AWS_TAG="key/aws/$VERSION"
           ROOT_EXISTS=false
           AWS_EXISTS=false
@@ -48,7 +51,7 @@ jobs:
           else
             git tag -a "$VERSION" -m "Release $VERSION"
             git tag -a "$AWS_TAG" -m "Release $AWS_TAG"
-            git push --atomic origin "refs/tags/$VERSION" "refs/tags/$AWS_TAG"
+            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push --atomic origin "refs/tags/$VERSION" "refs/tags/$AWS_TAG"
           fi
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2

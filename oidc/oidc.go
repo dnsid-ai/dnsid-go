@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	grantJWTBearer       = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+	grantJWTBearer       = "urn:ietf:params:oauth:grant-type:jwt-bearer" // #nosec G101 -- Public OAuth grant-type identifier, not a credential.
 	maxOIDCResponseBytes = 1 << 20
 )
 

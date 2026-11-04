@@ -14,7 +14,7 @@ func run(args []string) error {
 	if len(args) != 4 {
 		return fmt.Errorf("usage: trust-policy <domain> <trusted-profile.json> <gi> <ek-thumbprint>")
 	}
-	data, err := os.ReadFile(args[1])
+	data, err := os.ReadFile(args[1]) // #nosec G703 -- This local CLI intentionally reads the operator-selected trust profile.
 	if err != nil {
 		return err
 	}

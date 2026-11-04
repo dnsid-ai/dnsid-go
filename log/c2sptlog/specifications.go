@@ -7,7 +7,7 @@ const (
 	C2SPTilesSpecification       = "https://c2sp.org/tlog-tiles@v0.1.0"
 	C2SPProofRevision            = "ab17a74116563005f908b9167e6421cc929a5c2b"
 	C2SPPolicyRevision           = "1896a5aea5559b3203d275d0206d872f59348cf5"
-	C2SPWitnessSpecification     = "https://c2sp.org/tlog-witness@v1.0.0"
+	C2SPWitnessSpecification     = "https://c2sp.org/tlog-witness@v1.0.0" // #nosec G101 -- Public specification URL, not a credential.
 	C2SPCosignatureSpecification = "https://c2sp.org/tlog-cosignature@v1.0.1"
 	C2SPMirrorRevision           = "d0fe789122c75b903bfc1680b0b8b8dc570f0db3"
 	C2SPSignedNoteSpecification  = "https://c2sp.org/signed-note@v1.0.0"

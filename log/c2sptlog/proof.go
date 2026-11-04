@@ -89,6 +89,7 @@ func (p Policy) VerifyProof(ref Reference, entry, rawProof []byte) (*VerifiedPro
 	for i, hash := range proof.Hashes {
 		copy(recordProof[i][:], hash[:])
 	}
+	// #nosec G115 -- verifyCheckpoint bounds cp.Size to MaxInt64; proof.Index is smaller than cp.Size.
 	if err := tlog.CheckRecord(recordProof, int64(cp.Size), root, int64(proof.Index), leaf); err != nil {
 		return nil, fmt.Errorf("dnsid: c2sp-tlog inclusion proof failed: %w", err)
 	}

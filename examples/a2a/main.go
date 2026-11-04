@@ -260,6 +260,10 @@ func requireSignatureProfile(req *http.Request) error {
 }
 
 func (a *application) sendHello(ctx context.Context, peer string) error {
+	peer, err := dnsid.NormalizeFQDN(peer)
+	if err != nil {
+		return err
+	}
 	if err := poll(ctx, "verify "+peer, func() error {
 		_, err := a.identity.VerifyDomain(ctx, peer)
 		return err
@@ -288,7 +292,7 @@ func (a *application) sendHello(ctx context.Context, peer string) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+peer+"/", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+peer+"/", bytes.NewReader(body)) // #nosec G704 -- peer is a normalized, verified domain; the client uses the SDK safe dialer.
 	if err != nil {
 		return err
 	}
@@ -309,7 +313,7 @@ func (a *application) sendHello(ctx context.Context, peer string) error {
 			AdditionalComponents: []httpsig.ComponentIdentifier{{Name: "content-type"}},
 		},
 	})
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- CreateDnsidHTTPClient validates resolved IPs and rejects redirects; only configured testnet hosts can use private IPs.
 	if err != nil {
 		return err
 	}

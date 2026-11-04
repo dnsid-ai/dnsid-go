@@ -117,8 +117,8 @@ func writeCanonicalString(buf *bytes.Buffer, value string) error {
 		default:
 			if r < 0x20 {
 				buf.WriteString(`\u00`)
-				buf.WriteByte(hex[byte(r)>>4])
-				buf.WriteByte(hex[byte(r)&0x0f])
+				buf.WriteByte(hex[r>>4])
+				buf.WriteByte(hex[r&0x0f])
 			} else {
 				buf.WriteRune(r)
 			}

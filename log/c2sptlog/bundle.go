@@ -385,6 +385,7 @@ func VerifyStreamBundle(ctx context.Context, data []byte, trust StreamBundleTrus
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G115 -- bundleUint accepts only non-negative integers up to 2^53-1.
 	expires := time.Unix(int64(expiresUnix), 0).UTC()
 	if !expires.After(now) {
 		return nil, fmt.Errorf("dnsid: c2sp stream bundle expired")
