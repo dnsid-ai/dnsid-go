@@ -138,14 +138,14 @@ func LoadEnvironment(getenv func(string) string) (Loaded, error) {
 
 	l.LogTrust.PolicyURL = env("DNSID_LOG_POLICY_URL")
 	if path := env("DNSID_LOG_POLICY_FILE"); path != "" {
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 -- The application selects its local policy file.
 		if err != nil {
 			return Loaded{}, dnsid.NewParseError("dnsid: reading DNSID_LOG_POLICY_FILE", err)
 		}
 		l.LogTrust.PolicyDocument = data
 	}
 	if path := env("DNSID_LOG_TRUST_PROFILE_FILE"); path != "" {
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 -- The application selects its local trust profile.
 		if err != nil {
 			return Loaded{}, dnsid.NewParseError("dnsid: reading DNSID_LOG_TRUST_PROFILE_FILE", err)
 		}
@@ -236,7 +236,7 @@ func LoadCliDirectory(dir string) (Loaded, error) {
 }
 
 func readCliConfig(dir string) (cliConfig, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	data, err := os.ReadFile(filepath.Join(dir, "config.json")) // #nosec G304 -- dir is the application-selected CLI configuration directory.
 	if err != nil {
 		return cliConfig{}, dnsid.NewParseError("dnsid: reading DNSid config", err)
 	}

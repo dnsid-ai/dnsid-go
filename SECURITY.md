@@ -42,6 +42,15 @@ version plus an advisory:
 A report showing an invalid record, signature, or status being **accepted as valid** is treated as the
 highest priority regardless of its CVSS score.
 
+## **Dependency Scanner Notes**
+
+GO-2026-5932 applies to the unmaintained `golang.org/x/crypto/openpgp` package.
+The SDK requires `golang.org/x/crypto` for other packages, but does not import
+OpenPGP. Module-level scanners can therefore report this advisory even when
+`govulncheck` reports no affected imported packages or symbols. There is no fixed
+OpenPGP version; do not add an OpenPGP dependency. Check reachability with
+`go mod why golang.org/x/crypto/openpgp` and `govulncheck` in each module.
+
 ## **Non-Security Problems Found After Publication**
 
 If a published release is found to contain a licensing defect, third-party material we may not

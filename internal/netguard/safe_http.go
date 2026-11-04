@@ -294,7 +294,11 @@ func DialValidatedIP(
 
 func CloneTLSConfig(cfg *tls.Config) *tls.Config {
 	if cfg == nil {
-		return &tls.Config{}
+		return &tls.Config{MinVersion: tls.VersionTLS12}
 	}
-	return cfg.Clone()
+	clone := cfg.Clone()
+	if clone.MinVersion == 0 {
+		clone.MinVersion = tls.VersionTLS12
+	}
+	return clone
 }

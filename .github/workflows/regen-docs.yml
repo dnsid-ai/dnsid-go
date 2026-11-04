@@ -13,7 +13,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: regen-docs-${{ github.event.pull_request.number }}
@@ -24,10 +24,13 @@ jobs:
     # actor guard: createCommitOnBranch commits DO re-trigger pull_request, unlike GITHUB_TOKEN git pushes
     if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -37,27 +40,54 @@ jobs:
       - name: Regenerate reference
         run: ./scripts/gen-docs.sh
 
-      # Commit through the GraphQL API instead of `git commit`: commits created
-      # by createCommitOnBranch are signed by GitHub's web-flow key, so the bot
-      # commit is Verified and satisfies signed-commit branch protection. A
-      # GITHUB_TOKEN commit still does not re-trigger this workflow.
-      - name: Commit and push if changed
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.event.pull_request.head.ref }}
+      - name: Collect reference changes
+        id: changes
         run: |
           git add -A docs/reference/
           if git diff --cached --quiet; then
             echo "reference is current"
             exit 0
           fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/doc-changes"
           git diff --cached --name-only --diff-filter=AM -z \
             | while IFS= read -r -d '' f; do base64 -w0 < "$f" > /tmp/b64; jq -n --arg p "$f" --rawfile c /tmp/b64 '{path: $p, contents: $c}'; done \
-            | jq -s . > /tmp/additions.json
+            | jq -s . > "$RUNNER_TEMP/doc-changes/additions.json"
           git diff --cached --name-only --diff-filter=D -z \
-            | jq -Rs 'split("\u0000") | map(select(length > 0) | {path: .})' > /tmp/deletions.json
-          jq -n --arg repo "$GITHUB_REPOSITORY" --arg branch "$BRANCH" --arg head "$(git rev-parse HEAD)" \
-            --slurpfile additions /tmp/additions.json --slurpfile deletions /tmp/deletions.json '{
+            | jq -Rs 'split("\u0000") | map(select(length > 0) | {path: .})' > "$RUNNER_TEMP/doc-changes/deletions.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          name: reference-changes
+          path: ${{ runner.temp }}/doc-changes/*.json
+          retention-days: 1
+
+  # PR code runs only in the read-only job. This job consumes JSON as data,
+  # validates destination paths, and never checks out or executes PR code.
+  commit:
+    needs: regen
+    if: needs.regen.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: reference-changes
+          path: ${{ runner.temp }}/doc-changes
+
+      # The GraphQL API creates a signed commit that satisfies branch protection.
+      - name: Commit reference changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          cd "$RUNNER_TEMP/doc-changes"
+          jq -se 'all(.[]; type == "array" and all(.[]; .path | test("^docs/reference/([a-z0-9-]+\\.md|nav\\.json)$")))' additions.json deletions.json > /dev/null
+          jq -n --arg repo "$GITHUB_REPOSITORY" --arg branch "$BRANCH" --arg head "$HEAD_SHA" \
+            --slurpfile additions additions.json --slurpfile deletions deletions.json '{
               query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
               variables: { input: {
                 branch: { repositoryNameWithOwner: $repo, branchName: $branch },

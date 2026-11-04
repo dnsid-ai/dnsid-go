@@ -232,7 +232,7 @@ const (
     C2SPTilesSpecification       = "https://c2sp.org/tlog-tiles@v0.1.0"
     C2SPProofRevision            = "ab17a74116563005f908b9167e6421cc929a5c2b"
     C2SPPolicyRevision           = "1896a5aea5559b3203d275d0206d872f59348cf5"
-    C2SPWitnessSpecification     = "https://c2sp.org/tlog-witness@v1.0.0"
+    C2SPWitnessSpecification     = "https://c2sp.org/tlog-witness@v1.0.0" // #nosec G101 -- Public specification URL, not a credential.
     C2SPCosignatureSpecification = "https://c2sp.org/tlog-cosignature@v1.0.1"
     C2SPMirrorRevision           = "d0fe789122c75b903bfc1680b0b8b8dc570f0db3"
     C2SPSignedNoteSpecification  = "https://c2sp.org/signed-note@v1.0.0"
@@ -296,7 +296,7 @@ func GenerateStreamID() (string, error)
 GenerateStreamID returns an opaque identity\-instance stream identifier with 128 bits of cryptographically secure randomness, encoded as unpadded base64url. Callers must generate a new value for each replacement identity.
 
 <a name="LeafHash"></a>
-## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L265>)
+## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L266>)
 
 ```go
 func LeafHash(entry []byte) tlog.Hash
@@ -1677,7 +1677,7 @@ type ResumeManagedKeyRotationOptions struct {
 ```
 
 <a name="ScanSource"></a>
-## type [ScanSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L49-L56>)
+## type [ScanSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L50-L57>)
 
 ScanSource reads the standard C2SP tiled\-log surface and authenticates a complete raw\-log scan against its signed checkpoint and level\-zero tiles. Configure the Client with the same Policy passed to NewScanSource.
 
@@ -1688,7 +1688,7 @@ type ScanSource struct {
 ```
 
 <a name="NewScanSource"></a>
-### func [NewScanSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L66>)
+### func [NewScanSource](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L67>)
 
 ```go
 func NewScanSource(policy Policy, config ScanSourceConfig) (*ScanSource, error)
@@ -1697,7 +1697,7 @@ func NewScanSource(policy Policy, config ScanSourceConfig) (*ScanSource, error)
 NewScanSource constructs a bounded C2SP network scanner. It is SSRF\-resistant unless the caller supplies a custom Transport.
 
 <a name="ScanSource.FetchEntriesThrough"></a>
-### func \(\*ScanSource\) [FetchEntriesThrough](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L231>)
+### func \(\*ScanSource\) [FetchEntriesThrough](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L232>)
 
 ```go
 func (s *ScanSource) FetchEntriesThrough(ctx context.Context, reference Reference, treeSize uint64) ([][]byte, error)
@@ -1706,7 +1706,7 @@ func (s *ScanSource) FetchEntriesThrough(ctx context.Context, reference Referenc
 FetchEntriesThrough implements C2spFullLogSource by returning the requested prefix from a fresh authenticated scan. The scan may have advanced beyond treeSize; its authenticated entries still independently prove the requested checkpoint prefix.
 
 <a name="ScanSource.GlobalCandidates"></a>
-### func \(\*ScanSource\) [GlobalCandidates](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L124>)
+### func \(\*ScanSource\) [GlobalCandidates](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L125>)
 
 ```go
 func (*ScanSource) GlobalCandidates() bool
@@ -1715,7 +1715,7 @@ func (*ScanSource) GlobalCandidates() bool
 GlobalCandidates implements GlobalCandidateSource: scan results are unfiltered global\-log candidates, so the Client skips invalid or unrelated entries instead of failing.
 
 <a name="ScanSource.ReadEvent"></a>
-### func \(\*ScanSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L129>)
+### func \(\*ScanSource\) [ReadEvent](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L130>)
 
 ```go
 func (s *ScanSource) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (ProvenEntry, error)
@@ -1724,7 +1724,7 @@ func (s *ScanSource) ReadEvent(ctx context.Context, ref dnsidlog.LogRef) (Proven
 ReadEvent implements Source by running a full authenticated scan and returning the entry at the reference's index. It returns an error if the index is outside the scanned checkpoint size.
 
 <a name="ScanSource.RebuildCompleteHistory"></a>
-### func \(\*ScanSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L202>)
+### func \(\*ScanSource\) [RebuildCompleteHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L203>)
 
 ```go
 func (s *ScanSource) RebuildCompleteHistory(ctx context.Context, reference Reference, domain string) (CompleteHistoryResult, error)
@@ -1733,7 +1733,7 @@ func (s *ScanSource) RebuildCompleteHistory(ctx context.Context, reference Refer
 RebuildCompleteHistory implements CompleteSource by binding the returned candidates to the exact authenticated full\-scan checkpoint.
 
 <a name="ScanSource.RebuildHistory"></a>
-### func \(\*ScanSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L192>)
+### func \(\*ScanSource\) [RebuildHistory](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L193>)
 
 ```go
 func (s *ScanSource) RebuildHistory(ctx context.Context, reference Reference, domain string) ([]ProvenEntry, error)
@@ -1742,7 +1742,7 @@ func (s *ScanSource) RebuildHistory(ctx context.Context, reference Reference, do
 RebuildHistory implements Source by scanning the complete log once, authenticating every entry against the signed checkpoint, and returning the entries whose fqdn matches domain, each with a derived inclusion proof.
 
 <a name="ScanSourceConfig"></a>
-## type [ScanSourceConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L36-L44>)
+## type [ScanSourceConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/scan_source.go#L37-L45>)
 
 ScanSourceConfig bounds a standard checkpoint/tile/entry\-bundle scan. ResourceFetcher is mutually exclusive with HTTPClient and Transport. The lower\-level Transport option is used verbatim, so its caller owns destination safety; NewVerificationRegistry applies the stricter public\-read capability contract before constructing a scanner.
 

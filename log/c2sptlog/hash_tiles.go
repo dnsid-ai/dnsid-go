@@ -110,6 +110,9 @@ func (t *checkpointTiles) fetchExact(ctx context.Context, path string, width uin
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if width == 0 || width > 256 {
+		return nil, invalidHashTile("hash tile width outside 1..256", nil)
+	}
 	data, err := fetchBounded(t.source.fetcher, ctx, path, int64(width)*tlog.HashSize)
 	var fetchErr *ResourceFetchError
 	if errors.As(err, &fetchErr) && fetchErr.Kind == ResourceFetchResponseLimit {

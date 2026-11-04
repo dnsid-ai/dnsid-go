@@ -164,7 +164,7 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	if err != nil {
 		return nil, err
 	}
-	directoryReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	directoryReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil) // #nosec G704 -- discovery validates HTTPS and signer host; NewVerifier installs the rebinding-safe public-IP dialer.
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func (p *Profile) VerifyWebBotAuthSignedRequest(ctx context.Context, req *http.R
 	directoryReq.Header.Set("Cache-Control", "no-cache")
 	directoryReq.Header.Set("Accept-Encoding", "identity")
 	fetchStarted := p.currentTime()
-	res, err := p.client.Do(directoryReq)
+	res, err := p.client.Do(directoryReq) // #nosec G704 -- NewVerifier rejects redirects and validates every resolved IP before dialing.
 	if err != nil {
 		return nil, directoryFetchError(err)
 	}

@@ -107,7 +107,7 @@ type LocalKeyProvider struct {
 // NewLocalKeyProvider loads a key store file. It accepts the current
 // active/retained/pending store shape and the older flat private JWK shape.
 func NewLocalKeyProvider(path string) (*LocalKeyProvider, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- The application selects its local key-store path.
 	if err != nil {
 		return nil, NewParseError(fmt.Sprintf("dnsid: reading key file %q", path), err)
 	}
@@ -174,7 +174,7 @@ func loadOrCreateLocalKeyProvider(path string, alg JoseAlg, syncFile func(*os.Fi
 	if err != nil {
 		return nil, fmt.Errorf("dnsid: marshaling key store: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- Application-selected key store; exclusive creation prevents overwrites.
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return NewLocalKeyProvider(path)

@@ -43,7 +43,7 @@ func openDemo(ctx context.Context) (*demo, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(directory, 0700); err != nil {
+	if err := os.MkdirAll(directory, 0700); err != nil { // #nosec G703 -- DNSID_CONFIG_DIR is the operator-selected local state directory.
 		return nil, err
 	}
 	if err := syncDirectory(filepath.Dir(directory)); err != nil {
@@ -51,7 +51,7 @@ func openDemo(ctx context.Context) (*demo, error) {
 	}
 	d := &demo{directory: directory, keyPath: filepath.Join(directory, "keys.json")}
 	var saved journal
-	if data, err := os.ReadFile(filepath.Join(directory, "rotation.json")); err == nil {
+	if data, err := os.ReadFile(filepath.Join(directory, "rotation.json")); err == nil { // #nosec G304 G703 -- Fixed journal name under the operator-selected state directory.
 		if err := json.Unmarshal(data, &saved); err != nil {
 			return nil, err
 		}
@@ -62,11 +62,11 @@ func openDemo(ctx context.Context) (*demo, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	if _, err := os.Stat(d.keyPath); os.IsNotExist(err) {
+	if _, err := os.Stat(d.keyPath); os.IsNotExist(err) { // #nosec G703 -- Fixed key-store name under the operator-selected state directory.
 		if d.rotation != nil {
 			return nil, fmt.Errorf("saved provider is missing; do not generate a replacement")
 		}
-		data, err := os.ReadFile(filepath.Join(configDir, "private.jwk"))
+		data, err := os.ReadFile(filepath.Join(configDir, "private.jwk")) // #nosec G304 G703 -- The operator selects the CLI identity directory.
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +180,7 @@ func (d *demo) rejectOldMessage(ctx context.Context) error {
 }
 
 func syncDirectory(path string) error {
-	directory, err := os.Open(path)
+	directory, err := os.Open(path) // #nosec G304 G703 -- Callers pass the operator-selected state directory for durability syncing.
 	if err != nil {
 		return err
 	}
@@ -199,17 +199,15 @@ func save(destination string, value any) error {
 	}
 	defer os.Remove(file.Name())
 	if _, err := file.Write(append(data, '\n')); err != nil {
-		file.Close()
-		return err
+		return errors.Join(err, file.Close())
 	}
 	if err := file.Sync(); err != nil {
-		file.Close()
-		return err
+		return errors.Join(err, file.Close())
 	}
 	if err := file.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(file.Name(), destination); err != nil {
+	if err := os.Rename(file.Name(), destination); err != nil { // #nosec G703 -- Both paths are in the operator-selected state directory; destination is a fixed local filename.
 		return err
 	}
 	return syncDirectory(filepath.Dir(destination))

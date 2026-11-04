@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -276,6 +277,9 @@ func (s *ScanSource) scan(ctx context.Context, reference Reference) (result *com
 		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint tree size %d exceeds configured maximum %d", treeSize, s.maxTreeSize)
 	}
 
+	if treeSize > uint64(math.MaxInt) {
+		return nil, fmt.Errorf("dnsid: c2sp-tlog checkpoint tree size exceeds int range")
+	}
 	entries := make([][]byte, 0, int(treeSize))
 	var totalEntryBytes int64
 	for bundle := uint64(0); uint64(len(entries)) < treeSize; bundle++ {
