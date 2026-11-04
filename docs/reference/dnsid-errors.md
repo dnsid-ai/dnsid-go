@@ -296,7 +296,7 @@ const (
     VerificationCodeKeyNotFound        VerificationCode = "key_not_found"
     VerificationCodeAgentNotFound      VerificationCode = "agent_not_found"
     VerificationCodeTokenExpired       VerificationCode = "token_expired"
-    VerificationCodeTokenNotYetValid   VerificationCode = "token_not_yet_valid"
+    VerificationCodeTokenNotYetValid   VerificationCode = "token_not_yet_valid" // #nosec G101 -- Public error code, not a credential.
     VerificationCodeMalformedToken     VerificationCode = "malformed_token"
     VerificationCodeInvalidClaims      VerificationCode = "invalid_claims"
     VerificationCodeAudienceMismatch   VerificationCode = "audience_mismatch"
