@@ -97,6 +97,15 @@ func (p Policy) VerifyProof(ref Reference, entry, rawProof []byte) (*VerifiedPro
 	return verified, nil
 }
 
+// VerifyCheckpoint verifies rawCheckpoint as a signed checkpoint of the log
+// identified by ref: its log signature, witness quorum, and freshness under
+// the policy, as VerifyProof does for a proof's checkpoint. The result has no
+// Index. A log uses it to check its own checkpoints against the policy that
+// verifiers apply.
+func (p Policy) VerifyCheckpoint(ref Reference, rawCheckpoint []byte) (*VerifiedProof, error) {
+	return p.verifyCheckpoint(ref, rawCheckpoint)
+}
+
 func (p Policy) verifyCheckpoint(ref Reference, rawCheckpoint []byte) (verified *VerifiedProof, err error) {
 	defer func() {
 		if err != nil {

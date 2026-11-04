@@ -147,6 +147,7 @@ See https://docs.dnsid.ai for protocol guides and account setup.
   - [func WithTrustedCheckpointStore\(store TrustedC2spCheckpointStore\) Option](<#WithTrustedCheckpointStore>)
 - [type Policy](<#Policy>)
   - [func ParsePolicy\(document \[\]byte\) \(policyResult Policy, errResult error\)](<#ParsePolicy>)
+  - [func \(p Policy\) VerifyCheckpoint\(ref Reference, rawCheckpoint \[\]byte\) \(\*VerifiedProof, error\)](<#Policy.VerifyCheckpoint>)
   - [func \(p Policy\) VerifyProof\(ref Reference, entry, rawProof \[\]byte\) \(\*VerifiedProof, error\)](<#Policy.VerifyProof>)
 - [type PreparedEvent](<#PreparedEvent>)
   - [func \(p \*PreparedEvent\) Bytes\(\) \(\[\]byte, error\)](<#PreparedEvent.Bytes>)
@@ -300,7 +301,7 @@ func GenerateStreamID() (string, error)
 GenerateStreamID returns an opaque identity\-instance stream identifier with 128 bits of cryptographically secure randomness, encoded as unpadded base64url. Callers must generate a new value for each replacement identity.
 
 <a name="LeafHash"></a>
-## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L266>)
+## func [LeafHash](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L275>)
 
 ```go
 func LeafHash(entry []byte) tlog.Hash
@@ -1429,6 +1430,15 @@ func ParsePolicy(document []byte) (policyResult Policy, errResult error)
 ```
 
 ParsePolicy parses the official line\-oriented C2SP tlog\-policy format for a verification\-only client. Witness URLs are optional transport hints and are ignored. Definitions are ordered: groups and quorum may reference only preceding witnesses or groups.
+
+<a name="Policy.VerifyCheckpoint"></a>
+### func \(Policy\) [VerifyCheckpoint](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L105>)
+
+```go
+func (p Policy) VerifyCheckpoint(ref Reference, rawCheckpoint []byte) (*VerifiedProof, error)
+```
+
+VerifyCheckpoint verifies rawCheckpoint as a signed checkpoint of the log identified by ref: its log signature, witness quorum, and freshness under the policy, as VerifyProof does for a proof's checkpoint. The result has no Index. A log uses it to check its own checkpoints against the policy that verifiers apply.
 
 <a name="Policy.VerifyProof"></a>
 ### func \(Policy\) [VerifyProof](<https://github.com/dnsid-ai/dnsid-go/blob/main/log/c2sptlog/proof.go#L69>)
