@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   go:
-    uses: dnsid-ai/github-actions/.github/workflows/security-go.yml@b4d14ab990cee173375c13f9b0ba24105ac0b778 # v1.4.0
+    uses: dnsid-ai/github-actions/.github/workflows/security-go.yml@21bb221e52190a9bc011eb8ffa1be2c73f758f84 # v1.4.1
     permissions:
       contents: read # check out the code
       security-events: write # required by the called workflow's jobs
