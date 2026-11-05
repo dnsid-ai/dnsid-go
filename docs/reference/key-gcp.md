@@ -40,6 +40,7 @@ Copyright 2026 Known Systems AI, Inc.
 - [type Config](<#Config>)
 - [type Provider](<#Provider>)
   - [func New\(ctx context.Context, client Client, cfg Config\) \(\*Provider, error\)](<#New>)
+  - [func Open\(ctx context.Context, src config.KeySource, opts ...option.ClientOption\) \(\*Provider, error\)](<#Open>)
   - [func \(p \*Provider\) Activate\(kid string\) error](<#Provider.Activate>)
   - [func \(p \*Provider\) Close\(\) error](<#Provider.Close>)
   - [func \(p \*Provider\) GenerateKey\(alg dnsid.JoseAlg\) \(string, error\)](<#Provider.GenerateKey>)
@@ -95,6 +96,17 @@ func New(ctx context.Context, client Client, cfg Config) (*Provider, error)
 
 New opens an existing version, validating its binding, algorithm, software protection and public\-key CRC32C. It never creates a key or substitutes a signer. Service and context errors are preserved for errors.Is and gRPC status handling.
 
+<a name="Open"></a>
+### func [Open](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/config.go#L58>)
+
+```go
+func Open(ctx context.Context, src config.KeySource, opts ...option.ClientOption) (*Provider, error)
+```
+
+Open validates configuration and opens its existing immutable version using the official Google client. Options configure that client's transport and authentication; they do not become deployment settings. With no options, authentication uses Application Default Credentials, as in the registered google\-kms factory. No key is created and no file signer is substituted.
+
+The returned provider owns the created client: call Close after all operations finish. On failure Open closes the created client. A connection supplied via option.WithGRPCConn is subject to the official client's Close behavior, which may close it \(including on an opening failure\). Supply a dedicated connection, not one shared with unrelated clients.
+
 <a name="Provider.Activate"></a>
 ### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L233>)
 
@@ -105,13 +117,13 @@ func (p *Provider) Activate(kid string) error
 Activate explicitly promotes a pending key. The previous key remains available as a public JWK but cannot sign. No remote version state is changed.
 
 <a name="Provider.Close"></a>
-### func \(\*Provider\) [Close](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L284>)
+### func \(\*Provider\) [Close](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L285>)
 
 ```go
 func (p *Provider) Close() error
 ```
 
-Close releases the client created by configuration loading. For New, the caller owns the supplied client and Close is a no\-op. Call only after all provider operations have completed.
+Close releases the client created by Open or configuration loading. For New, the caller owns the supplied client and Close is a no\-op. Connections supplied through option.WithGRPCConn may also be closed by the official client. Call only after all provider operations have completed.
 
 <a name="Provider.GenerateKey"></a>
 ### func \(\*Provider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L198>)
