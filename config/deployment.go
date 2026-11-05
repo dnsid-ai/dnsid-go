@@ -65,6 +65,11 @@ func LoadDeploymentFile(path string) (Loaded, error) {
 		return Loaded{}, err
 	}
 	l := Loaded{KeySource: file.KeySource, Registry: Registry{RegistryURL: file.Registry.RegistryURL}}
+	for _, value := range []*string{&l.KeySource.Provider, &l.KeySource.KeyRef, &l.KeySource.CliDirectory, &l.KeySource.KeyStorePath, &l.KeySource.EntityKeyPath} {
+		if strings.TrimSpace(*value) == "" {
+			*value = ""
+		}
+	}
 	dnsidMembers, _ := object["dnsid"].(map[string]any)
 	identityMembers, _ := dnsidMembers["identity"].(map[string]any)
 	if i := file.Dnsid.Identity; i != nil && len(identityMembers) > 0 {
