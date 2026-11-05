@@ -18,8 +18,15 @@
 // Providers opened through configuration own their client; applications can call
 // Close after all operations finish to release it.
 //
-// This existing-version runtime does not yet support lifecycle operations or
-// managed-rotation orchestration. Merely opening a cloud key is not a migration
+// GenerateKey explicitly creates a pending version under the configured parent
+// CryptoKey, whose template must specify software EC_SIGN_ED25519. Pending keys
+// support JWK and SignKey but do not enter the active listing. Activate and
+// Supersede change local eligibility only; they never disable or destroy cloud
+// versions. State is in-memory only: reopening the configured version does not
+// recover pending or superseded state. Applications must not treat reopening as
+// managed-rotation recovery. Persistence and orchestration are not provided.
+//
+// Merely opening a cloud key is not a migration
 // of an established identity; changing its signer requires authorized rotation.
 //
 // Install this nested module separately; the base SDK does not depend on Google

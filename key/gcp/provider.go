@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"hash/crc32"
 	"regexp"
+	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/kms/apiv1/kmspb"
@@ -35,14 +37,21 @@ type Config struct {
 
 // Provider signs RAW Ed25519 messages using an existing Google Cloud KMS version.
 // It caches only public material and is safe for concurrent use. Each signing
-// call has a 30-second timeout. Lifecycle operations are not yet supported.
+// call has a 30-second timeout. Rotation state is local and in-memory only.
 type Provider struct {
+	mu          sync.RWMutex
 	client      Client
 	version     string
 	kid         string
-	public      ed25519.PublicKey
-	key         jwk.Key
+	keys        map[string]*keyEntry
 	closeClient func() error
+}
+
+type keyEntry struct {
+	version string
+	public  ed25519.PublicKey
+	key     jwk.Key
+	pending bool
 }
 
 var versionName = regexp.MustCompile(`^projects/[A-Za-z0-9_-]+/locations/[A-Za-z0-9_-]+/keyRings/[A-Za-z0-9_-]+/cryptoKeys/[A-Za-z0-9_-]+/cryptoKeyVersions/[1-9][0-9]*$`)
@@ -102,7 +111,7 @@ func New(ctx context.Context, client Client, cfg Config) (*Provider, error) {
 	if err := key.Set(jwk.AlgorithmKey, jwa.EdDSA()); err != nil {
 		return nil, err
 	}
-	return &Provider{client: client, version: cfg.KeyVersionName, kid: kid, public: public, key: key}, nil
+	return &Provider{client: client, version: cfg.KeyVersionName, kid: kid, keys: map[string]*keyEntry{kid: {version: cfg.KeyVersionName, public: public, key: key}}}, nil
 }
 
 func validCRC(data []byte, sum *wrapperspb.Int64Value) bool {
@@ -111,59 +120,162 @@ func validCRC(data []byte, sum *wrapperspb.Int64Value) bool {
 
 // JWK returns a detached public JWK for the active key, or nil for an unknown ID.
 func (p *Provider) JWK(kid ...string) jwk.Key {
-	if len(kid) > 1 || (len(kid) == 1 && kid[0] != p.kid) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(kid) > 1 {
 		return nil
 	}
-	key, err := p.key.Clone()
+	id := p.kid
+	if len(kid) == 1 {
+		id = kid[0]
+	}
+	entry := p.keys[id]
+	if entry == nil {
+		return nil
+	}
+	key, err := entry.key.Clone()
 	if err != nil {
 		return nil
 	}
 	return key
 }
 
-// ListKeyIds returns the single active public-key thumbprint.
-func (p *Provider) ListKeyIds() []string { return []string{p.kid} }
-
-// Sign signs payload without prehashing, using the configured active version.
-func (p *Provider) Sign(payload []byte) (*dnsid.KeySignature, error) {
-	return p.SignKey(p.kid, payload)
+// ListKeyIds returns only the active public-key thumbprint, never pending or retained IDs.
+func (p *Provider) ListKeyIds() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.kid == "" {
+		return []string{}
+	}
+	return []string{p.kid}
 }
 
-// SignKey signs with the selected key; unknown IDs fail before any API call.
+// Sign signs payload without prehashing, using the active version.
+func (p *Provider) Sign(payload []byte) (*dnsid.KeySignature, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.signKey(p.kid, payload)
+}
+
+// SignKey signs with an active or pending key. Retained and unknown IDs fail
+// before any API call. Local transitions wait for in-flight signatures to finish.
 func (p *Provider) SignKey(kid string, payload []byte) (*dnsid.KeySignature, error) {
-	if kid != p.kid {
-		return nil, dnsid.NewArgumentError("dnsid/gcpkms: unknown signing key", nil)
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.signKey(kid, payload)
+}
+
+func (p *Provider) signKey(kid string, payload []byte) (*dnsid.KeySignature, error) {
+	entry := p.keys[kid]
+	if entry == nil || (kid != p.kid && !entry.pending) {
+		return nil, dnsid.NewArgumentError("dnsid/gcpkms: key is not signing-eligible", nil)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	response, err := p.client.AsymmetricSign(ctx, &kmspb.AsymmetricSignRequest{
-		Name: p.version, Data: payload, DataCrc32C: wrapperspb.Int64(int64(crc32.Checksum(payload, crcTable))),
+		Name: entry.version, Data: payload, DataCrc32C: wrapperspb.Int64(int64(crc32.Checksum(payload, crcTable))),
 	})
 	if err != nil {
 		return nil, err
 	}
-	if response == nil || response.Name != p.version || !response.VerifiedDataCrc32C || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE || !validCRC(response.Signature, response.SignatureCrc32C) {
+	if response == nil || response.Name != entry.version || !response.VerifiedDataCrc32C || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE || !validCRC(response.Signature, response.SignatureCrc32C) {
 		return nil, fmt.Errorf("dnsid/gcpkms: untrusted signing response binding or integrity")
 	}
-	if !ed25519.Verify(p.public, payload, response.Signature) {
+	if !ed25519.Verify(entry.public, payload, response.Signature) {
 		return nil, fmt.Errorf("dnsid/gcpkms: invalid Ed25519 signature")
 	}
-	return &dnsid.KeySignature{Kid: p.kid, Alg: dnsid.JoseAlgEdDSA, Signature: append([]byte(nil), response.Signature...)}, nil
+	return &dnsid.KeySignature{Kid: kid, Alg: dnsid.JoseAlgEdDSA, Signature: append([]byte(nil), response.Signature...)}, nil
 }
 
-// GenerateKey is unavailable; opening this provider never generates a version.
-func (p *Provider) GenerateKey(dnsid.JoseAlg) (string, error) { return "", lifecycleUnavailable() }
+type versionCreator interface {
+	CreateCryptoKeyVersion(context.Context, *kmspb.CreateCryptoKeyVersionRequest, ...gax.CallOption) (*kmspb.CryptoKeyVersion, error)
+}
 
-// Activate is unavailable in the existing-version runtime.
-func (p *Provider) Activate(string) error { return lifecycleUnavailable() }
+// GenerateKey explicitly creates a pending Ed25519 version under the configured
+// CryptoKey. The parent template must specify software EC_SIGN_ED25519. The
+// client must also support the official CreateCryptoKeyVersion method. Failed
+// validation leaves local state unchanged; cloud cleanup is operator-owned.
+func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error) {
+	if alg != dnsid.JoseAlgEdDSA {
+		return "", dnsid.NewArgumentError("dnsid/gcpkms: only EdDSA generation is supported", nil)
+	}
+	creator, ok := p.client.(versionCreator)
+	if !ok {
+		return "", dnsid.NewArgumentError("dnsid/gcpkms: client does not support version creation", nil)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	parent := p.version[:strings.LastIndex(p.version, "/cryptoKeyVersions/")]
+	response, err := creator.CreateCryptoKeyVersion(ctx, &kmspb.CreateCryptoKeyVersionRequest{Parent: parent})
+	if err != nil {
+		return "", err
+	}
+	if response == nil || validateVersion(response.Name) != nil || !strings.HasPrefix(response.Name, parent+"/cryptoKeyVersions/") || response.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || response.State != kmspb.CryptoKeyVersion_ENABLED || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
+		return "", fmt.Errorf("dnsid/gcpkms: generated version has invalid binding or metadata")
+	}
+	opened, err := New(ctx, p.client, Config{KeyVersionName: response.Name})
+	if err != nil {
+		return "", err
+	}
+	if _, exists := p.keys[opened.kid]; exists {
+		return "", fmt.Errorf("dnsid/gcpkms: generated key duplicates an existing public key")
+	}
+	entry := opened.keys[opened.kid]
+	entry.pending = true
+	p.keys[opened.kid] = entry
+	return opened.kid, nil
+}
 
-// Supersede is unavailable and never changes remote version state.
-func (p *Provider) Supersede(string) error { return lifecycleUnavailable() }
+// Activate explicitly promotes a pending key. The previous key remains available
+// as a public JWK but cannot sign. No remote version state is changed.
+func (p *Provider) Activate(kid string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	entry := p.keys[kid]
+	if entry == nil {
+		return dnsid.NewArgumentError("dnsid/gcpkms: unknown activation key", nil)
+	}
+	if kid == p.kid {
+		return nil
+	}
+	if !entry.pending {
+		return dnsid.NewArgumentError("dnsid/gcpkms: activation requires a pending key", nil)
+	}
+	entry.pending = false
+	p.kid = kid
+	return nil
+}
 
-// Purge is unavailable and never destroys a remote version.
-func (p *Provider) Purge(string) error { return lifecycleUnavailable() }
-func lifecycleUnavailable() error {
-	return dnsid.NewArgumentError("dnsid/gcpkms: key lifecycle operations are not available", nil)
+// Supersede removes local signing eligibility and public access, without
+// disabling or destroying any cloud version. A different active key is preserved.
+func (p *Provider) Supersede(kid string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.keys[kid]; !ok {
+		return dnsid.NewArgumentError("dnsid/gcpkms: unknown supersession key", nil)
+	}
+	delete(p.keys, kid)
+	if p.kid == kid {
+		p.kid = ""
+	}
+	return nil
+}
+
+// Purge removes a pending or retained key locally. It rejects the active key
+// and never changes cloud state.
+func (p *Provider) Purge(kid string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if kid == p.kid {
+		return dnsid.NewArgumentError("dnsid/gcpkms: cannot purge active key", nil)
+	}
+	if _, ok := p.keys[kid]; !ok {
+		return dnsid.NewArgumentError("dnsid/gcpkms: unknown purge key", nil)
+	}
+	delete(p.keys, kid)
+	return nil
 }
 
 // Close releases the client created by configuration loading. For New, the

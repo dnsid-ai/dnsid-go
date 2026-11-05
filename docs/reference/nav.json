@@ -9,6 +9,7 @@
   { "label": "Profile: OIDC", "slug": "reference/go/oidc" },
   { "label": "Key providers", "slug": "reference/go/dnsid-keys" },
   { "label": "Key providers: AWS KMS", "slug": "reference/go/key-aws" },
+  { "label": "Key providers: Google Cloud KMS", "slug": "reference/go/key-gcp" },
   { "label": "Registry", "slug": "reference/go/dnsid-registry" },
   { "label": "Lifecycle log", "slug": "reference/go/log" },
   { "label": "Transparency log", "slug": "reference/go/log-c2sptlog" },

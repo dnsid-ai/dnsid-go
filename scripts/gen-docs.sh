@@ -158,6 +158,7 @@ PACKAGES=(
 	"log|.|./log|Lifecycle log|Agent lifecycle log abstractions for DNSid."
 	"log-c2sptlog|.|./log/c2sptlog|Transparency log|C2SP transparency-log (tlog) client support for DNSid lifecycle logs."
 	"key-aws|key/aws|.|Key providers: AWS KMS|AWS KMS-backed key provider for DNSid."
+	"key-gcp|key/gcp|.|Key providers: Google Cloud KMS|Google Cloud KMS-backed Ed25519 key provider for DNSid."
 )
 
 # Docs-site nav (and overview package-map) order — the shared cross-SDK
@@ -173,6 +174,7 @@ NAV_ORDER=(
 	oidc
 	dnsid-keys
 	key-aws
+	key-gcp
 	dnsid-registry
 	log
 	log-c2sptlog

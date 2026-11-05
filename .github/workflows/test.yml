@@ -34,6 +34,7 @@ jobs:
         run: |
           go test ./...
           (cd key/aws && go test ./...)
+          (cd key/gcp && go test ./...)
           (cd examples/deployment-identity && go test ./...)
 
   release-gates:
@@ -55,9 +56,11 @@ jobs:
         run: |
           go vet ./...
           (cd key/aws && go vet ./...)
+          (cd key/gcp && go vet ./...)
           (cd examples/deployment-identity && go vet ./...)
           go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
           (cd key/aws && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
+          (cd key/gcp && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
           (cd examples/deployment-identity && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
 
       # Config lives in .golangci.yml at the repo root; nested modules need
@@ -74,18 +77,25 @@ jobs:
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13.1
+          working-directory: key/gcp
+
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.1
           working-directory: examples/deployment-identity
 
       - name: Run race tests
         run: |
           go test -race ./...
           (cd key/aws && go test -race ./...)
+          (cd key/gcp && go test -race ./...)
           (cd examples/deployment-identity && go test -race ./...)
 
       - name: Check module files are tidy
         run: |
           go mod tidy -diff
           (cd key/aws && go mod tidy -diff)
+          (cd key/gcp && go mod tidy -diff)
           (cd examples/deployment-identity && go mod tidy -diff)
 
   docs:
@@ -107,6 +117,7 @@ jobs:
           go run github.com/mgechev/revive@v1.15.0 -config revive.toml \
             . ./jose/... ./oidc/... ./httpsig/... ./webbotauth/... ./log/...
           (cd key/aws && go run github.com/mgechev/revive@v1.15.0 -config ../../revive.toml ./...)
+          (cd key/gcp && go run github.com/mgechev/revive@v1.15.0 -config ../../revive.toml ./...)
 
       # Advisory only: the regen-docs workflow pushes regenerated reference
       # docs to same-repo PR branches automatically. The warning matters for
