@@ -1,9 +1,10 @@
 package gcpkms_test
 
 import (
+	"testing"
+
 	"github.com/dnsid-ai/dnsid-go/config"
 	_ "github.com/dnsid-ai/dnsid-go/key/gcp"
-	"testing"
 )
 
 // Mode: fake-only (no cloud credentials or service). Given an immutable existing
