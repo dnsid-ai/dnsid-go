@@ -7,6 +7,7 @@ import (
 	kms "cloud.google.com/go/kms/apiv1"
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
+	"google.golang.org/api/option"
 )
 
 func init() {
@@ -40,10 +41,25 @@ func validateSource(src config.KeySource) error {
 }
 
 func openSource(ctx context.Context, src config.KeySource, _ string) (dnsid.KeyProvider, error) {
+	return Open(ctx, src)
+}
+
+// Open validates configuration and opens its existing immutable version using
+// the official Google client. Options configure that client's transport and
+// authentication; they do not become deployment settings. With no options,
+// authentication uses Application Default Credentials, as in the registered
+// google-kms factory. No key is created and no file signer is substituted.
+//
+// The returned provider owns the created client: call Close after all operations
+// finish. On failure Open closes the created client. A connection supplied via
+// option.WithGRPCConn is subject to the official client's Close behavior, which
+// may close it (including on an opening failure). Supply a dedicated connection,
+// not one shared with unrelated clients.
+func Open(ctx context.Context, src config.KeySource, opts ...option.ClientOption) (*Provider, error) {
 	if err := validateSource(src); err != nil {
 		return nil, err
 	}
-	client, err := kms.NewKeyManagementClient(ctx)
+	client, err := kms.NewKeyManagementClient(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}

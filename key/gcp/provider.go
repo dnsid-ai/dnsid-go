@@ -278,9 +278,10 @@ func (p *Provider) Purge(kid string) error {
 	return nil
 }
 
-// Close releases the client created by configuration loading. For New, the
-// caller owns the supplied client and Close is a no-op. Call only after all
-// provider operations have completed.
+// Close releases the client created by Open or configuration loading. For New,
+// the caller owns the supplied client and Close is a no-op. Connections supplied
+// through option.WithGRPCConn may also be closed by the official client. Call
+// only after all provider operations have completed.
 func (p *Provider) Close() error {
 	if p.closeClient != nil {
 		return p.closeClient()
