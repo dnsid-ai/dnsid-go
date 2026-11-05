@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.24.1-0.20261001053825-dbc26066f70a // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
@@ -18,15 +19,18 @@ require (
 	cloud.google.com/go/longrunning v1.3.0 // indirect
 	filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/google/s2a-go v0.1.11 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.23 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/httprc/v3 v3.0.6 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/transparency-dev/formats v0.1.1 // indirect
 	github.com/transparency-dev/merkle v0.0.2 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
