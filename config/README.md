@@ -12,7 +12,7 @@ if err != nil {
 manager, err := config.Construct(ctx, loaded, config.Dependencies{})
 ```
 
-File sections are `dnsid`, `logTrust`, `registry`, and `keySource`. Unknown,
+File sections are `dnsid`, `logTrust`, `registry`, `foundry`, and `keySource`. Unknown,
 duplicate, null, and mistyped members fail. Durations use Go duration strings.
 Merge is field-wise; lists replace and log trust is atomic. Operational key-source
 fields replace as a group; `entityKeyPath` merges independently. Scalar zero values
@@ -44,8 +44,11 @@ factory. Missing providers fail before key/policy access, without file fallback.
 identity's signer binding before using a different key source; configuration alone
 does not authorize rotation.
 
-These configuration/provider and onboarding APIs work with the existing server.
-Named creation and automatic permanent recovery are separate workflow changes.
+The optional `foundry` section holds `organizationId` and `governanceId`
+expectations. Loaders preserve them; `Construct` does not infer a local identity
+or counterparty trust from them. The separate [foundry package](../foundry/)
+consumes these expectations for named Live creation. Its server acceptance gates
+remain separate from the existing configuration/provider and onboarding APIs.
 
 See [the deployment-identity example](../examples/deployment-identity/) for loading
 an existing file or AWS KMS key, checking its published binding, and signing an
