@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,7 @@ func (consumerResolver) Close()                                {}
 // factory, Then the manager/profile uses the selected cloud version unchanged.
 func TestRegisteredGCPConsumer(t *testing.T) {
 	if address := os.Getenv("DNSID_TEST_GCP_CHILD"); address != "" {
+		installConsumerRoots(t)
 		resolver.Register(consumerResolver{address: address, scheme: "dns"})
 		resolver.Register(consumerResolver{address: address, scheme: "passthrough"})
 		runRegisteredConsumer(t)
@@ -60,6 +62,73 @@ func TestRegisteredGCPConsumer(t *testing.T) {
 		t.Run(mode, func(t *testing.T) { registeredTransport(t, mode) })
 	}
 }
+
+// An explicit child-only fallback pool is portable to macOS (unlike
+// SSL_CERT_FILE/DIR). Forced fallback uses Go's certificate verifier, not a
+// verification bypass; the actual registered Google client remains unchanged.
+func installConsumerRoots(t *testing.T) {
+	t.Helper()
+	pemBytes, err := os.ReadFile(os.Getenv("DNSID_TEST_GCP_ROOTS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(pemBytes) {
+		t.Fatal("invalid fixture roots")
+	}
+	x509.SetFallbackRoots(roots)
+}
+
+func TestRegisteredGCPTransportTrust(t *testing.T) {
+	if address := os.Getenv("DNSID_TEST_GCP_CHILD"); address != "" {
+		installConsumerRoots(t)
+		wrongKey, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wrongCA := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "Unrelated test CA"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+		wrongDER, err := x509.CreateCertificate(rand.Reader, wrongCA, wrongCA, &wrongKey.PublicKey, wrongKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wrongRoots := x509.NewCertPool()
+		wrongCert, err := x509.ParseCertificate(wrongDER)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wrongRoots.AddCert(wrongCert)
+		for _, tc := range []struct {
+			name, host string
+			roots      *x509.CertPool
+			reject     bool
+		}{
+			{name: "trusted hostname", host: "cloudkms.googleapis.com"},
+			{name: "wrong hostname", host: "not-kms.example", reject: true},
+			{name: "wrong CA", host: "cloudkms.googleapis.com", roots: wrongRoots, reject: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				conn, err := tls.DialWithDialer(&net.Dialer{Timeout: time.Second * 5}, "tcp", address, &tls.Config{ServerName: tc.host, RootCAs: tc.roots, MinVersion: tls.VersionTLS12})
+				if conn != nil {
+					conn.Close()
+				}
+				if tc.reject {
+					if err == nil {
+						t.Fatal("invalid TLS peer accepted")
+					}
+					var invalid *tls.CertificateVerificationError
+					if !errors.As(err, &invalid) {
+						t.Fatalf("not certificate verification failure: %v", err)
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+		return
+	}
+	registeredTransport(t, "transport trust")
+}
+
 func registeredTransport(t *testing.T, mode string) {
 	t.Helper()
 	home := t.TempDir()
@@ -102,18 +171,32 @@ func registeredTransport(t *testing.T, mode string) {
 	defer server.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestRegisteredGCPConsumer$", "-test.v", "-test.timeout=60s")
+	testName := "TestRegisteredGCPConsumer"
+	if mode == "transport trust" {
+		testName = "TestRegisteredGCPTransportTrust"
+	}
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+testName+"$", "-test.v", "-test.timeout=60s")
 	// Preserve Go's coverage output directory across the isolated test binary.
 	if coverage := flag.Lookup("test.gocoverdir"); coverage != nil && coverage.Value.String() != "" {
 		cmd.Args = append(cmd.Args, "-test.gocoverdir="+coverage.Value.String())
 	}
-	cmd.Env = append(os.Environ(), "DNSID_TEST_GCP_CHILD="+listener.Addr().String(), "DNSID_TEST_GCP_MODE="+mode, "SSL_CERT_FILE="+roots, "SSL_CERT_DIR="+home, "GOOGLE_APPLICATION_CREDENTIALS="+adcPath, "GOOGLE_API_USE_MTLS_ENDPOINT=never", "GOOGLE_API_USE_CLIENT_CERTIFICATE=false", "HTTPS_PROXY=", "HTTP_PROXY=", "ALL_PROXY=", "HOME="+home)
+	env := []string{}
+	for _, value := range os.Environ() {
+		if !strings.HasPrefix(value, "GODEBUG=") {
+			env = append(env, value)
+		}
+	}
+	cmd.Env = append(env, "GODEBUG="+os.Getenv("GODEBUG")+",x509usefallbackroots=1", "DNSID_TEST_GCP_ROOTS="+roots, "DNSID_TEST_GCP_CHILD="+listener.Addr().String(), "DNSID_TEST_GCP_MODE="+mode, "GOOGLE_APPLICATION_CREDENTIALS="+adcPath, "GOOGLE_API_USE_MTLS_ENDPOINT=never", "GOOGLE_API_USE_CLIENT_CERTIFICATE=false", "HTTPS_PROXY=", "HTTP_PROXY=", "ALL_PROXY=", "HOME="+home)
 	output, err := cmd.CombinedOutput()
 	t.Logf("consumer subprocess:\n%s", output)
 	if err != nil {
 		t.Fatalf("consumer failed: %v", err)
 	}
-	if service.creates.Load() != 1 {
+	wantCreates := int32(1)
+	if mode == "transport trust" {
+		wantCreates = 0
+	}
+	if service.creates.Load() != wantCreates {
 		t.Fatalf("only explicit GenerateKey may create: got %d creations", service.creates.Load())
 	}
 	entries, err := os.ReadDir(home)
