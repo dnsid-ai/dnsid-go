@@ -39,19 +39,23 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           AWS_TAG="key/aws/$VERSION"
+          GCP_TAG="key/gcp/$VERSION"
           ROOT_EXISTS=false
           AWS_EXISTS=false
+          GCP_EXISTS=false
           git show-ref --verify --quiet "refs/tags/$VERSION" && ROOT_EXISTS=true
           git show-ref --verify --quiet "refs/tags/$AWS_TAG" && AWS_EXISTS=true
-          if $ROOT_EXISTS && $AWS_EXISTS; then
-            echo "Tags $VERSION and $AWS_TAG already exist, skipping"
-          elif $ROOT_EXISTS || $AWS_EXISTS; then
-            echo "Only one release tag exists; refusing a partial release" >&2
+          git show-ref --verify --quiet "refs/tags/$GCP_TAG" && GCP_EXISTS=true
+          if $ROOT_EXISTS && $AWS_EXISTS && $GCP_EXISTS; then
+            echo "Tags $VERSION, $AWS_TAG and $GCP_TAG already exist, skipping"
+          elif $ROOT_EXISTS || $AWS_EXISTS || $GCP_EXISTS; then
+            echo "Only some release tags exist; refusing a partial release" >&2
             exit 1
           else
             git tag -a "$VERSION" -m "Release $VERSION"
             git tag -a "$AWS_TAG" -m "Release $AWS_TAG"
-            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push --atomic origin "refs/tags/$VERSION" "refs/tags/$AWS_TAG"
+            git tag -a "$GCP_TAG" -m "Release $GCP_TAG"
+            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push --atomic origin "refs/tags/$VERSION" "refs/tags/$AWS_TAG" "refs/tags/$GCP_TAG"
           fi
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2

@@ -49,7 +49,7 @@ func TestKeySource_LoadMergeAndFactorySelection(t *testing.T) {
 	// Given independent entity custody, operational KMS must remain silent.
 	loaded.KeySource.EntityKeyPath = filepath.Join(t.TempDir(), "entity.jwk")
 	newKey(t, loaded.KeySource.EntityKeyPath)
-	manager, err := Construct(context.Background(), loaded, Dependencies{})
+	manager, err := Construct(context.Background(), loaded, setupPublication(t, loaded.Dnsid, provider))
 	if err != nil || manager.KeyProvider() != provider || calls != 2 {
 		t.Fatalf("Construct did not select linked provider: %v", err)
 	}

@@ -140,7 +140,7 @@ not replace TLS confidentiality.
 | | Supported |
 |---|---|
 | **Go** | 1.26.10 (minimum, per `go.mod`) through the latest stable release. CI tests `1.26.10` and `stable`. |
-| **Platforms** | linux/amd64 tested in CI; linux/arm64, darwin, and windows/amd64 supported (pure Go, no platform-specific code). |
+| **Platforms** | linux/amd64 tested in CI; scoped GCP fixtures also run on `macos-latest` (see [COMPATIBILITY.md](COMPATIBILITY.md)). linux/arm64, darwin, and windows/amd64 supported (pure Go, no platform-specific code). |
 | **Crypto/cgo** | Pure Go, builds with `CGO_ENABLED=0`. Standard-library crypto; FIPS via Go's native FIPS mode. |
 | **DNSSEC** | `auto` works with the built-in resolver and rejects known validation failures. `validated` and `required` need a DNSSEC-aware resolver supplied via `WithDNSResolver`. |
 
@@ -159,13 +159,14 @@ log trust profiles do not grant an identity. A DNSid identity is proven by contr
 an agent private key, and the registry's published status. Possessing, forking,
 or modifying this code grants none of those: an unofficial build cannot mint or inherit anyone's identity.
 
-**What it does on the network.** Only when you call it, and only to hosts you or the domain being verified
-chose:
+**What it does on the network.** Core verification contacts hosts selected by the domain being verified
+and your resolver. Optional cloud providers also use provider defaults and credential discovery:
 
 - DNS TXT lookup of `_dnsid.<domain>` through your system resolver (no hardcoded resolver)
 - HTTPS GET to the JWKS and status URLs published in that TXT record
-- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` / `log.partners.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws`
-- No telemetry, usage reporting, update checks, or crash reporting
+- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` / `log.partners.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws` or `key/gcp`
+- `key/gcp` uses the official Google KMS client over gRPC/TLS (default `cloudkms.googleapis.com:443`). Opening fetches the public key; signing sends the raw payload to KMS, not just a digest. Application Default Credentials (ADC) discovery may probe metadata; token acquisition and refresh vary by environment and credential type (for example OAuth token service, STS federation, IAM Credentials impersonation, or configured external credential sources). Some flows use self-signed JWTs without token exchange. Endpoint/auth options and credential configuration can change destinations; this is not a fixed egress allowlist or a claim that every flow calls all these services. See [provider lifecycle](docs/reference/key-gcp.md) and [transport operations](OPERATIONS.md#proxy-and-tls-options).
+- The DNSid SDK itself has no telemetry, usage reporting, update checks, or crash reporting; this does not describe every upstream cloud-client option or feature
 
 **Logging.** The SDK has no logger; errors are returned to the caller. It warns on stderr if a
 custom HTTP transport cannot be safely preserved.
@@ -176,7 +177,9 @@ own terms. Nothing in this repository is an availability, uptime, or support com
 **For your privacy notice.** Using this SDK causes your system to make DNS and HTTPS requests to the domains
 you verify and to the JWKS/status hosts they publish. It sends them nothing about your users. If you enable
 the registry or transparency-log clients, requests also go to DNSid-operated endpoints; disclose that where
-your notice requires it.
+your notice requires it. Optional cloud key providers also contact their cloud and authentication/credential
+sources; assess the configured destinations and data sent, including the raw signing payload sent by
+`key/gcp`.
 
 ## License
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
+	"encoding/json"
 	"log"
 	"math/big"
 	"os"
@@ -13,11 +14,13 @@ import (
 	"strings"
 	"testing"
 
+	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
+
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
-// Mode: real-capable. Real deployment loading, persisted keys, construction and
-// ES256 signing; no network. Guards known-foundry#57 / configuration section 12.
+// Mode: fake-only for publication DNS/HTTPS/log evidence. Real deployment
+// loading, persisted file-factory keys, core verification and ES256 signing.
 func TestConstruct_LocalWarningEveryStartup(t *testing.T) {
 	if path := os.Getenv("DNSID_TEST_WARNING_DEPLOYMENT"); path != "" {
 		// When a fresh application loads the existing deployment and constructs.
@@ -25,7 +28,22 @@ func TestConstruct_LocalWarningEveryStartup(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		manager, err := Construct(context.Background(), loaded, Dependencies{})
+		// Publication was authored and verified by the parent independently of
+		// this startup. Only public evidence crosses the process boundary.
+		proofBytes, err := os.ReadFile(os.Getenv("DNSID_TEST_WARNING_PUBLICATION"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var proof startupPublication
+		if err := json.Unmarshal(proofBytes, &proof); err != nil {
+			t.Fatal(err)
+		}
+		registry := dnsidlog.NewLogRegistry()
+		if err := registry.Register("m", func(string) dnsidlog.LogReader { return &configPublicationLog{} }); err != nil {
+			t.Fatal(err)
+		}
+		deps := Dependencies{DNSResolver: configPublicationDNS{record: proof.Record, name: "_dnsid.agent.example.com"}, HTTPSFetcher: proof.Resources, LogRegistry: registry}
+		manager, err := Construct(context.Background(), loaded, deps)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,16 +78,23 @@ func TestConstruct_LocalWarningEveryStartup(t *testing.T) {
 			key := newKey(t, keyPath)
 			path := filepath.Join(dir, "deployment.json")
 			writeJSON(t, path, map[string]any{
-				"dnsid":     map[string]any{"identity": map[string]any{"domain": "agent.example.com", "governanceId": "example.com", "statusUrl": "https://api.example.com/status", "logRef": "m:1"}},
+				"dnsid":     map[string]any{"identity": map[string]any{"domain": "agent.example.com", "governanceId": "example.com", "statusUrl": "https://api.example.com/status", "logRef": "m:1", "keyUrl": "https://agent.example.com/keys", "entityKeyUrl": "https://example.com/ek"}},
 				"keySource": KeySource{Provider: provider, KeyStorePath: keyPath},
 			})
+			loaded, err := LoadDeploymentFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			deps := setupPublication(t, loaded.Dnsid, key)
+			proofPath := filepath.Join(dir, "publication.json")
+			writeJSON(t, proofPath, startupPublication{Record: deps.DNSResolver.(configPublicationDNS).record, Resources: deps.HTTPSFetcher.(configPublicationHTTP)})
 			before, err := os.ReadFile(keyPath)
 			if err != nil {
 				t.Fatal(err)
 			}
 			for startup := 1; startup <= 2; startup++ {
 				cmd := exec.Command(os.Args[0], "-test.run=^TestConstruct_LocalWarningEveryStartup$")
-				cmd.Env = append(os.Environ(), "DNSID_TEST_WARNING_DEPLOYMENT="+path, "DNSID_TEST_WARNING_KID="+activeKid(key))
+				cmd.Env = append(os.Environ(), "DNSID_TEST_WARNING_DEPLOYMENT="+path, "DNSID_TEST_WARNING_KID="+activeKid(key), "DNSID_TEST_WARNING_PUBLICATION="+proofPath)
 				output, err := cmd.CombinedOutput()
 				if err != nil {
 					t.Fatalf("startup %d: %v\n%s", startup, err, output)
@@ -90,6 +115,13 @@ func TestConstruct_LocalWarningEveryStartup(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Public, parent-established publication; never private keys or a signer derived
+// from the selected child's provider.
+type startupPublication struct {
+	Record    string
+	Resources configPublicationHTTP
 }
 
 // Capture the native Go logging sink without replacing key selection or warning
