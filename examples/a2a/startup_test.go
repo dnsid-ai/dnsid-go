@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/base64"
@@ -89,7 +90,8 @@ type startupFixture struct {
 	once        sync.Once
 	mode        atomic.Value
 	statusRead  chan struct{}
-	observed    chan struct{}
+	attempts    chan struct{}
+	released    atomic.Bool
 	stop        func()
 	manager     *dnsid.IdentityManager
 	keys        dnsid.KeyProvider
@@ -98,7 +100,7 @@ type startupFixture struct {
 	other       any
 }
 
-func (f *startupFixture) publish() { f.once.Do(func() { close(f.release) }) }
+func (f *startupFixture) publish() { f.once.Do(func() { f.released.Store(true); close(f.release) }) }
 func startupDNS(t *testing.T, record string) string {
 	t.Helper()
 	c, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -148,7 +150,7 @@ func startupDNS(t *testing.T, record string) string {
 }
 func newStartupFixture(t *testing.T) *startupFixture {
 	t.Helper()
-	f := &startupFixture{unavailable: make(chan struct{}, 1), release: make(chan struct{}), statusRead: make(chan struct{}, 1), observed: make(chan struct{}, 32)}
+	f := &startupFixture{unavailable: make(chan struct{}, 1), release: make(chan struct{}), statusRead: make(chan struct{}, 1), attempts: make(chan struct{}, 32)}
 	f.mode.Store("valid")
 	t.Cleanup(f.publish)
 	// Reserve a child listener address, then close it: ku is genuinely refused
@@ -180,7 +182,19 @@ func newStartupFixture(t *testing.T) *startupFixture {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/ek":
-			_ = json.NewEncoder(w).Encode(entity)
+			postRelease := f.released.Load() // capture at handler ENTRY, not response completion
+			if err := json.NewEncoder(w).Encode(entity); err != nil {
+				return
+			}
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				return
+			}
+			if postRelease {
+				select {
+				case f.attempts <- struct{}{}:
+				case <-r.Context().Done():
+				}
+			}
 		case "/status":
 			select {
 			case f.statusRead <- struct{}{}:
@@ -201,10 +215,6 @@ func newStartupFixture(t *testing.T) *startupFixture {
 				http.Error(w, "publication unavailable", 503)
 			default:
 				proxy.ServeHTTP(w, r)
-			}
-			select {
-			case f.observed <- struct{}{}:
-			default:
 			}
 		default:
 			proxy.ServeHTTP(w, r)
@@ -286,6 +296,11 @@ func startA2A(t *testing.T, f *startupFixture) (<-chan error, func() string) {
 		case <-exited:
 		case <-time.After(6 * time.Second):
 			_ = cmd.Process.Kill()
+			select {
+			case <-exited:
+			case <-time.After(2 * time.Second):
+				t.Error("killed child Wait did not complete")
+			}
 			t.Error("child did not shut down within cancellation bound")
 		}
 	})
@@ -324,15 +339,9 @@ func TestA2AStartup_BootstrapJWKSBeforePublication(t *testing.T) {
 		}
 		resp, err := f.get("/.well-known/jwks.json")
 		if err == nil {
-			body, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
+			body := readStartupBody(t, resp)
 			if resp.StatusCode == 200 {
-				var set struct {
-					Keys []json.RawMessage `json:"keys"`
-				}
-				if json.Unmarshal(body, &set) != nil || len(set.Keys) != 1 {
-					t.Fatalf("bootstrap JWKS is not one public operational key: %s", body)
-				}
+				assertBootstrapKey(t, f, body)
 				return
 			}
 		}
@@ -353,8 +362,9 @@ func awaitBootstrap(t *testing.T, f *startupFixture, done <-chan error, output f
 		}
 		r, err := (&http.Client{Timeout: time.Second}).Get(f.childURL + "/.well-known/jwks.json")
 		if err == nil {
-			_ = r.Body.Close()
+			body := readStartupBody(t, r)
 			if r.StatusCode == 200 {
+				assertBootstrapKey(t, f, body)
 				return
 			}
 		}
@@ -394,8 +404,7 @@ func assertNoApplicationSignature(t *testing.T, f *startupFixture) {
 			method = http.MethodPost
 		}
 		r, _ := f.exchange(t, path, method, []byte(`{"jsonrpc":"2.0","id":"probe","method":"SendMessage","params":{"message":{"messageId":"probe","role":"ROLE_USER","parts":[{"text":"must not echo"}]}}}`))
-		b, _ := io.ReadAll(r.Body)
-		_ = r.Body.Close()
+		b := readStartupBody(t, r)
 		if r.StatusCode/100 == 2 || r.Header.Get("Signature") != "" || r.Header.Get("Signature-Input") != "" || bytes.Contains(b, []byte(`"signatures"`)) || bytes.Contains(b, []byte(`verified sender`)) {
 			t.Fatalf("unbound application route %s authorized/signs: status=%d headers=%v body=%s", path, r.StatusCode, r.Header, b)
 		}
@@ -405,16 +414,18 @@ func assertStopped(t *testing.T, f *startupFixture, done <-chan error, output fu
 	t.Helper()
 	f.stop()
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("SIGTERM did not produce clean run exit: %v\n%s", err, output())
+		}
 	case <-time.After(6 * time.Second):
 		t.Fatalf("cancellation did not bound shutdown: %s", output())
 	}
-	r, err := f.get("/.well-known/jwks.json")
+	// Probe the actual child address, never the fixture's synthetic KU modes.
+	conn, err := net.DialTimeout("tcp", strings.TrimPrefix(f.childURL, "http://"), time.Second)
 	if err == nil {
-		_ = r.Body.Close()
-		if r.StatusCode != 502 {
-			t.Fatalf("listener survived child shutdown: HTTP %d", r.StatusCode)
-		}
+		_ = conn.Close()
+		t.Fatal("actual child listener survived clean shutdown")
 	}
 }
 
@@ -437,8 +448,7 @@ func TestA2AStartup_ReleasedPublicationEnablesSignedExchange(t *testing.T) {
 	var card []byte
 	for {
 		r, _ := f.exchange(t, agentCardPath, http.MethodGet, nil)
-		body, _ := io.ReadAll(r.Body)
-		_ = r.Body.Close()
+		body := readStartupBody(t, r)
 		if r.StatusCode == 200 {
 			card = body
 			break
@@ -461,11 +471,33 @@ func TestA2AStartup_ReleasedPublicationEnablesSignedExchange(t *testing.T) {
 	if !ok || len(sigs) != 1 {
 		t.Fatalf("card missing one detached signature: %s", card)
 	}
-	sig := sigs[0].(map[string]any)
+	sig, ok := sigs[0].(map[string]any)
+	if !ok {
+		t.Fatalf("invalid card signature object: %s", card)
+	}
 	delete(object, "signatures")
 
-	protected := sig["protected"].(string)
-	raw, err := base64.RawURLEncoding.DecodeString(sig["signature"].(string))
+	protected, ok := sig["protected"].(string)
+	if !ok {
+		t.Fatal("missing card protected header")
+	}
+	encoded, ok := sig["signature"].(string)
+	if !ok {
+		t.Fatal("missing card signature bytes")
+	}
+	headerBytes, err := base64.RawURLEncoding.DecodeString(protected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header map[string]any
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
+		t.Fatal(err)
+	}
+	kid, _ := f.keys.JWK().KeyID()
+	if header["alg"] != "ES256" || header["kid"] != "example.com#"+kid {
+		t.Fatalf("card protected alg/kid = %s", headerBytes)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil || len(raw) != 64 {
 		t.Fatal("invalid card signature encoding")
 	}
@@ -489,7 +521,7 @@ func TestA2AStartup_ReleasedPublicationEnablesSignedExchange(t *testing.T) {
 		t.Fatalf("authenticated response verification: %v", err)
 	}
 	defer r.Body.Close()
-	body, _ := io.ReadAll(r.Body)
+	body := readStartupBody(t, r)
 	if r.StatusCode != 200 || vd.Domain() != "example.com" || !bytes.Contains(body, []byte("verified sender: example.com")) || !bytes.Contains(body, []byte("real crypto hello")) {
 		t.Fatalf("authenticated echo missing: status=%d body=%s", r.StatusCode, body)
 	}
@@ -497,8 +529,8 @@ func TestA2AStartup_ReleasedPublicationEnablesSignedExchange(t *testing.T) {
 }
 
 // Mode: fake-only. Each release moves a blocked real verification attempt to
-// explicit invalid evidence; a subsequent KU observation is the progress fence,
-// never a sleep. Application probes negotiate real response signatures.
+// explicit invalid evidence; two post-release sequential ek attempts fence a
+// completed rejection and retry, never an elapsed-time assumption. Application probes negotiate real response signatures.
 func TestA2AStartup_InvalidPublicationNeverAuthorizes(t *testing.T) {
 	for _, mode := range []string{"mismatch", "corrupt", "unavailable"} {
 		t.Run(mode, func(t *testing.T) {
@@ -516,17 +548,20 @@ func TestA2AStartup_InvalidPublicationNeverAuthorizes(t *testing.T) {
 				}
 			}
 			assertNoApplicationSignature(t, f)
-			for len(f.observed) > 0 {
-				<-f.observed
-			}
-			f.mode.Store(mode)
 			f.publish()
-			select {
-			case <-f.observed:
-			case err := <-done:
-				t.Fatalf("run terminated instead of bounded publication retry: %v\n%s", err, output())
-			case <-time.After(5 * time.Second):
-				t.Fatal("no fresh KU read after fixture release")
+			// There are no external VerifyDomain calls/probes during this fence.
+			// Each guarded Construct fetches ek before ku/status, sequentially
+			// across retries. Two ek responses whose handlers STARTED after
+			// release prove the first post-release attempt returned and retry
+			// started. Merely writing an invalid ku response cannot satisfy it.
+			for range 2 {
+				select {
+				case <-f.attempts:
+				case err := <-done:
+					t.Fatalf("run exited before completed invalid attempt/retry: %v\n%s", err, output())
+				case <-time.After(5 * time.Second):
+					t.Fatalf("no causally completed invalid attempt/retry: %s", output())
+				}
 			}
 			assertNoApplicationSignature(t, f)
 			assertStopped(t, f, done, output)
@@ -540,6 +575,62 @@ func TestA2AStartup_CancelBeforePublication(t *testing.T) {
 	f := newStartupFixture(t)
 	done, output := startA2A(t, f)
 	awaitBootstrap(t, f, done, output)
+	select {
+	case <-f.statusRead:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancellation never reached active withheld status read")
+	}
 	assertNoApplicationSignature(t, f)
 	assertStopped(t, f, done, output)
+}
+
+func readStartupBody(t *testing.T, r *http.Response) []byte {
+	t.Helper()
+	b, err := io.ReadAll(r.Body)
+	closeErr := r.Body.Close()
+	if err != nil {
+		t.Fatalf("reading HTTP body: %v", err)
+	}
+	if closeErr != nil {
+		t.Fatalf("closing HTTP body: %v", closeErr)
+	}
+	return b
+}
+func assertBootstrapKey(t *testing.T, f *startupFixture, body []byte) {
+	t.Helper()
+	var wire struct {
+		Keys []map[string]json.RawMessage `json:"keys"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil || len(wire.Keys) != 1 {
+		t.Fatalf("bootstrap JWKS must contain one public key: %s", body)
+	}
+	for _, name := range []string{"d", "k", "p", "q", "dp", "dq", "qi", "oth", "crt"} {
+		if _, ok := wire.Keys[0][name]; ok {
+			t.Fatalf("bootstrap discloses private parameter %q", name)
+		}
+	}
+	set, err := jwk.Parse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, ok := set.Key(0)
+	if !ok {
+		t.Fatal("bootstrap key missing")
+	}
+	expected := f.keys.JWK()
+	gotKid, _ := key.KeyID()
+	wantKid, _ := expected.KeyID()
+	gotAlg, _ := key.Algorithm()
+	wantAlg, _ := expected.Algorithm()
+	gotThumb, err := key.Thumbprint(crypto.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantThumb, err := expected.Thumbprint(crypto.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotKid != wantKid || gotAlg.String() != wantAlg.String() || !bytes.Equal(gotThumb, wantThumb) {
+		t.Fatalf("bootstrap public custody mismatch: kid=%s alg=%s", gotKid, gotAlg)
+	}
 }
