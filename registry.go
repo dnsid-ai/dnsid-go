@@ -191,15 +191,15 @@ type LiveChallengeTranscript struct {
 }
 
 // LiveProvisioningResponse is the HTTP 202 response for a managed Live
-// registration. Domain and ChallengeTranscript are derived and populated while
-// Status is challenge_pending.
+// registration. ChallengeTranscript is derived while Status is challenge_pending.
+// Domain comes from that transcript or the optional replay domain member.
 type LiveProvisioningResponse struct {
 	RequestID           string                   `json:"request_id"`
 	AgentID             string                   `json:"agent_id"`
 	Status              string                   `json:"status"`
 	Challenge           string                   `json:"challenge"`
 	ChallengeMessage    string                   `json:"challenge_message"`
-	Domain              string                   `json:"-"`
+	Domain              string                   `json:"domain,omitempty"`
 	ChallengeTranscript *LiveChallengeTranscript `json:"-"`
 }
 
@@ -265,6 +265,7 @@ type AgentDetail struct {
 	IdentityRecordExpiring  *bool             `json:"identity_record_expiring,omitempty"`
 	Error                   *AgentError       `json:"error,omitempty"`
 	PublicationConfig       PublicationConfig `json:"publication_config"`
+	OIDCIssuerURL           string            `json:"oidc_issuer_url,omitempty"`
 	CreatedAt               time.Time         `json:"created_at"`
 	UpdatedAt               time.Time         `json:"updated_at"`
 }
@@ -805,11 +806,18 @@ func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgent
 		return nil, err
 	}
 	if err := validateLiveResponse(idempotencyKey, response.RequestID, response.AgentID, response.Status); err != nil {
-		return nil, err
+		return response, err
 	}
 	domain, transcript, err := parseLiveChallenge(response.Status, response.AgentID, response.Challenge, response.ChallengeMessage, keyID, "")
 	if err != nil {
-		return nil, err
+		return response, err
+	}
+	if response.Domain != "" {
+		wireDomain, err := NormalizeFQDN(response.Domain)
+		if err != nil || (domain != "" && wireDomain != domain) {
+			return response, NewValidationError("dnsid: Live response domain is invalid or conflicts with challenge", err)
+		}
+		domain = wireDomain
 	}
 	response.Domain, response.ChallengeTranscript = domain, transcript
 	return response, nil
@@ -855,9 +863,11 @@ func (c *HTTPRegistryClient) GetAgentStatus(ctx context.Context, fqdn string) (*
 // OrganizationOnboardingResponse contains authenticated account bindings and
 // live proof/delegation readiness, not an entity-key URL or trust root.
 type OrganizationOnboardingResponse struct {
-	OrganizationID   string `json:"org_id"`
-	GovernanceDomain string `json:"governance_domain"`
-	GI               *struct {
+	// MissingRequiredFields distinguishes an omitted proof gate from an explicit false gate.
+	MissingRequiredFields bool   `json:"-"`
+	OrganizationID        string `json:"org_id"`
+	GovernanceDomain      string `json:"governance_domain"`
+	GI                    *struct {
 		Domain         string `json:"domain"`
 		State          string `json:"state"`
 		GateAuthorized bool   `json:"gate_authorized"`
@@ -865,6 +875,26 @@ type OrganizationOnboardingResponse struct {
 	EK struct {
 		Status string `json:"status"`
 	} `json:"ek"`
+}
+
+// UnmarshalJSON retains required-field presence while ignoring server extensions.
+func (r *OrganizationOnboardingResponse) UnmarshalJSON(data []byte) error {
+	type response OrganizationOnboardingResponse
+	var value response
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	var presence struct {
+		GI *struct {
+			GateAuthorized *bool `json:"gate_authorized"`
+		} `json:"gi"`
+	}
+	if err := json.Unmarshal(data, &presence); err != nil {
+		return err
+	}
+	*r = OrganizationOnboardingResponse(value)
+	r.MissingRequiredFields = presence.GI == nil || presence.GI.GateAuthorized == nil
+	return nil
 }
 
 // GetOrganizationOnboarding reads the authenticated organization's onboarding
@@ -904,6 +934,7 @@ func (c *HTTPRegistryClient) GetRegistration(ctx context.Context, fqdn string) (
 	return &AgentRegistration{
 		ID:                   detail.ID,
 		PublicationConfig:    detail.PublicationConfig,
+		OIDCIssuerURL:        detail.OIDCIssuerURL,
 		Domain:               detail.Domain,
 		PublicationAuthority: authority,
 		RegistryStatus:       status,
