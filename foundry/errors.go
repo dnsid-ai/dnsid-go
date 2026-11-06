@@ -41,7 +41,7 @@ type Error struct {
 func (e *Error) Error() string {
 	text := fmt.Sprintf("foundry: %s (phase=%s, id=%q, domain=%q, code=%q)", e.Kind, e.Phase, e.IdentityID, e.Domain, e.Code)
 	if e.Kind == KeyMismatch {
-		text += "; use the existing provider key; see https://github.com/Identity-Digital/known-foundry/issues/63 (one identity per cloud)"
+		text += "; use the provider key this identity was created with; run one identity per cloud provider"
 	}
 	if e.Cause != nil {
 		text += ": " + e.Cause.Error()

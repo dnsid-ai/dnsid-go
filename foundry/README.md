@@ -1,7 +1,7 @@
 # Known Foundry creation
 
 This subpackage implements the Known Foundry contract in `dnsid-sdk-compliance`
-commit `89600ed`. It is not a generic DNSid registration API. Server acceptance
+commit `665aa67`. It is not a generic DNSid registration API. Server acceptance
 SR-1 through SR-7 is still a release gate; no deployed server revision is certified.
 There is no sandbox fallback, replacement flow, or extra capability probe.
 
@@ -29,6 +29,10 @@ deadline, or a default of 30 seconds for Create and 10 minutes for Active.
 Polling starts at one second and doubles to a maximum of 15 seconds. Non-cancellable provider
 calls are checked before and after; the provider's own timeout bounds those calls.
 Cancellation preserves progress and does not cancel the server identity.
+After an unknown proof outcome expires, request a reissue if the registry still
+waits for proof. HTTP 409 means the challenge was used; wait for registry status
+without resubmitting it. A successful reissue clears the old signature and outcome
+before signing the replacement challenge.
 A refresh deadline preserves the previous signing state; it does not create a
 terminal or integrity pause.
 

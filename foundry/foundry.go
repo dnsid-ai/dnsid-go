@@ -1,7 +1,7 @@
 //go:build dnsid_foundry
 
 // Package foundry implements Known Foundry named caller-key Live creation.
-// It targets the contract pinned at dnsid-sdk-compliance 89600ed. Server SR-1
+// It targets the contract pinned at dnsid-sdk-compliance 665aa67. Server SR-1
 // through SR-7 remain release gates; no deployed server revision is certified.
 // Core DNSid, ordinary registration, and configuration loading do not depend on it.
 package foundry
@@ -597,6 +597,22 @@ func (c *Client) readDetail(ctx context.Context, lease FoundryLease, doc *Recove
 	return detail, nil
 }
 
+func (c *Client) waitForRegistryReady(ctx context.Context, lease FoundryLease, doc *RecoveryDocument) (*dnsid.AgentDetail, error) {
+	var backoff pollBackoff
+	for {
+		detail, err := c.readDetail(ctx, lease, doc)
+		if err != nil {
+			return nil, err
+		}
+		if doc.RegistryStatus == "VERIFIED" || doc.RegistryStatus == "READY" {
+			return detail, nil
+		}
+		if err := backoff.wait(ctx); err != nil {
+			return nil, c.wrap(doc, err)
+		}
+	}
+}
+
 // Active completes durable setup and makes a new, isolated public observation
 // on every call. Cancellation preserves progress and does not cancel the identity.
 func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity, err error) {
@@ -678,19 +694,9 @@ func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity
 			return nil, err
 		}
 	}
-	var detail *dnsid.AgentDetail
-	var backoff pollBackoff
-	for {
-		detail, err = i.client.readDetail(ctx, lease, doc)
-		if err != nil {
-			return nil, err
-		}
-		if doc.RegistryStatus == "VERIFIED" || doc.RegistryStatus == "READY" {
-			break
-		}
-		if err := backoff.wait(ctx); err != nil {
-			return nil, i.client.wrap(doc, err)
-		}
+	detail, err := i.client.waitForRegistryReady(ctx, lease, doc)
+	if err != nil {
+		return nil, err
 	}
 	if err := i.publication(ctx, lease, doc, detail); err != nil {
 		return nil, err

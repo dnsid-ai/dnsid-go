@@ -57,6 +57,8 @@ func checkPrivate(path string, _ os.FileInfo) error {
 		if err := windows.GetAce(acl, uint32(n), &ace); err != nil {
 			return err
 		}
+		// Standard x/sys/windows pattern for reading the SID from an OS-provided ACE.
+		// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
 		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || !(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(owner) {
 			return fmt.Errorf("foundry: recovery path must permit only its owner")
 		}

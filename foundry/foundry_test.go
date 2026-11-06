@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +47,8 @@ type fixture struct {
 	responses   map[string]json.RawMessage
 	dnsMissing  bool
 	publicCalls int
+	dnsCalls    int
+	publicURLs  []string
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -141,6 +144,7 @@ func (d fakeDNS) FetchTXT(ctx context.Context, name string) ([]dnsid.TXTRecordRD
 	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
+	d.f.dnsCalls++
 	if d.f.dnsMissing {
 		return nil, dnsid.DNSSECStateUnsigned, nil
 	}
@@ -159,6 +163,7 @@ func (h fakeHTTPS) FetchJSON(ctx context.Context, url string, opts dnsid.FetchOp
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
+	h.f.publicURLs = append(h.f.publicURLs, url)
 	body, ok := h.f.responses[url]
 	if !ok {
 		return nil, nil, fmt.Errorf("unexpected public URL %q", url)
@@ -225,6 +230,7 @@ type fakeRegistry struct {
 	onboarding     *dnsid.OrganizationOnboardingResponse
 	onboardingErr  error
 	status         string
+	statuses       []string
 	responseDomain string
 	name           string
 	requestID      string
@@ -234,6 +240,7 @@ type fakeRegistry struct {
 	prepareErr     error
 	proofCalls     int
 	reissueCalls   int
+	reissueErr     error
 	submissions    [][]byte
 	keys           []string
 	createErr      error
@@ -286,6 +293,10 @@ func (r *fakeRegistry) challengeResponse(response *dnsid.LiveProvisioningRespons
 	response.Status = "challenge_pending"
 }
 func (r *fakeRegistry) GetAgentStatus(context.Context, string) (*dnsid.AgentDetail, error) {
+	if len(r.statuses) > 0 {
+		r.status = r.statuses[0]
+		r.statuses = r.statuses[1:]
+	}
 	return &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}, nil
 }
 func (r *fakeRegistry) SubmitLiveProof(_ context.Context, _ string, request *dnsid.LiveProofRequest) (*dnsid.LiveProofResponse, error) {
@@ -300,8 +311,14 @@ func (r *fakeRegistry) SubmitLiveProof(_ context.Context, _ string, request *dns
 	}
 	return &dnsid.LiveProofResponse{RequestID: r.requestID, AgentID: "agent-id", Status: "accepted"}, nil
 }
-func (r *fakeRegistry) ReissueLiveProof(context.Context, string, *dnsid.LiveProofReissueRequest) (*dnsid.LiveProofReissueResponse, error) {
+func (r *fakeRegistry) ReissueLiveProof(_ context.Context, domain string, request *dnsid.LiveProofReissueRequest) (*dnsid.LiveProofReissueResponse, error) {
 	r.reissueCalls++
+	if domain != testDomain || request.RequestID != r.requestID || !sameJSON(request.PublicKey, r.initial) {
+		r.f.t.Fatal("reissue changed operation or initial key")
+	}
+	if r.reissueErr != nil {
+		return nil, r.reissueErr
+	}
 	r.expired = false
 	response := &dnsid.LiveProvisioningResponse{}
 	r.challengeResponse(response, "replacement")
@@ -756,31 +773,61 @@ func TestReplicasAndKeyMismatch(t *testing.T) {
 	client = f.newClient(dnsid.GenerateEd25519KeyProvider(), f.store)
 	_, err = client.Create(context.Background(), "replica")
 	requireKind(t, err, KeyMismatch)
+	if !strings.Contains(err.Error(), "use the provider key this identity was created with; run one identity per cloud provider") || strings.Contains(err.Error(), "https://") {
+		t.Fatalf("key mismatch lacks self-contained guidance: %v", err)
+	}
 }
 
 func TestReadinessIsPublicAndBounded(t *testing.T) {
-	for _, mode := range []string{"missing DNS", "not ACTIVE", "wrong key", "wrong log"} {
-		t.Run(mode, func(t *testing.T) {
+	for _, mode := range []struct {
+		name      string
+		kind      ErrorKind
+		message   string
+		publicURL string
+	}{
+		{name: "missing DNS", kind: Deadline},
+		{name: "not ACTIVE", kind: Deadline, publicURL: "https://agent.example/status"},
+		{name: "wrong key", kind: KeyMismatch, message: "signed current ku does not serve the provider key", publicURL: "https://agent.example/ku"},
+		{name: "wrong log", kind: Integrity, message: "public identity bindings differ from saved publication", publicURL: "https://agent.example/status"},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
 			f := newFixture(t)
 			id, err := f.client.Create(context.Background(), "public")
 			if err != nil {
 				t.Fatal(err)
 			}
-			switch mode {
+			switch mode.name {
 			case "missing DNS":
 				f.dnsMissing = true
 			case "not ACTIVE":
 				f.setStatus(dnsid.AgentStateProvisioning)
 			case "wrong key":
-				f.publish(dnsid.GenerateEd25519KeyProvider(), "governance.example", testLR, dnsid.AgentStateActive)
+				successor := dnsid.GenerateEd25519KeyProvider()
+				f.publish(successor, "governance.example", testLR, dnsid.AgentStateActive)
+				// Isolate the provider/ku mismatch from core lifecycle-continuity checks.
+				f.log.currentThumb, err = keyThumb(successor.JWK())
+				if err != nil {
+					t.Fatal(err)
+				}
 			case "wrong log":
 				f.publish(f.operational, "governance.example", "c2sp-tlog:testnet:https://wrong.example#issuance_AAAAAAAAAAAAAAAAAAAAAA", dnsid.AgentStateActive)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Millisecond)
+			timeout := 10 * time.Second
+			if mode.kind == Deadline {
+				timeout = time.Second
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			_, err = id.Active(ctx)
-			if err == nil {
-				t.Fatal("READY without public readiness succeeded")
+			requireKind(t, err, mode.kind)
+			if f.dnsCalls == 0 || (mode.publicURL != "" && !slices.Contains(f.publicURLs, mode.publicURL)) {
+				t.Fatalf("public readiness was not checked: DNS=%d URLs=%v error=%v", f.dnsCalls, f.publicURLs, err)
+			}
+			if mode.kind == Deadline && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("expected readiness deadline: %v", err)
+			}
+			if mode.message != "" && !strings.Contains(err.Error(), mode.message) {
+				t.Fatalf("wrong readiness failure: %v", err)
 			}
 			_, err = id.Sign([]byte("data"))
 			requirePaused(t, err)

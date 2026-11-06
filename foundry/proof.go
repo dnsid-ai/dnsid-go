@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
@@ -91,8 +93,17 @@ func (i *FoundryIdentity) prove(ctx context.Context, lease FoundryLease, doc *Re
 	if err != nil {
 		return failure(Integrity, doc, err)
 	}
-	if !time.Now().Before(transcript.ExpiresAt) && doc.Proof.Outcome != "submitting" {
+	if !time.Now().Before(transcript.ExpiresAt) {
 		response, err := i.client.deps.RegistryClient.ReissueLiveProof(ctx, doc.Domain, &dnsid.LiveProofReissueRequest{RequestID: doc.RequestID, PublicKey: doc.InitialPublicKey})
+		var api *dnsid.RegistryAPIError
+		if errors.As(err, &api) && api.StatusCode == http.StatusConflict {
+			if _, err := i.client.waitForRegistryReady(ctx, lease, doc); err != nil {
+				return err
+			}
+			doc.Proof.Outcome = "accepted"
+			doc.Phase = "identity-known"
+			return lease.Save(ctx, doc)
+		}
 		if err != nil {
 			return i.client.wrap(doc, err)
 		}
