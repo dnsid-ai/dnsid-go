@@ -11,6 +11,9 @@ import (
 )
 
 func TestKeySource_LoadMergeAndFactorySelection(t *testing.T) {
+	// Mode: fake-only for the registered cloud factory; real local entity file.
+	output := captureLocalWarnings(t)
+	defer assertNoLocalWarning(t, output)
 	provider := dnsid.GenerateEd25519KeyProvider()
 	calls := 0
 	RegisterKeyProviderFactory("google-kms", KeyProviderFactory{
@@ -43,6 +46,9 @@ func TestKeySource_LoadMergeAndFactorySelection(t *testing.T) {
 		t.Fatalf("factory selection: %v", err)
 	}
 	loaded.Dnsid.Identity = &dnsid.IdentityConfig{Domain: "agent.example", GovernanceID: "account.example", EntityKeyURL: "https://account.example/ek", KeyURL: "https://agent.example/keys", StatusURL: "https://agent.example/status", LogRef: "c2sp-tlog:testnet:https://log.example#issuance_AAAAAAAAAAAAAAAAAAAAAA"}
+	// Given independent entity custody, operational KMS must remain silent.
+	loaded.KeySource.EntityKeyPath = filepath.Join(t.TempDir(), "entity.jwk")
+	newKey(t, loaded.KeySource.EntityKeyPath)
 	manager, err := Construct(context.Background(), loaded, setupPublication(t, loaded.Dnsid, provider))
 	if err != nil || manager.KeyProvider() != provider || calls != 2 {
 		t.Fatalf("Construct did not select linked provider: %v", err)
@@ -51,6 +57,12 @@ func TestKeySource_LoadMergeAndFactorySelection(t *testing.T) {
 	manager, err = Construct(context.Background(), loaded, Dependencies{KeyProvider: provider})
 	if err != nil || manager.KeyProvider() != provider || calls != 2 {
 		t.Fatalf("injection resolved displaced source: %v", err)
+	}
+	// An injected operational provider also displaces explicit local selection.
+	loaded.KeySource = KeySource{Provider: "file", KeyStorePath: "/must-not-open"}
+	manager, err = Construct(context.Background(), loaded, Dependencies{KeyProvider: provider})
+	if err != nil || manager.KeyProvider() != provider {
+		t.Fatalf("injected provider did not displace local source: %v", err)
 	}
 }
 

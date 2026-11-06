@@ -1,14 +1,19 @@
 package awskms
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
 )
@@ -26,6 +31,17 @@ func TestConfigFactory_OpensExistingKeys(t *testing.T) {
 		{"different ARN", "ES256", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			// Mode: fake-only for AWS (official client, loopback GetPublicKey);
+			// real deployment loading and local entity key. No live KMS claim.
+			var warnings bytes.Buffer
+			previous := log.Writer()
+			log.SetOutput(&warnings)
+			defer log.SetOutput(previous)
+			defer func() {
+				if strings.Contains(strings.ToLower(warnings.String()), "unsuitable for production") {
+					t.Errorf("AWS selection emitted local-key warning:\n%s", warnings.String())
+				}
+			}()
 			fake := newFakeKMS(t, reference)
 			wantAlgorithm := dnsid.JoseAlgES256
 			if test.algorithm == "EdDSA" {
@@ -72,7 +88,45 @@ func TestConfigFactory_OpensExistingKeys(t *testing.T) {
 			if test.algorithm != "" {
 				source.Settings["algorithm"] = test.algorithm
 			}
-			provider, err := config.OperationalKeyProviderFrom(context.Background(), source, "agent.example")
+			// Given a deployment selecting AWS with independent local entity keys.
+			entityPath := filepath.Join(t.TempDir(), "entity.jwk")
+			if _, err := dnsid.LoadOrCreateLocalKeyProvider(entityPath, dnsid.JoseAlgES256); err != nil {
+				t.Fatal(err)
+			}
+			source.EntityKeyPath = entityPath
+			path := filepath.Join(t.TempDir(), "deployment.json")
+			document, err := json.Marshal(map[string]any{
+				"dnsid":     map[string]any{"identity": map[string]any{"domain": "agent.example", "governanceId": "account.example", "statusUrl": "https://agent.example/status", "keyUrl": "https://agent.example/keys", "entityKeyUrl": "https://account.example/ek", "logRef": "m:1"}},
+				"keySource": source,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, document, 0600); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := config.LoadDeploymentFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Establish publication before configuration startup with the independent
+			// fixture provider. Startup itself still opens the official AWS client.
+			algorithm := types.SigningAlgorithmSpecEcdsaSha256
+			if wantAlgorithm == dnsid.JoseAlgEdDSA {
+				algorithm = types.SigningAlgorithmSpecEd25519Sha512
+			}
+			fixtureProvider, err := New(context.Background(), fake, Config{State: State{ActiveKeyID: reference}, Algorithm: algorithm})
+			if err != nil {
+				t.Fatal(err)
+			}
+			deps := setupAWSPublication(t, loaded.Dnsid, fixtureProvider)
+			// When constructing through the actual configuration factory.
+			manager, err := config.Construct(context.Background(), loaded, deps)
+			var provider dnsid.KeyProvider
+			if manager != nil {
+				provider = manager.KeyProvider()
+			}
+			// Then key selection/failure is preserved, with no local operational warning.
 			if test.mismatch {
 				if err == nil || provider != nil {
 					t.Fatal("factory accepted another immutable key reference")
