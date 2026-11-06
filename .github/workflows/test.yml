@@ -61,6 +61,11 @@ jobs:
           (cd key/aws && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
           (cd examples/deployment-identity && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
 
+      - name: Vet Foundry platform-specific locking
+        run: |
+          GOOS=windows go vet -tags dnsid_foundry ./foundry/
+          GOOS=js GOARCH=wasm go vet -tags dnsid_foundry ./foundry/
+
       # Config lives in .golangci.yml at the repo root; nested modules need
       # their own invocations.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0

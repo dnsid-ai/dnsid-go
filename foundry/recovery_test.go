@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
@@ -273,33 +272,49 @@ func TestCompletedResumeRestoresSavedCurrentProviderReference(t *testing.T) {
 	}
 }
 
-type slowSigningProvider struct {
+type cancellingSigningProvider struct {
 	dnsid.KeyProvider
-	delay time.Duration
+	cancel context.CancelFunc
+	calls  int
+	result *dnsid.KeySignature
+	err    error
 }
 
-func (p slowSigningProvider) SignKey(kid string, data []byte) (*dnsid.KeySignature, error) {
-	time.Sleep(p.delay)
-	return p.KeyProvider.SignKey(kid, data)
+func (p *cancellingSigningProvider) SignKey(kid string, data []byte) (*dnsid.KeySignature, error) {
+	p.calls++
+	p.result, p.err = p.KeyProvider.SignKey(kid, data)
+	p.cancel()
+	return p.result, p.err
 }
-func (p slowSigningProvider) Sign(data []byte) (*dnsid.KeySignature, error) {
-	time.Sleep(p.delay)
-	return p.KeyProvider.Sign(data)
+func (p *cancellingSigningProvider) Sign(data []byte) (*dnsid.KeySignature, error) {
+	p.calls++
+	p.result, p.err = p.KeyProvider.Sign(data)
+	p.cancel()
+	return p.result, p.err
 }
 
 func TestProviderDeadlineCheckedAfterNonCancellableSigning(t *testing.T) {
-	f := newFixture(t)
-	f.client.deps.KeyProvider = slowSigningProvider{KeyProvider: f.operational, delay: 40 * time.Millisecond}
-	id, err := f.client.Create(context.Background(), "deadline")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	_, err = id.Active(ctx)
-	requireKind(t, err, Deadline)
-	if len(f.registry.submissions) != 0 {
-		t.Fatal("submitted after provider exceeded deadline")
+	for _, method := range []string{"Sign", "SignKey"} {
+		t.Run(method, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			provider := &cancellingSigningProvider{KeyProvider: dnsid.GenerateEd25519KeyProvider(), cancel: cancel}
+			bounded := deadlineProvider{KeyProvider: provider, ctx: ctx}
+			var result *dnsid.KeySignature
+			var err error
+			if method == "SignKey" {
+				kid, _ := provider.JWK().KeyID()
+				result, err = bounded.SignKey(kid, []byte("data"))
+			} else {
+				result, err = bounded.Sign([]byte("data"))
+			}
+			if provider.calls != 1 || provider.err != nil || provider.result == nil {
+				t.Fatal("provider did not successfully sign before cancellation")
+			}
+			if result != nil || !errors.Is(err, context.Canceled) {
+				t.Fatalf("post-call budget check returned signature=%v error=%v", result, err)
+			}
+		})
 	}
 }
 

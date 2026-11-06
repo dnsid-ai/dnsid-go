@@ -87,6 +87,87 @@ func TestRefreshCancellationPreservesVerifiedSigning(t *testing.T) {
 	}
 }
 
+func TestConfirmedPauseSurvivesCallerDeadlineAndRestart(t *testing.T) {
+	for _, kind := range []ErrorKind{Terminal, KeyMismatch} {
+		t.Run(string(kind), func(t *testing.T) {
+			f := newFixture(t)
+			id, err := f.client.Create(context.Background(), "durable-pause")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := id.Active(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if kind == Terminal {
+				f.setStatus(dnsid.AgentStateRetired)
+			} else {
+				successor := dnsid.GenerateEd25519KeyProvider()
+				f.publish(successor, "governance.example", testLR, dnsid.AgentStateActive)
+				f.log.currentThumb, err = keyThumb(successor.JWK())
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			store := &expireOnPauseStore{FoundryStore: f.store, caller: ctx}
+			id.client.deps.Store = store
+			_, err = id.Active(ctx)
+			requireKind(t, err, kind)
+			if !store.attempted || !store.detached || !store.bounded || ctx.Err() != context.DeadlineExceeded {
+				t.Fatal("pause was not written with a detached, bounded context after expiry")
+			}
+			if !f.document("durable-pause").SigningPaused {
+				t.Fatal("confirmed pause was lost after the caller deadline")
+			}
+			_, err = id.Sign([]byte("data"))
+			requirePaused(t, err)
+			id.client.deps.Store = f.store
+			reopened, err := f.client.Create(context.Background(), "durable-pause")
+			if kind == Terminal {
+				requireKind(t, err, Terminal)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = reopened.Sign([]byte("data"))
+			requirePaused(t, err)
+		})
+	}
+}
+
+type expireOnPauseStore struct {
+	FoundryStore
+	caller                       context.Context
+	attempted, detached, bounded bool
+}
+
+func (s *expireOnPauseStore) Lock(ctx context.Context, key OperationKey) (FoundryLease, error) {
+	lease, err := s.FoundryStore.Lock(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return expireOnPauseLease{FoundryLease: lease, store: s}, nil
+}
+
+type expireOnPauseLease struct {
+	FoundryLease
+	store *expireOnPauseStore
+}
+
+func (l expireOnPauseLease) Save(ctx context.Context, doc *RecoveryDocument) error {
+	if doc.SigningPaused {
+		<-l.store.caller.Done()
+		l.store.attempted = true
+		l.store.detached = ctx.Err() == nil
+		deadline, ok := ctx.Deadline()
+		remaining := time.Until(deadline)
+		l.store.bounded = ok && remaining > 0 && remaining <= 5*time.Second
+	}
+	return l.FoundryLease.Save(ctx, doc)
+}
+
 type cancellingDNS struct {
 	dnsid.DNSResolver
 	cancel context.CancelFunc

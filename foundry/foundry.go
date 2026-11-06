@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
@@ -660,7 +661,10 @@ func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity
 		if isKind(err, Terminal) || isKind(err, KeyMismatch) || isKind(err, Integrity) {
 			i.signer.pause("terminal observation or binding mismatch")
 			doc.SigningPaused = true
-			if saveErr := lease.Save(ctx, doc); saveErr != nil {
+			// Keep a confirmed unsafe state paused across restart, even after cancellation.
+			pauseCtx, cancelPause := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancelPause()
+			if saveErr := lease.Save(pauseCtx, doc); saveErr != nil {
 				err = errors.Join(err, saveErr)
 			}
 		}

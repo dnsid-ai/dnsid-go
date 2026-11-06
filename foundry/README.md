@@ -34,7 +34,8 @@ waits for proof. HTTP 409 means the challenge was used; wait for registry status
 without resubmitting it. A successful reissue clears the old signature and outcome
 before signing the replacement challenge.
 A refresh deadline preserves the previous signing state; it does not create a
-terminal or integrity pause.
+terminal or integrity pause. Saving a confirmed terminal or binding-mismatch pause
+uses a separate five-second cleanup budget, detached from caller cancellation.
 
 `IdentityManager()` returns `(*dnsid.IdentityManager, error)`. It returns
 `*SigningPaused` until publication configuration has been saved, then returns the
