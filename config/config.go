@@ -8,7 +8,8 @@
 // combines partial results field-wise (later wins; lists replace; LogTrust is
 // atomic). Construct fills the dependencies the caller did not supply from
 // LogTrust and KeySource, then calls dnsid.NewIdentityManager, which applies
-// every default and validation.
+// every default and validation. Configuration-selected operational keys must
+// match fresh, verified local publication before Construct returns.
 package config
 
 import (
@@ -354,7 +355,10 @@ const logTrustFreshness = 10 * time.Minute
 // KeySource only when Dnsid.Identity is present and the corresponding provider
 // is nil. loaded.Dnsid is validated first so invalid configuration never
 // triggers a key-file read or policy fetch; dnsid.NewIdentityManager then
-// applies every default and validation.
+// applies every default and validation. Configuration-selected operational keys
+// must match fresh, verified local publication before return; missing or invalid
+// publication fails closed. Initial setup can inject its operational provider
+// and is responsible for its own binding checks.
 func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.IdentityManager, error) {
 	// Fail on configuration before reading key files or fetching a policy.
 	if err := loaded.Dnsid.Validate(); err != nil {
@@ -363,7 +367,8 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	if deps.HTTPClient != nil && deps.HTTPSFetcher != nil {
 		return nil, dnsid.NewArgumentError("dnsid: HTTPClient and HTTPSFetcher cannot both be supplied", nil)
 	}
-	if loaded.Dnsid.Identity != nil && !loaded.KeySource.isZero() && deps.KeyProvider == nil {
+	configuredOperational := loaded.Dnsid.Identity != nil && !loaded.KeySource.isZero() && deps.KeyProvider == nil
+	if configuredOperational {
 		if err := ValidateKeySource(loaded.KeySource); err != nil {
 			return nil, err
 		}
@@ -410,7 +415,49 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 	if deps.EntityKeyProvider != nil {
 		opts = append(opts, dnsid.WithEntityKeyProvider(deps.EntityKeyProvider))
 	}
-	return dnsid.NewIdentityManager(loaded.Dnsid, deps.KeyProvider, opts...)
+	manager, err := dnsid.NewIdentityManager(loaded.Dnsid, deps.KeyProvider, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if configuredOperational {
+		if err := verifyConfiguredOperationalKey(ctx, manager); err != nil {
+			return nil, err
+		}
+	}
+	return manager, nil
+}
+
+// verifyConfiguredOperationalKey authenticates publication independently of
+// selected custody. It never changes either the provider or the publication.
+func verifyConfiguredOperationalKey(ctx context.Context, manager *dnsid.IdentityManager) error {
+	verified, err := manager.VerifyLocalPublication(ctx)
+	if err != nil {
+		return err
+	}
+	if verified == nil || verified.Record() == nil {
+		return dnsid.NewValidationError("dnsid: local publication evidence is unavailable", nil)
+	}
+	profile := verified.Record().Version
+	published, err := verified.KeySet().CurrentOperationalSigningKey(profile)
+	if err != nil {
+		return err
+	}
+	selected, err := manager.GetKeySet().CurrentOperationalSigningKey(profile)
+	if err != nil {
+		return err
+	}
+	selectedThumbprint, err := selected.Thumbprint()
+	if err != nil {
+		return err
+	}
+	publishedThumbprint, err := published.Thumbprint()
+	if err != nil {
+		return err
+	}
+	if selected.Kid() != published.Kid() || selected.Alg() != published.Alg() || selectedThumbprint != publishedThumbprint {
+		return dnsid.NewArgumentError("dnsid: configured operational key does not match verified local publication; use authorized key rotation", nil)
+	}
+	return nil
 }
 
 // LogRegistryFromTrust builds verification-only log bindings from explicit trust.
