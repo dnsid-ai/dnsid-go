@@ -90,16 +90,22 @@ go test ./...
 The AWS regression check loads the supplied deployment template, calls
 `Construct` through the real AWS SDK against a local fake KMS endpoint, and
 verifies an ES256 signature. It checks ambient credential loading, region and
-key selection, and exactly one `GetPublicKey` and one `Sign` call. It does not
-validate live AWS credentials, IAM/key policies, or published lifecycle evidence.
+key selection, and exactly one `GetPublicKey` and one `Sign` call. It verifies
+publication using deterministic local DNS/JWKS/status fixtures and real owner
+signatures supplied independently of the configuration-selected manager. The log
+reader is an accepting fake: this does not exercise real C2SP cryptographic log
+verification, live AWS credentials, IAM/key policies, or public DNS/HTTPS/log
+services. No externally published identity or cloud credentials are needed.
 
 `LoadDeploymentFile` parses only the chosen document. `Construct` validates
 configuration, builds log trust, and opens the existing key (KMS uses
-`GetPublicKey`). It can perform trust-resource network reads, but this branch
-does **not** automatically verify the identity's publication or its signer binding.
-The example explicitly calls `VerifyDomain` on its own domain, then compares the
-selected key's RFC 7638 thumbprint, key ID, and algorithm with the verified current
-operational (`ku`) key, not the entity (`ek`) key. A mismatch stops signing.
+`GetPublicKey`). For configuration-selected keys, it requires fresh verified own
+publication and a matching current operational key ID, algorithm, and RFC 7638
+thumbprint before returning a signing manager. Missing, invalid, or mismatched
+publication and DNS/HTTPS/log verification failures stop startup. This applies to
+file and cloud providers alike. The example's additional `VerifyDomain` call and
+operational (`ku`, not entity `ek`) key comparison illustrate independent binding
+checks; they are not the first binding check. A mismatch stops signing.
 
 Nothing is published or changed. This example has no registration, key generation,
 rotation, deletion, or automatic recovery. Changing `keyRef` does not authorize
