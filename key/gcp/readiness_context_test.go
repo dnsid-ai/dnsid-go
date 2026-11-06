@@ -22,6 +22,8 @@ import (
 const contextVersion = "projects/test-project/locations/global/keyRings/agents/cryptoKeys/signing/cryptoKeyVersions/1"
 const contextCandidate = "projects/test-project/locations/global/keyRings/agents/cryptoKeys/signing/cryptoKeyVersions/2"
 
+type operationContextKey struct{}
+
 type contextRPC struct {
 	stage string
 	ctx   context.Context
@@ -268,7 +270,7 @@ func assertOperationContexts(t *testing.T, f *contextKMS, want context.Context, 
 func TestGenerateKeyOneContextThroughPublicOpening(t *testing.T) {
 	f := &contextKMS{}
 	p, old := contextProvider(t, f)
-	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), struct{}{}, "operation"), time.Second)
+	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), operationContextKey{}, "operation"), time.Second)
 	defer cancel()
 	kid, err := p.generateKey(ctx, dnsid.JoseAlgEdDSA, time.Nanosecond)
 	if err != nil || kid == "" || kid == old {
