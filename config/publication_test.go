@@ -5,11 +5,12 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	dnsid "github.com/dnsid-ai/dnsid-go"
-	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	"strings"
 	"testing"
 	"time"
+
+	dnsid "github.com/dnsid-ai/dnsid-go"
+	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 )
 
 type configPublicationDNS struct{ record, name string }

@@ -19,7 +19,7 @@ import (
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
-	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
 func TestAWSDeployment_ConstructAndSign(t *testing.T) {
@@ -109,8 +109,35 @@ func TestAWSDeployment_ConstructAndSign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Isolate provider loading from log/publication verification in this test.
-	manager, err := config.Construct(context.Background(), loaded, config.Dependencies{LogRegistry: dnsidlog.NewLogRegistry()})
+	// Given independently held fixture custody A, establish and authenticate its
+	// publication before configuration selects the official AWS provider.
+	// Mode: fake-only DNS/HTTPS/log and loopback AWS; real owner signatures,
+	// publication verification, deployment loading, AWS SDK selection and signing.
+	fixtureKey, err := jwk.Import(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureKey.Set(jwk.KeyIDKey, arn); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureKey.Set(jwk.AlgorithmKey, string(dnsid.JoseAlgES256)); err != nil {
+		t.Fatal(err)
+	}
+	fixtureBytes, err := json.Marshal(fixtureKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixturePath := filepath.Join(t.TempDir(), "publication-key.json")
+	if err := os.WriteFile(fixturePath, fixtureBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	fixtureProvider, err := dnsid.NewLocalKeyProvider(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps := setupExamplePublication(t, loaded.Dnsid, fixtureProvider)
+	// When constructing, inject only publication I/O, never the key provider.
+	manager, err := config.Construct(context.Background(), loaded, deps)
 	if err != nil {
 		t.Fatal(err)
 	}

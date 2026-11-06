@@ -5,12 +5,13 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	dnsid "github.com/dnsid-ai/dnsid-go"
-	"github.com/dnsid-ai/dnsid-go/config"
-	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	"path/filepath"
 	"testing"
 	"time"
+
+	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
+	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 )
 
 type consumerDNS struct{ record string }

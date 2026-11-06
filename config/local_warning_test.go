@@ -6,7 +6,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/json"
-	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	"log"
 	"math/big"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
