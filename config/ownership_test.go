@@ -2,6 +2,10 @@ package config
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +13,7 @@ import (
 	"testing"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
 type constructionOwnedKey struct {
@@ -116,6 +121,101 @@ func TestConstruct_OperationalProviderOwnership(t *testing.T) {
 			}
 			if provider.closes != wantCloses {
 				t.Fatalf("provider Close calls=%d, want %d (scenario=%s)", provider.closes, wantCloses, scenario)
+			}
+		})
+	}
+}
+
+// Mode: fake-only factory and publication transports; real private keys, owner
+// signatures and publication verification. A stable kid is not material binding.
+func TestConstruct_FactoryOperationalKeyMaterialBinding(t *testing.T) {
+	const kid = "fixture-stable-operational-key"
+	fixedKey := func(private any) dnsid.KeyProvider {
+		t.Helper()
+		key, err := jwk.Import(private)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := key.Set(jwk.KeyIDKey, kid); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "key.json")
+		writeJSON(t, path, key)
+		provider, err := dnsid.NewLocalKeyProvider(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return provider
+	}
+	_, privateA, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, privateB, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateEC, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b, ec := fixedKey(privateA), fixedKey(privateB), fixedKey(privateEC)
+	cfg := dnsid.Config{Identity: &dnsid.IdentityConfig{Domain: "agent.example.com", GovernanceID: "example.com", LogRef: "algorand:ADDR", StatusURL: "https://agent.example.com/status.json", KeyURL: "https://agent.example.com/ku.json", EntityKeyURL: "https://example.com/ek.json", PolicyFlags: []dnsid.PolicyFlag{"logchk"}}}
+	// Authenticate publication A independently of startup factory selection.
+	deps := setupPublication(t, cfg, a)
+	deps.EntityKeyProvider = dnsid.GenerateES256KeyProvider()
+	keyFactories.Lock()
+	previous, existed := keyFactories.values["google-kms"]
+	keyFactories.Unlock()
+	t.Cleanup(func() {
+		keyFactories.Lock()
+		defer keyFactories.Unlock()
+		if existed {
+			keyFactories.values["google-kms"] = previous
+		} else {
+			delete(keyFactories.values, "google-kms")
+		}
+	})
+	// Both algorithms have valid profile keys. Different algorithms necessarily
+	// differ in material too: this is not isolated algorithm-only mutation proof.
+	for _, tc := range []struct {
+		name   string
+		key    dnsid.KeyProvider
+		reject bool
+	}{
+		{"matching kid and material", a, false},
+		{"same kid and algorithm different material", b, true},
+		{"same kid different supported algorithm", ec, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			keyFactories.Lock()
+			delete(keyFactories.values, "google-kms")
+			keyFactories.Unlock()
+			provider := &constructionOwnedKey{KeyProvider: tc.key}
+			opens := 0
+			RegisterKeyProviderFactory("google-kms", KeyProviderFactory{Validate: func(KeySource) error { return nil }, Open: func(context.Context, KeySource, string) (dnsid.KeyProvider, error) { opens++; return provider, nil }})
+			// No deps.KeyProvider injection: exercise authenticated configured startup.
+			m, err := Construct(context.Background(), Loaded{Dnsid: cfg, KeySource: KeySource{Provider: "google-kms", KeyRef: "fixture-existing-key"}}, deps)
+			if opens != 1 {
+				t.Fatalf("factory opens=%d want 1", opens)
+			}
+			if tc.reject {
+				if m != nil || err == nil || !strings.Contains(err.Error(), "configured operational key does not match verified local publication") {
+					t.Fatalf("want publication binding rejection, manager=%v err=%v", m != nil, err)
+				}
+				if provider.closes != 1 {
+					t.Fatalf("failed selected provider closes=%d want 1", provider.closes)
+				}
+				return
+			}
+			if err != nil || m == nil || m.KeyProvider() != provider {
+				t.Fatalf("matching provider lost: manager=%v err=%v", m != nil, err)
+			}
+			if provider.closes != 0 {
+				t.Fatalf("successful selected provider closes=%d want 0", provider.closes)
+			}
+			if _, err := m.KeyProvider().Sign([]byte("matching fixed-kid payload")); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
