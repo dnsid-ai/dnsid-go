@@ -7,7 +7,7 @@ description: "Package map for the DNSid Go SDK and where to start."
 > Canonical deep reference: [pkg.go.dev/github.com/dnsid-ai/dnsid-go](https://pkg.go.dev/github.com/dnsid-ai/dnsid-go).
 > Guides and account setup: [https://docs.dnsid.ai](https://docs.dnsid.ai).
 
-The Go SDK is the module `github.com/dnsid-ai/dnsid-go`, plus the separately tagged `key/aws` submodule. Install it with:
+The Go SDK is the module `github.com/dnsid-ai/dnsid-go`, plus the separately tagged `key/aws` and `key/gcp` submodules. Install it with:
 
 ```bash
 go get github.com/dnsid-ai/dnsid-go

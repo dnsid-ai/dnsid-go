@@ -293,7 +293,7 @@ fi
 {
 	frontmatter "Go: SDK overview" "Package map for the DNSid Go SDK and where to start."
 	banner "$ROOT_MODULE"
-	printf 'The Go SDK is the module `%s`, plus the separately tagged `key/aws` submodule. Install it with:\n\n' "$ROOT_MODULE"
+	printf 'The Go SDK is the module `%s`, plus the separately tagged `key/aws` and `key/gcp` submodules. Install it with:\n\n' "$ROOT_MODULE"
 	printf '```bash\ngo get %s\n```\n\n' "$ROOT_MODULE"
 	printf 'Start with the root package: `IdentityManager` is the facade for verifying domains, creating and publishing identity records, and loading the agent identity your application acts as. The root package is documented across the `dnsid` pages below; the other packages are application profiles and infrastructure you pull in as needed.\n\n'
 	printf '| Page | What it covers |\n'
