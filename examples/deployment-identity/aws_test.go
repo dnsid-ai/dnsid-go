@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"math/big"
 	"net/http"
@@ -19,7 +20,6 @@ import (
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
-	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
 func TestAWSDeployment_ConstructAndSign(t *testing.T) {
@@ -113,17 +113,13 @@ func TestAWSDeployment_ConstructAndSign(t *testing.T) {
 	// publication before configuration selects the official AWS provider.
 	// Mode: fake-only DNS/HTTPS/log and loopback AWS; real owner signatures,
 	// publication verification, deployment loading, AWS SDK selection and signing.
-	fixtureKey, err := jwk.Import(key)
-	if err != nil {
-		t.Fatal(err)
+	encode := func(n *big.Int) string {
+		return base64.RawURLEncoding.EncodeToString(n.FillBytes(make([]byte, 32)))
 	}
-	if err := fixtureKey.Set(jwk.KeyIDKey, arn); err != nil {
-		t.Fatal(err)
-	}
-	if err := fixtureKey.Set(jwk.AlgorithmKey, string(dnsid.JoseAlgES256)); err != nil {
-		t.Fatal(err)
-	}
-	fixtureBytes, err := json.Marshal(fixtureKey)
+	fixtureBytes, err := json.Marshal(map[string]string{
+		"kty": "EC", "crv": "P-256", "kid": arn, "alg": string(dnsid.JoseAlgES256),
+		"x": encode(key.X), "y": encode(key.Y), "d": encode(key.D),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
