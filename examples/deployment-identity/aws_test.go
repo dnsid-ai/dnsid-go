@@ -116,9 +116,13 @@ func TestAWSDeployment_ConstructAndSign(t *testing.T) {
 	encode := func(n *big.Int) string {
 		return base64.RawURLEncoding.EncodeToString(n.FillBytes(make([]byte, 32)))
 	}
+	privateBytes, err := key.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixtureBytes, err := json.Marshal(map[string]string{
 		"kty": "EC", "crv": "P-256", "kid": arn, "alg": string(dnsid.JoseAlgES256),
-		"x": encode(key.X), "y": encode(key.Y), "d": encode(key.D),
+		"x": encode(key.X), "y": encode(key.Y), "d": base64.RawURLEncoding.EncodeToString(privateBytes),
 	})
 	if err != nil {
 		t.Fatal(err)
