@@ -40,9 +40,43 @@ Use an immutable signing-key ARN, not an alias. AWS credentials come from the
 standard chain (optional `profile` names a credential source); grant
 `kms:GetPublicKey` and `kms:Sign`. Installing without importing does not link a
 factory. Missing providers fail before key/policy access, without file fallback.
-`Construct` has no persisted identity state. Callers must check an established
-identity's signer binding before using a different key source; configuration alone
-does not authorize rotation.
+For configuration-selected operational keys, `Construct` requires fresh, verified
+local publication matching the selected key's kid, algorithm and public-key
+thumbprint before returning a signing manager. Missing or invalid publication and
+a different selected key fail closed. Configuration does not authorize rotation;
+`Construct` has no persisted identity state.
+
+For initial publication setup, callers can open the existing operational key with
+`config.OperationalKeyProviderFrom` and inject it through
+`config.Dependencies.KeyProvider`. This documented setup route does not establish
+published signer binding: the caller owns binding checks and the injected
+provider's lifetime, including cleanup on construction failure. Use ordinary
+configuration-selected construction for subsequent established application signing.
+An injected setup manager is not authenticated established-startup evidence.
+
+Link the optional GCP module with
+`import _ "github.com/dnsid-ai/dnsid-go/key/gcp"`, then configure an existing version:
+
+```json
+{
+  "keySource": {
+    "provider": "google-kms",
+    "keyRef": "projects/my-project/locations/us-east1/keyRings/agents/cryptoKeys/agent/cryptoKeyVersions/1",
+    "settings": { "project": "my-project", "location": "us-east1", "algorithm": "EdDSA" }
+  }
+}
+```
+
+The reference must be an immutable numeric software EC_SIGN_ED25519 version.
+Optional `project` and `location` must match `keyRef`; `algorithm`, if set, must
+be `EdDSA`. Credentials use Application Default Credentials, not deployment
+settings. Opening only reads the existing public key; it never generates a version
+or substitutes a local signer. Explicit `GenerateKey` additionally requires version
+creation and, for pending generation, `cloudkms.cryptoKeyVersions.get`. It waits
+for that exact version within one 30-second creation/readiness/public-validation
+budget, without guaranteeing readiness in that time. Failed generation leaves
+local state unchanged; cloud cleanup remains operator-owned even if the remote
+version becomes enabled later.
 
 These configuration/provider and onboarding APIs work with the existing server.
 Named creation and automatic permanent recovery are separate workflow changes.

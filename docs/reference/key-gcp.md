@@ -26,7 +26,7 @@ import _ "github.com/dnsid-ai/dnsid-go/key/gcp"
 
 Configuration keyRef must name an existing numeric CryptoKeyVersion. Optional project and location settings must match keyRef; algorithm, if set, is EdDSA. Credentials use Google's Application Default Credentials chain, not settings. Configuration opening never creates keys and never falls back to local files. Providers opened through configuration own their client; applications can call Close after all operations finish to release it.
 
-GenerateKey explicitly creates a pending version under the configured parent CryptoKey, whose template must specify software EC\_SIGN\_ED25519. Pending keys support JWK and SignKey but do not enter the active listing. Activate and Supersede change local eligibility only; they never disable or destroy cloud versions. State is in\-memory only: reopening the configured version does not recover pending or superseded state. Applications must not treat reopening as managed\-rotation recovery. Persistence and orchestration are not provided.
+GenerateKey explicitly creates a pending version under the configured parent CryptoKey, whose template must specify software EC\_SIGN\_ED25519. If KMS reports PENDING\_GENERATION, GenerateKey observes that exact version until enabled, sharing one 30\-second budget with creation and public\-key validation. This requires GetCryptoKeyVersion support and cloudkms.cryptoKeyVersions.get; immediate\-enabled creation does not use that method. Readiness within the budget is not guaranteed. Cloud cleanup remains operator\-owned on failure, even if a version becomes ready later. Locally pending keys support JWK and SignKey but do not enter the active listing. Activate and Supersede change local eligibility only; they never disable or destroy cloud versions. State is in\-memory only: reopening the configured version does not recover pending or superseded state. Applications must not treat reopening as managed\-rotation recovery. Persistence and orchestration are not provided.
 
 Merely opening a cloud key is not a migration of an established identity; changing its signer requires authorized rotation.
 
@@ -108,7 +108,7 @@ Open validates configuration and opens its existing immutable version using the 
 The returned provider owns the created client: call Close after all operations finish. On failure Open closes the created client. A connection supplied via option.WithGRPCConn is subject to the official client's Close behavior, which may close it \(including on an opening failure\). Supply a dedicated connection, not one shared with unrelated clients.
 
 <a name="Provider.Activate"></a>
-### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L233>)
+### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L283>)
 
 ```go
 func (p *Provider) Activate(kid string) error
@@ -117,7 +117,7 @@ func (p *Provider) Activate(kid string) error
 Activate explicitly promotes a pending key. The previous key remains available as a public JWK but cannot sign. No remote version state is changed.
 
 <a name="Provider.Close"></a>
-### func \(\*Provider\) [Close](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L285>)
+### func \(\*Provider\) [Close](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L335>)
 
 ```go
 func (p *Provider) Close() error
@@ -126,13 +126,13 @@ func (p *Provider) Close() error
 Close releases the client created by Open or configuration loading. For New, the caller owns the supplied client and Close is a no\-op. Connections supplied through option.WithGRPCConn may also be closed by the official client. Call only after all provider operations have completed.
 
 <a name="Provider.GenerateKey"></a>
-### func \(\*Provider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L198>)
+### func \(\*Provider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L205>)
 
 ```go
 func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error)
 ```
 
-GenerateKey explicitly creates a pending Ed25519 version under the configured CryptoKey. The parent template must specify software EC\_SIGN\_ED25519. The client must also support the official CreateCryptoKeyVersion method. Failed validation leaves local state unchanged; cloud cleanup is operator\-owned.
+GenerateKey explicitly creates a locally pending Ed25519 version under the configured CryptoKey, whose template must specify software EC\_SIGN\_ED25519. The client must support CreateCryptoKeyVersion and, if generation is pending in KMS, GetCryptoKeyVersion \(requiring cloudkms.cryptoKeyVersions.get\). Creation, readiness waiting and public\-key validation share a 30\-second budget. Failed validation or waiting leaves local state unchanged; cloud cleanup is operator\-owned, including versions that become ready after a timeout.
 
 <a name="Provider.JWK"></a>
 ### func \(\*Provider\) [JWK](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L122>)
@@ -153,7 +153,7 @@ func (p *Provider) ListKeyIds() []string
 ListKeyIds returns only the active public\-key thumbprint, never pending or retained IDs.
 
 <a name="Provider.Purge"></a>
-### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L268>)
+### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L318>)
 
 ```go
 func (p *Provider) Purge(kid string) error
@@ -180,7 +180,7 @@ func (p *Provider) SignKey(kid string, payload []byte) (*dnsid.KeySignature, err
 SignKey signs with an active or pending key. Retained and unknown IDs fail before any API call. Local transitions wait for in\-flight signatures to finish.
 
 <a name="Provider.Supersede"></a>
-### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L253>)
+### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L303>)
 
 ```go
 func (p *Provider) Supersede(kid string) error

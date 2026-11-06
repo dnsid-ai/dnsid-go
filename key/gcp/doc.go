@@ -19,8 +19,13 @@
 // Close after all operations finish to release it.
 //
 // GenerateKey explicitly creates a pending version under the configured parent
-// CryptoKey, whose template must specify software EC_SIGN_ED25519. Pending keys
-// support JWK and SignKey but do not enter the active listing. Activate and
+// CryptoKey, whose template must specify software EC_SIGN_ED25519. If KMS reports
+// PENDING_GENERATION, GenerateKey observes that exact version until enabled,
+// sharing one 30-second budget with creation and public-key validation. This
+// requires GetCryptoKeyVersion support and cloudkms.cryptoKeyVersions.get;
+// immediate-enabled creation does not use that method. Readiness within the
+// budget is not guaranteed. Cloud cleanup remains operator-owned on failure,
+// even if a version becomes ready later. Locally pending keys support JWK and SignKey but do not enter the active listing. Activate and
 // Supersede change local eligibility only; they never disable or destroy cloud
 // versions. State is in-memory only: reopening the configured version does not
 // recover pending or superseded state. Applications must not treat reopening as

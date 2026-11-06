@@ -191,11 +191,24 @@ type versionCreator interface {
 	CreateCryptoKeyVersion(context.Context, *kmspb.CreateCryptoKeyVersionRequest, ...gax.CallOption) (*kmspb.CryptoKeyVersion, error)
 }
 
-// GenerateKey explicitly creates a pending Ed25519 version under the configured
-// CryptoKey. The parent template must specify software EC_SIGN_ED25519. The
-// client must also support the official CreateCryptoKeyVersion method. Failed
-// validation leaves local state unchanged; cloud cleanup is operator-owned.
+type versionGetter interface {
+	GetCryptoKeyVersion(context.Context, *kmspb.GetCryptoKeyVersionRequest, ...gax.CallOption) (*kmspb.CryptoKeyVersion, error)
+}
+
+// GenerateKey explicitly creates a locally pending Ed25519 version under the
+// configured CryptoKey, whose template must specify software EC_SIGN_ED25519.
+// The client must support CreateCryptoKeyVersion and, if generation is pending
+// in KMS, GetCryptoKeyVersion (requiring cloudkms.cryptoKeyVersions.get).
+// Creation, readiness waiting and public-key validation share a 30-second budget.
+// Failed validation or waiting leaves local state unchanged; cloud cleanup is
+// operator-owned, including versions that become ready after a timeout.
 func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return p.generateKey(ctx, alg, 250*time.Millisecond)
+}
+
+func (p *Provider) generateKey(ctx context.Context, alg dnsid.JoseAlg, interval time.Duration) (string, error) {
 	if alg != dnsid.JoseAlgEdDSA {
 		return "", dnsid.NewArgumentError("dnsid/gcpkms: only EdDSA generation is supported", nil)
 	}
@@ -203,27 +216,64 @@ func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error) {
 	if !ok {
 		return "", dnsid.NewArgumentError("dnsid/gcpkms: client does not support version creation", nil)
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	// client and version are immutable; only the inventory and active kid mutate.
 	parent := p.version[:strings.LastIndex(p.version, "/cryptoKeyVersions/")]
 	response, err := creator.CreateCryptoKeyVersion(ctx, &kmspb.CreateCryptoKeyVersionRequest{Parent: parent})
 	if err != nil {
 		return "", err
 	}
-	if response == nil || validateVersion(response.Name) != nil || !strings.HasPrefix(response.Name, parent+"/cryptoKeyVersions/") || response.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || response.State != kmspb.CryptoKeyVersion_ENABLED || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
+	if response == nil || validateVersion(response.Name) != nil || !strings.HasPrefix(response.Name, parent+"/cryptoKeyVersions/") || response.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
 		return "", fmt.Errorf("dnsid/gcpkms: generated version has invalid binding or metadata")
 	}
-	opened, err := New(ctx, p.client, Config{KeyVersionName: response.Name})
+	version := response.Name
+	for response.State != kmspb.CryptoKeyVersion_ENABLED {
+		if response.State != kmspb.CryptoKeyVersion_PENDING_GENERATION {
+			return "", fmt.Errorf("dnsid/gcpkms: generated version is not enabled or pending generation")
+		}
+		getter, ok := p.client.(versionGetter)
+		if !ok {
+			return "", dnsid.NewArgumentError("dnsid/gcpkms: pending generation requires GetCryptoKeyVersion support", nil)
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		response, err = getter.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{Name: version})
+		if err != nil {
+			return "", err
+		}
+		if response == nil || response.Name != version || response.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
+			return "", fmt.Errorf("dnsid/gcpkms: generated version has invalid binding or metadata")
+		}
+		if response.State == kmspb.CryptoKeyVersion_PENDING_GENERATION {
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return "", ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	opened, err := New(ctx, p.client, Config{KeyVersionName: version})
 	if err != nil {
 		return "", err
 	}
-	if _, exists := p.keys[opened.kid]; exists {
-		return "", fmt.Errorf("dnsid/gcpkms: generated key duplicates an existing public key")
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	entry := opened.keys[opened.kid]
 	entry.pending = true
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, exists := p.keys[opened.kid]; exists {
+		return "", fmt.Errorf("dnsid/gcpkms: generated key duplicates an existing public key")
+	}
 	p.keys[opened.kid] = entry
 	return opened.kid, nil
 }
