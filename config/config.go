@@ -15,6 +15,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -380,11 +381,19 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 		}
 		deps.LogRegistry = registry
 	}
+	constructed := false
 	if loaded.Dnsid.Identity != nil && !loaded.KeySource.isZero() {
 		if deps.KeyProvider == nil {
 			kp, err := OperationalKeyProviderFrom(ctx, loaded.KeySource, loaded.Dnsid.Identity.Domain)
 			if err != nil {
 				return nil, err
+			}
+			if closer, ok := kp.(io.Closer); ok {
+				defer func() {
+					if !constructed {
+						_ = closer.Close()
+					}
+				}()
 			}
 			deps.KeyProvider = kp
 		}
@@ -424,6 +433,7 @@ func Construct(ctx context.Context, loaded Loaded, deps Dependencies) (*dnsid.Id
 			return nil, err
 		}
 	}
+	constructed = true
 	return manager, nil
 }
 
