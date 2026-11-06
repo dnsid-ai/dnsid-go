@@ -54,6 +54,23 @@ provider's lifetime, including cleanup on construction failure. Use ordinary
 configuration-selected construction for subsequent established application signing.
 An injected setup manager is not authenticated established-startup evidence.
 
+For interrupted rotation recovery, reopen the **same persisted active/pending
+provider and rotation journal**, not a newly generated key or the original
+bootstrap key. Inject the reopened provider through
+`config.Dependencies.KeyProvider` to construct the recovery publication verifier,
+then pass that manager as `Publication` to
+`c2sptlog.ResumeManagedOperationalKeyRotation` with the saved state and provider.
+The caller still owns provider cleanup, including on construction failure, and
+must keep application signing paused, block new requests, and drain in-flight
+signatures. Before activation, Resume validates fresh publication and log
+continuity against the saved rotation; signing resumes only after successful
+activation has been durably saved. Injection does not authenticate established
+startup, and a pending key is not an exception to ordinary `Construct` binding
+checks. Already-activated recovery needs no new publication/network checks; do
+not add network-backed construction to that path. See the
+[key-rotation example](../examples/key-rotation/) for persisted recovery and the
+single-process signing gate; concurrent services need their own coordination.
+
 Link the optional GCP module with
 `import _ "github.com/dnsid-ai/dnsid-go/key/gcp"`, then configure an existing version:
 

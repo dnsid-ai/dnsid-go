@@ -66,7 +66,11 @@ log you expect to verify:
 
   This is not an environment-variable default and does not trust local or third-party logs.
 - **Local CLI registry:** provision `bob.test`, then `eval "$(dnsid local env bob)"`
-  supplies its identity/key paths, `DNSID_LOG_POLICY_URL`, and local DNS/CA settings;
+  supplies its identity/key paths, `DNSID_LOG_POLICY_URL`, and local DNS/CA settings.
+  With that identity and configured key loaded, startup requires bob's own fresh,
+  verified publication to match the key and its required DNS/HTTPS/log paths to be
+  reachable, even when verifying another target. A manager without identity/key
+  selection skips that own-key check, not log trust or network requirements;
   see the [example README](examples/validate-domain/README.md).
 - **Other logs or independently pinned policy:** set `DNSID_LOG_TRUST_PROFILE_FILE` (preferred
   for stream-bundle verification), `DNSID_LOG_POLICY_FILE`, or an independently trusted
