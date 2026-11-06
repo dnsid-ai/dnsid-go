@@ -20,6 +20,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -97,6 +99,7 @@ type startupFixture struct {
 	keys        dnsid.KeyProvider
 	public      string
 	childURL    string
+	childPID    int
 	other       any
 }
 
@@ -265,6 +268,13 @@ func newStartupFixture(t *testing.T) *startupFixture {
 	return f
 }
 func (f *startupFixture) get(path string) (*http.Response, error) { return f.client.Get(f.base + path) }
+
+// Whole-child Wait includes the application's 5s HTTP shutdown grace plus the
+// race runtime's default 1s exit sleep. Allow 2s for scheduling/reaping; this
+// is not an application SLA. Keep inherited GORACE unchanged (larger custom
+// exit sleeps may deliberately exceed this bounded harness budget).
+const startupProcessStopBudget = 8 * time.Second
+
 func startA2A(t *testing.T, f *startupFixture) (<-chan error, func() string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -286,6 +296,7 @@ func startA2A(t *testing.T, f *startupFixture) (<-chan error, func() string) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	f.childPID = cmd.Process.Pid
 	f.stop = func() { _ = cmd.Process.Signal(syscall.SIGTERM) }
 	done := make(chan error, 1)
 	exited := make(chan struct{})
@@ -294,7 +305,7 @@ func startA2A(t *testing.T, f *startupFixture) (<-chan error, func() string) {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
 		select {
 		case <-exited:
-		case <-time.After(6 * time.Second):
+		case <-time.After(startupProcessStopBudget):
 			_ = cmd.Process.Kill()
 			select {
 			case <-exited:
@@ -418,7 +429,7 @@ func assertStopped(t *testing.T, f *startupFixture, done <-chan error, output fu
 		if err != nil {
 			t.Fatalf("SIGTERM did not produce clean run exit: %v\n%s", err, output())
 		}
-	case <-time.After(6 * time.Second):
+	case <-time.After(startupProcessStopBudget):
 		t.Fatalf("cancellation did not bound shutdown: %s", output())
 	}
 	// Probe the actual child address, never the fixture's synthetic KU modes.
@@ -582,6 +593,87 @@ func TestA2AStartup_CancelBeforePublication(t *testing.T) {
 	}
 	assertNoApplicationSignature(t, f)
 	assertStopped(t, f, done, output)
+}
+
+// Mode: fake-only services, real child TCP/HTTP shutdown. Given an accepted
+// connection with no HTTP header, When SIGTERM arrives while status is withheld,
+// Then the legitimate full-grace path still yields clean, reaped process exit.
+func TestA2AStartup_CancelWithAcceptedNoHeader(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("accepted-socket causality uses Linux /proc; ordinary cancellation remains portable")
+	}
+	f := newStartupFixture(t)
+	done, output := startA2A(t, f)
+	awaitBootstrap(t, f, done, output)
+	select {
+	case <-f.statusRead:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancellation never reached active withheld status read")
+	}
+	assertNoApplicationSignature(t, f)
+	conn, err := net.DialTimeout("tcp", strings.TrimPrefix(f.childURL, "http://"), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	awaitAcceptedStartupSocket(t, f.childPID, conn)
+	// No bytes are written and the connection stays open through Wait. TCP dial
+	// alone is not an Accept fence: require its inode in the child's fd table.
+	started := time.Now()
+	assertStopped(t, f, done, output)
+	if elapsed := time.Since(started); elapsed < 4*time.Second {
+		t.Fatalf("no-header connection did not exercise full-grace shutdown: %s", elapsed)
+	}
+}
+
+func awaitAcceptedStartupSocket(t *testing.T, pid int, conn net.Conn) {
+	t.Helper()
+	// Both endpoints are fixture-owned IPv4 loopback sockets. /proc/net/tcp
+	// exposes their ports in hex; only an accepted fd in THIS child counts.
+	local := conn.RemoteAddr().(*net.TCPAddr).Port
+	remote := conn.LocalAddr().(*net.TCPAddr).Port
+	wantLocal := fmt.Sprintf("0100007F:%04X", local)
+	wantRemote := fmt.Sprintf("0100007F:%04X", remote)
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		inode := ""
+		for _, family := range []string{"tcp", "tcp6"} {
+			table, err := os.ReadFile(fmt.Sprintf("/proc/%d/net/%s", pid, family))
+			if err != nil {
+				t.Fatal(err)
+			}
+			prefix := ""
+			if family == "tcp6" {
+				prefix = "0000000000000000FFFF0000"
+			}
+			for _, line := range strings.Split(string(table), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) > 9 && fields[1] == prefix+wantLocal && fields[2] == prefix+wantRemote && fields[3] == "01" {
+					inode = fields[9]
+				}
+			}
+		}
+		if inode != "" {
+			entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", pid))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				target, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "fd", entry.Name()))
+				if err == nil && target == "socket:["+inode+"]" {
+					return
+				}
+			}
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("no-header connection was not observed accepted by actual child")
+		case <-tick.C:
+		}
+	}
 }
 
 func readStartupBody(t *testing.T, r *http.Response) []byte {
