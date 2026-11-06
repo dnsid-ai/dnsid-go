@@ -212,7 +212,7 @@ func newStartupFixture(t *testing.T) *startupFixture {
 			case "corrupt":
 				_, _ = w.Write([]byte(`{"keys":`))
 			case "unavailable":
-				http.Error(w, "publication unavailable", 503)
+				http.Error(w, "publication unavailable", http.StatusServiceUnavailable)
 			default:
 				proxy.ServeHTTP(w, r)
 			}
@@ -318,7 +318,7 @@ func TestA2AStartup_BootstrapJWKSBeforePublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = resp.Body.Close()
-	if resp.StatusCode != 502 {
+	if resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("pre-start ku status=%d want refused upstream 502", resp.StatusCode)
 	}
 	select {
@@ -340,7 +340,7 @@ func TestA2AStartup_BootstrapJWKSBeforePublication(t *testing.T) {
 		resp, err := f.get("/.well-known/jwks.json")
 		if err == nil {
 			body := readStartupBody(t, resp)
-			if resp.StatusCode == 200 {
+			if resp.StatusCode == http.StatusOK {
 				assertBootstrapKey(t, f, body)
 				return
 			}
@@ -363,7 +363,7 @@ func awaitBootstrap(t *testing.T, f *startupFixture, done <-chan error, output f
 		r, err := (&http.Client{Timeout: time.Second}).Get(f.childURL + "/.well-known/jwks.json")
 		if err == nil {
 			body := readStartupBody(t, r)
-			if r.StatusCode == 200 {
+			if r.StatusCode == http.StatusOK {
 				assertBootstrapKey(t, f, body)
 				return
 			}
@@ -449,7 +449,7 @@ func TestA2AStartup_ReleasedPublicationEnablesSignedExchange(t *testing.T) {
 	for {
 		r, _ := f.exchange(t, agentCardPath, http.MethodGet, nil)
 		body := readStartupBody(t, r)
-		if r.StatusCode == 200 {
+		if r.StatusCode == http.StatusOK {
 			card = body
 			break
 		}
@@ -522,7 +522,7 @@ func TestA2AStartup_ReleasedPublicationEnablesSignedExchange(t *testing.T) {
 	}
 	defer r.Body.Close()
 	body := readStartupBody(t, r)
-	if r.StatusCode != 200 || vd.Domain() != "example.com" || !bytes.Contains(body, []byte("verified sender: example.com")) || !bytes.Contains(body, []byte("real crypto hello")) {
+	if r.StatusCode != http.StatusOK || vd.Domain() != "example.com" || !bytes.Contains(body, []byte("verified sender: example.com")) || !bytes.Contains(body, []byte("real crypto hello")) {
 		t.Fatalf("authenticated echo missing: status=%d body=%s", r.StatusCode, body)
 	}
 	assertStopped(t, f, done, output)
