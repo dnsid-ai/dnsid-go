@@ -29,3 +29,18 @@ go run ./examples/registry-publish
 ```
 
 Client-controlled publication also needs the entity key on disk (`entity_key_path` in `config.json`).
+
+## Initial publication versus application signing
+
+This example is publication setup: it explicitly opens the existing operational
+key and injects it into `config.Construct`, so an unpublished identity can reach
+the registry. The caller owns binding checks and the injected provider's lifetime;
+cleanup runs before the process exits, including on failure. This manager is not
+evidence of an authenticated established application signer. For subsequent
+application signing, use ordinary configuration-selected `Construct`, which
+requires fresh verified publication matching the selected key. Changing key
+configuration does not authorize rotation.
+
+Client-controlled publication validates and signs the registry-prepared canonical
+record and returns the registry result; it does not independently verify DNS after
+submission. The registry-managed branch waits for and verifies DNS publication.
