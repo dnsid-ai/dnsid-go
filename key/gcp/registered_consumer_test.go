@@ -241,7 +241,7 @@ func runRegisteredConsumer(t *testing.T) {
 			t.Fatalf("tamper rejected for wrong reason: %v", err)
 		}
 	}
-	// Ben's approved correction: valid A evidence must prevent config-only B
+	// Valid A evidence must prevent config-only B
 	// replacement before a manager capable of application signing is returned.
 	// Publication stays A; never regenerate matching evidence from selected B.
 	t.Run("configuration-only replacement rejected before signing", func(t *testing.T) {

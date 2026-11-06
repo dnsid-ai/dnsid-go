@@ -29,7 +29,7 @@ func (d *cleanupPublicationDNS) FetchTXT(context.Context, string) ([]dnsid.TXTRe
 }
 
 // Mode: fake-only (close-counting provider and publication I/O; real constructor,
-// owner signatures and publication verification). Ben's Go PR #130 feedback:
+// owner signatures and publication verification).
 // construction owns selected providers on failure, not caller-injected ones.
 func TestConstruct_OperationalProviderOwnership(t *testing.T) {
 	cfg := dnsid.Config{Identity: &dnsid.IdentityConfig{Domain: "agent.example.com", GovernanceID: "example.com", LogRef: "algorand:ADDR", StatusURL: "https://agent.example.com/status.json", KeyURL: "https://agent.example.com/ku.json", EntityKeyURL: "https://example.com/ek.json", PolicyFlags: []dnsid.PolicyFlag{"logchk"}}}

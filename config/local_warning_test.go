@@ -20,7 +20,7 @@ import (
 )
 
 // Mode: fake-only for publication DNS/HTTPS/log evidence. Real deployment
-// loading, persisted file-factory keys, core verification and ES256 signing. Guards known-foundry#57 / configuration section 12.
+// loading, persisted file-factory keys, core verification and ES256 signing.
 func TestConstruct_LocalWarningEveryStartup(t *testing.T) {
 	if path := os.Getenv("DNSID_TEST_WARNING_DEPLOYMENT"); path != "" {
 		// When a fresh application loads the existing deployment and constructs.
