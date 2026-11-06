@@ -273,6 +273,14 @@ func runRegisteredConsumer(t *testing.T) {
 	// Provider-local transitions compose through the real manager, not invented APIs.
 	p := a.KeyProvider()
 	old := lifecycleKid(t, p)
+	// Retain the exact successor public ID before GenerateKey enables the
+	// denied/corrupt read mode. Later assertions must not re-read that mode.
+	successor, err := config.OperationalKeyProviderFrom(context.Background(), config.KeySource{Provider: "google-kms", KeyRef: successorVersion, Settings: map[string]string{"project": "test-project", "location": "global", "algorithm": "EdDSA"}}, "agent.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer successor.(*gcpkms.Provider).Close()
+	phantom := lifecycleKid(t, successor)
 	pending, err := p.GenerateKey(dnsid.JoseAlgEdDSA)
 	if os.Getenv("DNSID_TEST_GCP_MODE") != "success" {
 		if err == nil || pending != "" {
@@ -281,14 +289,7 @@ func runRegisteredConsumer(t *testing.T) {
 		if lifecycleKid(t, p) != old || !reflect.DeepEqual(p.ListKeyIds(), []string{old}) {
 			t.Fatal("failure changed active signer")
 		}
-		// Inspect the independent successor public key through the provider-only
-		// fixture path; rejected application startup must not be needed for it.
-		successor, err := config.OperationalKeyProviderFrom(context.Background(), config.KeySource{Provider: "google-kms", KeyRef: successorVersion, Settings: map[string]string{"project": "test-project", "location": "global", "algorithm": "EdDSA"}}, "agent.example.com")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer successor.(*gcpkms.Provider).Close()
-		phantom := lifecycleKid(t, successor)
+
 		if p.JWK(phantom) != nil {
 			t.Fatal("failed successor installed phantom public key")
 		}
