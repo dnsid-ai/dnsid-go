@@ -506,10 +506,14 @@ func TestA2AStartup_InvalidPublicationNeverAuthorizes(t *testing.T) {
 			f.mode.Store(mode)
 			done, output := startA2A(t, f)
 			awaitBootstrap(t, f, done, output)
-			select {
-			case <-f.statusRead:
-			case <-time.After(5 * time.Second):
-				t.Fatal("verification never requested status")
+			// Malformed/unreachable ku may cancel the concurrent status read
+			// before it starts; only valid-but-mismatched ku needs that fence.
+			if mode == "mismatch" {
+				select {
+				case <-f.statusRead:
+				case <-time.After(5 * time.Second):
+					t.Fatal("verification never requested status")
+				}
 			}
 			assertNoApplicationSignature(t, f)
 			for len(f.observed) > 0 {
