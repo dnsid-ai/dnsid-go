@@ -125,7 +125,7 @@ func (*consumerLog) RebuildHistory(context.Context, string) ([]dnsidlog.LogEvent
 	return nil, nil
 }
 
-func consumerManager(t *testing.T, ref string, deps config.Dependencies) *dnsid.IdentityManager {
+func openConsumerManager(t *testing.T, ref string, deps config.Dependencies) (*dnsid.IdentityManager, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "deployment.json")
 	document := `{"dnsid":{"identity":{"domain":"agent.example.com","governanceId":"example.com","logRef":"algorand:ADDR","statusUrl":"https://agent.example.com/status.json","keyUrl":"https://agent.example.com/ku.json","entityKeyUrl":"https://example.com/ek.json","policyFlags":["logchk"]}},"keySource":{"provider":"google-kms","keyRef":"` + ref + `","settings":{"project":"test-project","location":"global","algorithm":"EdDSA"}}}`
@@ -137,10 +137,12 @@ func consumerManager(t *testing.T, ref string, deps config.Dependencies) *dnsid.
 		t.Fatal(err)
 	}
 	// Only entity custody is injected; operational provider MUST come from init's factory.
-	deps.EntityKeyProvider = dnsid.GenerateES256KeyProvider()
+	if deps.EntityKeyProvider == nil {
+		deps.EntityKeyProvider = dnsid.GenerateES256KeyProvider()
+	}
 	m, err := config.Construct(context.Background(), loaded, deps)
 	if err != nil {
-		t.Fatal(err)
+		return m, err
 	}
 	p, ok := m.KeyProvider().(*gcpkms.Provider)
 	if !ok {
@@ -151,6 +153,34 @@ func consumerManager(t *testing.T, ref string, deps config.Dependencies) *dnsid.
 			t.Error(err)
 		}
 	})
+	return m, nil
+}
+func consumerManager(t *testing.T, ref string, deps config.Dependencies) *dnsid.IdentityManager {
+	t.Helper()
+	m, err := openConsumerManager(t, ref, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// Establish publication A independently of the deployment under test. The real
+// provider factory opens A, but fixture authoring is not an operational startup.
+func establishedConsumer(t *testing.T) *dnsid.IdentityManager {
+	t.Helper()
+	p, err := config.OperationalKeyProviderFrom(context.Background(), config.KeySource{Provider: "google-kms", KeyRef: version, Settings: map[string]string{"project": "test-project", "location": "global", "algorithm": "EdDSA"}}, "agent.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := p.(*gcpkms.Provider).Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	m, err := dnsid.NewIdentityManager(dnsid.Config{Identity: &dnsid.IdentityConfig{Domain: "agent.example.com", GovernanceID: "example.com", LogRef: "algorand:ADDR", StatusURL: "https://agent.example.com/status.json", KeyURL: "https://agent.example.com/ku.json", EntityKeyURL: "https://example.com/ek.json", PolicyFlags: []dnsid.PolicyFlag{"logchk"}}}, p, dnsid.WithEntityKeyProvider(dnsid.GenerateES256KeyProvider()))
+	if err != nil {
+		t.Fatal(err)
+	}
 	return m
 }
 func publication(t *testing.T, m *dnsid.IdentityManager) (config.Dependencies, *consumerLog) {
@@ -183,7 +213,7 @@ func publicationVerifier(t *testing.T, deps config.Dependencies) *jose.Profile {
 }
 func runRegisteredConsumer(t *testing.T) {
 	// Given manager-A-generated publication, verify via real record/JWKS/profile processing.
-	a := consumerManager(t, version, config.Dependencies{})
+	a := establishedConsumer(t)
 	signer := jose.NewFromIdentityManagerKeyProvider(a, jose.Config{})
 	deps, _ := publication(t, a)
 	verifier := publicationVerifier(t, deps)
@@ -211,27 +241,34 @@ func runRegisteredConsumer(t *testing.T) {
 			t.Fatalf("tamper rejected for wrong reason: %v", err)
 		}
 	}
-	// Construction and VerifyLocalPublication authenticate evidence, NOT custody
-	// binding. B is not expected to fail construction. Cryptographic verification
-	// against valid A must reject B's signature without substituting a signer.
-	b := consumerManager(t, successorVersion, deps)
-	if _, err := b.VerifyLocalPublication(context.Background()); err != nil {
-		t.Fatalf("valid A evidence must authenticate independently of B custody: %v", err)
-	}
-	bToken, err := jose.NewFromIdentityManagerKeyProvider(b, jose.Config{}).CreateJWS(payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := verifier.VerifyJWS(context.Background(), bToken); err == nil {
-		t.Fatal("configured B accepted against valid publication A")
-	} else {
-		var verification *dnsid.VerificationError
-		if !errors.As(err, &verification) || verification.Code() != dnsid.VerificationCodeKeyNotFound {
-			t.Fatalf("B rejected for wrong reason: %v", err)
+	// Ben's approved correction: valid A evidence must prevent config-only B
+	// replacement before a manager capable of application signing is returned.
+	// Publication stays A; never regenerate matching evidence from selected B.
+	t.Run("configuration-only replacement rejected before signing", func(t *testing.T) {
+		b, err := openConsumerManager(t, successorVersion, deps)
+		if err == nil || b != nil {
+			t.Fatalf("configuration-only key B replacement enabled signing against established publication A: manager=%v err=%v", b != nil, err)
 		}
-	}
-	if lifecycleKid(t, b.KeyProvider()) == lifecycleKid(t, a.KeyProvider()) {
-		t.Fatal("configured B fell back to A")
+	})
+	for _, mode := range []string{"unavailable", "corrupt"} {
+		t.Run("publication "+mode+" fails closed", func(t *testing.T) {
+			broken := deps
+			source := deps.HTTPSFetcher.(consumerHTTP)
+			fetcher := consumerHTTP{}
+			for url, body := range source {
+				fetcher[url] = body
+			}
+			if mode == "unavailable" {
+				delete(fetcher, "https://agent.example.com/ku.json")
+			} else {
+				fetcher["https://agent.example.com/ku.json"] = json.RawMessage(`{"keys":[]}`)
+			}
+			broken.HTTPSFetcher = fetcher
+			m, err := openConsumerManager(t, version, broken)
+			if err == nil || m != nil {
+				t.Fatalf("%s publication enabled application signing: manager=%v err=%v", mode, m != nil, err)
+			}
+		})
 	}
 	// Provider-local transitions compose through the real manager, not invented APIs.
 	p := a.KeyProvider()
@@ -244,9 +281,8 @@ func runRegisteredConsumer(t *testing.T) {
 		if lifecycleKid(t, p) != old || !reflect.DeepEqual(p.ListKeyIds(), []string{old}) {
 			t.Fatal("failure changed active signer")
 		}
-		// B was opened before the failing generation; its public ID must not
-		// become a phantom pending entry in A after a failed read/validation.
-		phantom := lifecycleKid(t, b.KeyProvider())
+		// The independent successor fixture must not become a phantom key.
+		phantom := successorVersion
 		if p.JWK(phantom) != nil {
 			t.Fatal("failed successor installed phantom public key")
 		}
