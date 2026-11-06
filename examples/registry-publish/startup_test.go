@@ -190,9 +190,9 @@ func TestRegistryPublishStartup_UnpublishedRegistryReachesWait(t *testing.T) {
 	var reads, posts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method != "GET" || r.URL.Path != "/api/v1/agent/agent.example.com/status" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/agent/agent.example.com/status" {
 			posts.Add(1)
-			http.Error(w, "unexpected signing request", 400)
+			http.Error(w, "unexpected signing request", http.StatusBadRequest)
 			return
 		}
 		status := "PENDING"
