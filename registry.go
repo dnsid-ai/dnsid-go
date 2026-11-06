@@ -779,7 +779,8 @@ func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, 
 
 // CreateLiveAgent starts the separate managed Live HTTP 202 flow. It sends
 // tier="live", managed=true, and environment="production". The idempotency key
-// is required and must be reused for retries.
+// is required and must be reused for retries. Response validation failures return
+// the decoded response together with an error; callers must check the error.
 func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgentRegistrationInput, idempotencyKey string) (*LiveProvisioningResponse, error) {
 	if req == nil || req.PublicKey == nil {
 		return nil, NewArgumentError("dnsid: Live create agent request and public key are required", nil)

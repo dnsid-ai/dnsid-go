@@ -1,3 +1,5 @@
+//go:build dnsid_foundry
+
 // Package foundry implements Known Foundry named caller-key Live creation.
 // It targets the contract pinned at dnsid-sdk-compliance 89600ed. Server SR-1
 // through SR-7 remain release gates; no deployed server revision is certified.
@@ -210,15 +212,6 @@ func (i *FoundryIdentity) Sign(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return sig.Signature, nil
-}
-
-// SetApplicationSigningPaused implements the managed-rotation signing boundary.
-// Unpausing is allowed only for the last verified current public binding.
-func (i *FoundryIdentity) SetApplicationSigningPaused(ctx context.Context, paused bool) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return i.signer.SetApplicationSigningPaused(ctx, paused)
 }
 
 // Create performs durable setup steps 1–3 and does not wait for public ACTIVE.
@@ -634,11 +627,15 @@ func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity
 		}
 	}()
 	doc, err = lease.Load(ctx)
+	if ctx.Err() != nil {
+		return nil, i.client.wrap(doc, ctx.Err())
+	}
 	if err != nil || doc == nil {
 		i.signer.pause("identity recovery state is missing or invalid")
 		return nil, failure(Integrity, doc, errors.Join(err, fmt.Errorf("identity recovery state is missing or invalid")))
 	}
 	defer func() {
+		err = i.client.deadlineError(ctx, doc, err)
 		i.mu.Lock()
 		i.registryStatus = doc.RegistryStatus
 		i.state = dnsid.AgentState(doc.ProtocolState)

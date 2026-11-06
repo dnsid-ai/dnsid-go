@@ -1,3 +1,5 @@
+//go:build dnsid_foundry
+
 package foundry
 
 import (
@@ -281,6 +283,9 @@ func (i *FoundryIdentity) verifySavedAcceptance(ctx context.Context, doc *Recove
 		return failure(Integrity, doc, err)
 	}
 	_, err = reader.VerifyBilateralBinding(ctx, dnsidlog.BilateralBindingInput{Domain: doc.Domain, GovernanceID: doc.GovernanceID, EntityKey: entity, OperationalKey: initial})
+	if ctx.Err() != nil {
+		return i.client.wrap(doc, ctx.Err())
+	}
 	if err != nil {
 		if retryable(err) {
 			return i.client.wrap(doc, err)
@@ -499,6 +504,9 @@ func (i *FoundryIdentity) observe(ctx context.Context, lease FoundryLease, doc *
 	var backoff pollBackoff
 	for {
 		vd, err := manager.VerifyLocalPublication(ctx)
+		if ctx.Err() != nil {
+			return i.client.wrap(doc, ctx.Err())
+		}
 		if err != nil {
 			var verification *dnsid.VerificationError
 			if errors.As(err, &verification) && verification.AgentState() != "" {
@@ -552,6 +560,9 @@ func (i *FoundryIdentity) observe(ctx context.Context, lease FoundryLease, doc *
 			return failure(KeyMismatch, doc, fmt.Errorf("signed current ku does not serve the provider key"))
 		}
 		evidence, err := manager.VerifyLogEvidence(ctx, vd, time.Now())
+		if ctx.Err() != nil {
+			return i.client.wrap(doc, ctx.Err())
+		}
 		if err != nil {
 			if !retryable(err) {
 				return failure(Integrity, doc, err)

@@ -1,3 +1,5 @@
+//go:build dnsid_foundry
+
 package foundry
 
 import (

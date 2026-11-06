@@ -1,4 +1,4 @@
-//go:build !unix && !windows
+//go:build dnsid_foundry && !unix && !windows
 
 package foundry
 

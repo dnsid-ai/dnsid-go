@@ -1,3 +1,5 @@
+//go:build dnsid_foundry
+
 package foundry
 
 import (
@@ -89,22 +91,6 @@ func (s *signingController) enable(key jwk.Key) error {
 	s.public = key
 	s.paused = false
 	s.reason = ""
-	return nil
-}
-
-func (s *signingController) SetApplicationSigningPaused(ctx context.Context, paused bool) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !paused && s.kid == "" {
-		return s.pausedError("no verified current key binding")
-	}
-	s.paused = paused
-	if paused {
-		s.reason = "application signing controller"
-	}
 	return nil
 }
 

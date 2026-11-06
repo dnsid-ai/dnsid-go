@@ -5,6 +5,16 @@ commit `89600ed`. It is not a generic DNSid registration API. Server acceptance
 SR-1 through SR-7 is still a release gate; no deployed server revision is certified.
 There is no sandbox fallback, replacement flow, or extra capability probe.
 
+The package is excluded from default builds until server acceptance passes.
+Developers and the CLI must explicitly opt in with `-tags dnsid_foundry`:
+
+```sh
+go build -tags dnsid_foundry ./...
+go test -tags dnsid_foundry ./...
+```
+
+The tag enables development builds; it does not certify a deployed server.
+
 `Create(ctx, name)` loads SDK environment configuration and the separate
 `DNSID_API_KEY` credential. File and code configuration use `New(loaded, deps)`
 and its `Create` method. Both use the same workflow. Injected providers and log
@@ -19,6 +29,8 @@ deadline, or a default of 30 seconds for Create and 10 minutes for Active.
 Polling starts at one second and doubles to a maximum of 15 seconds. Non-cancellable provider
 calls are checked before and after; the provider's own timeout bounds those calls.
 Cancellation preserves progress and does not cancel the server identity.
+A refresh deadline preserves the previous signing state; it does not create a
+terminal or integrity pause.
 
 `IdentityManager()` returns `(*dnsid.IdentityManager, error)`. It returns
 `*SigningPaused` until publication configuration has been saved, then returns the
@@ -27,7 +39,8 @@ requested; the manager still uses the configured trust for verification. Its sig
 method share a pause controller. A completed operation can reopen and sign using
 its saved current binding without public network checks. `Active` refreshes that
 observation. Direct access to the original provider bypasses this controller;
-the pause is an application safety boundary, not a security boundary.
+the pause is an application safety boundary, not a security boundary. The handle
+and its manager do not expose an application unpause method.
 
 The existing managed issuance coordinator owns preparation and exact-byte
 submission. History recovery runs only after a server rejection, or verification
