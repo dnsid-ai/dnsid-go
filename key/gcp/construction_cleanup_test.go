@@ -3,9 +3,10 @@ package gcpkms_test
 import (
 	"context"
 	"errors"
-	"google.golang.org/grpc"
 	"sync"
 	"testing"
+
+	"google.golang.org/grpc"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
