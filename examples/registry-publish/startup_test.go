@@ -156,10 +156,10 @@ func TestRegistryPublishStartup_UnpublishedClientSignsOwnerCanonical(t *testing.
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Error(err)
 			}
-			alg, encoded, ok := strings.Cut(req.Signature, ":")
-			sig, err := base64.RawURLEncoding.DecodeString(encoded)
+			// Draft-01 sg is bare unpadded base64url (TestTXTRecordES256RoundTrip).
+			sig, err := base64.RawURLEncoding.DecodeString(req.Signature)
 			digest := sha256.Sum256(canonical)
-			if !ok || alg != "ES256" || err != nil || len(sig) != 64 || !ecdsa.Verify(owner, digest[:], new(big.Int).SetBytes(sig[:min(32, len(sig))]), new(big.Int).SetBytes(sig[min(32, len(sig)):])) {
+			if strings.ContainsAny(req.Signature, ":=") || err != nil || len(sig) != 64 || !ecdsa.Verify(owner, digest[:], new(big.Int).SetBytes(sig[:min(32, len(sig))]), new(big.Int).SetBytes(sig[min(32, len(sig)):])) {
 				t.Errorf("submitted record signature does not verify with owner key: %q", req.Signature)
 			}
 			signed := *record
