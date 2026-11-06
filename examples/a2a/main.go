@@ -75,10 +75,14 @@ func main() {
 }
 
 func run() error {
+	return runWithDependencies(config.Dependencies{})
+}
+
+func runWithDependencies(deps config.Dependencies) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	app, port, err := newApplication(ctx)
+	app, port, err := newApplicationWithDependencies(ctx, deps)
 	if err != nil {
 		return err
 	}
@@ -122,6 +126,10 @@ func run() error {
 }
 
 func newApplication(ctx context.Context) (*application, int, error) {
+	return newApplicationWithDependencies(ctx, config.Dependencies{})
+}
+
+func newApplicationWithDependencies(ctx context.Context, deps config.Dependencies) (*application, int, error) {
 	port, err := strconv.Atoi(os.Getenv("DNSID_AGENT_PORT"))
 	if err != nil || port < 1 || port > 65535 {
 		return nil, 0, fmt.Errorf("DNSID_AGENT_PORT is required; run with `dnsid local run`")
@@ -135,7 +143,7 @@ func newApplication(ctx context.Context) (*application, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	identity, err := config.Construct(ctx, loaded, config.Dependencies{})
+	identity, err := config.Construct(ctx, loaded, deps)
 	if err != nil {
 		return nil, 0, err
 	}
