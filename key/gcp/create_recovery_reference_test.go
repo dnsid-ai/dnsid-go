@@ -68,7 +68,7 @@ func TestCreate_PostCreateErrorRetainsRecoveryReference(t *testing.T) {
 			if cause != nil && !errors.Is(err, cause) {
 				t.Errorf("lost original cause: %v", err)
 			}
-			if cause == denied && status.Code(err) != codes.PermissionDenied {
+			if errors.Is(cause, denied) && status.Code(err) != codes.PermissionDenied {
 				t.Errorf("lost permission status: %v", err)
 			}
 			if p != nil {
