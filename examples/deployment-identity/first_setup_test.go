@@ -43,33 +43,6 @@ func firstThumb(pub ed25519.PublicKey) string {
 	sum := sha256.Sum256([]byte(canonical))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
-func firstJWK(t *testing.T, k jwk.Key, kid string, pub ed25519.PublicKey) {
-	t.Helper()
-	if k == nil {
-		t.Fatal("missing public JWK")
-	}
-	raw, err := json.Marshal(k)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatal(err)
-	}
-	for name, want := range map[string]string{"kty": "OKP", "crv": "Ed25519", "x": base64.RawURLEncoding.EncodeToString(pub), "kid": kid, "alg": "EdDSA"} {
-		if m[name] != want {
-			t.Errorf("JWK %s=%v want %s", name, m[name], want)
-		}
-	}
-	if _, exists := m["d"]; exists {
-		t.Fatal("private JWK material exposed")
-	}
-	// Rebuild the RFC7638 input from returned public fields, not SDK Thumbprint.
-	sum := sha256.Sum256([]byte(fmt.Sprintf(`{"crv":"%s","kty":"%s","x":"%s"}`, m["crv"], m["kty"], m["x"])))
-	if base64.RawURLEncoding.EncodeToString(sum[:]) != firstThumb(pub) {
-		t.Fatal("wrong independent thumbprint")
-	}
-}
 func firstSignature(t *testing.T, s *dnsid.KeySignature, err error, kid string, payload []byte, pub ed25519.PublicKey) {
 	t.Helper()
 	if err != nil {
