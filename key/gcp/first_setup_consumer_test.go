@@ -62,11 +62,13 @@ func TestFirstSetup_GCPManagerConsumer(t *testing.T) {
 	entity := &firstSetupEntity{key: entityKey, private: entityPrivate}
 	f := newFirstService(t)
 	_, pub := firstFixture(t)
-	kid := firstThumb(pub)
 	firstNoFiles(t)
-	p, ref, err := gcpkms.Create(context.Background(), f, firstParent)
+	p, kid, ref, err := gcpkms.Create(context.Background(), f, firstParent)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if kid != firstThumb(pub) {
+		t.Fatalf("returned pending kid=%q want independent thumbprint %q", kid, firstThumb(pub))
 	}
 	if ref != firstVersion {
 		t.Fatalf("not immutable first version: %q", ref)

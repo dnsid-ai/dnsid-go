@@ -61,7 +61,7 @@ func TestCreate_PostCreateErrorRetainsRecoveryReference(t *testing.T) {
 			case "public-crc":
 				base.mutatePublic = func(v *kmspb.PublicKey) { v.PemCrc32C.Value ^= 1 }
 			}
-			p, _, err := gcpkms.Create(ctx, f, firstParent)
+			p, _, _, err := gcpkms.Create(ctx, f, firstParent)
 			if err == nil {
 				t.Fatal("post-create failure returned success")
 			}

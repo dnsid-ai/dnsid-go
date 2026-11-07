@@ -238,12 +238,14 @@ func TestCreate_FirstVersionPendingActivateReopen(t *testing.T) {
 			f := newFirstService(t)
 			f.pending = pending
 			_, pub := firstFixture(t)
-			kid := firstThumb(pub)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			p, ref, err := gcpkms.Create(ctx, f, firstParent)
+			p, kid, ref, err := gcpkms.Create(ctx, f, firstParent)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if kid != firstThumb(pub) {
+				t.Fatalf("returned pending kid=%q want independent thumbprint %q", kid, firstThumb(pub))
 			}
 			if p == nil {
 				t.Fatal("missing provider")
@@ -336,7 +338,7 @@ func TestCreate_FirstVersionFailures(t *testing.T) {
 			tc.setup(f)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			p, _, err := gcpkms.Create(ctx, f, firstParent)
+			p, _, _, err := gcpkms.Create(ctx, f, firstParent)
 			if err == nil {
 				t.Fatal("accepted invalid create")
 			}
@@ -377,7 +379,7 @@ func TestCreate_RejectsParentPrerequisites(t *testing.T) {
 			case "wrong-protection":
 				f.template.ProtectionLevel = kmspb.ProtectionLevel_HSM
 			}
-			if _, _, err := gcpkms.Create(context.Background(), f, parent); err == nil {
+			if _, _, _, err := gcpkms.Create(context.Background(), f, parent); err == nil {
 				t.Fatal("accepted invalid parent")
 			}
 			if f.creates != 0 || f.gets != 0 || f.publics != 0 {
@@ -402,7 +404,7 @@ func TestCreate_CanceledFirstVersion(t *testing.T) {
 	f := &firstCanceledService{newFirstService(t)}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	p, _, err := gcpkms.Create(ctx, f, firstParent)
+	p, _, _, err := gcpkms.Create(ctx, f, firstParent)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("lost create deadline: %v", err)
 	}
@@ -434,7 +436,7 @@ func TestCreate_CanceledFirstVersionReadiness(t *testing.T) {
 	f := &firstPendingService{base}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	p, _, err := gcpkms.Create(ctx, f, firstParent)
+	p, _, _, err := gcpkms.Create(ctx, f, firstParent)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("lost readiness deadline: %v", err)
 	}
