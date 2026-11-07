@@ -55,12 +55,12 @@ func TestCreate_NativeConsumer(t *testing.T) {
 					var in struct{ KeySpec, KeyUsage string }
 					if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 						t.Error(err)
-						w.WriteHeader(400)
+						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
 					if in.KeySpec != "ECC_NIST_EDWARDS25519" || in.KeyUsage != "SIGN_VERIFY" {
 						t.Errorf("native CreateKey spec/usage = %q/%q", in.KeySpec, in.KeyUsage)
-						w.WriteHeader(400)
+						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
 					if tc.denied {
@@ -78,12 +78,12 @@ func TestCreate_NativeConsumer(t *testing.T) {
 					}
 					if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 						t.Error(err)
-						w.WriteHeader(400)
+						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
 					if in.KeyID != firstARN {
 						t.Errorf("GetPublicKey reference = %q", in.KeyID)
-						w.WriteHeader(400)
+						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
 					usage := "SIGN_VERIFY"
@@ -100,19 +100,19 @@ func TestCreate_NativeConsumer(t *testing.T) {
 					}
 					if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 						t.Error(err)
-						w.WriteHeader(400)
+						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
 					if in.KeyID != firstARN || in.MessageType != "RAW" || in.SigningAlgorithm != "ED25519_SHA_512" || !bytes.Equal(in.Message, payload) {
 						t.Errorf("native Sign did not preserve canonical reference, RAW Ed25519, and payload")
-						w.WriteHeader(400)
+						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
 					respond(map[string]any{"KeyId": firstARN, "SigningAlgorithm": "ED25519_SHA_512", "Signature": ed25519.Sign(private, in.Message)})
 				default:
 					unexpected.Add(1) // Includes any destructive cleanup or unrelated API.
 					t.Errorf("unexpected native API %q", r.Header.Get("X-Amz-Target"))
-					w.WriteHeader(400)
+					w.WriteHeader(http.StatusBadRequest)
 				}
 			}))
 			defer server.Close()
