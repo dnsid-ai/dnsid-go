@@ -3,6 +3,7 @@ module github.com/dnsid-ai/dnsid-go/examples/deployment-identity
 go 1.26.10
 
 require (
+	github.com/aws/aws-sdk-go-v2/service/kms v1.61.1
 	github.com/dnsid-ai/dnsid-go v0.46.1
 	github.com/dnsid-ai/dnsid-go/key/aws v0.46.1
 )
@@ -19,7 +20,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/kms v1.61.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.2 // indirect

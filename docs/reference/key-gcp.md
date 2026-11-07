@@ -39,6 +39,7 @@ Copyright 2026 Known Systems AI, Inc.
 - [type Client](<#Client>)
 - [type Config](<#Config>)
 - [type Provider](<#Provider>)
+  - [func Create\(ctx context.Context, client Client, parent string\) \(\*Provider, string, error\)](<#Create>)
   - [func New\(ctx context.Context, client Client, cfg Config\) \(\*Provider, error\)](<#New>)
   - [func Open\(ctx context.Context, src config.KeySource, opts ...option.ClientOption\) \(\*Provider, error\)](<#Open>)
   - [func \(p \*Provider\) Activate\(kid string\) error](<#Provider.Activate>)
@@ -87,6 +88,15 @@ type Provider struct {
 }
 ```
 
+<a name="Create"></a>
+### func [Create](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L206>)
+
+```go
+func Create(ctx context.Context, client Client, parent string) (*Provider, string, error)
+```
+
+Create explicitly creates the first software Ed25519 version under an existing ASYMMETRIC\_SIGN CryptoKey with a software EC\_SIGN\_ED25519 template. No prior version is required or read. The client must also support GetCryptoKey and CreateCryptoKeyVersion \(and GetCryptoKeyVersion while generation is pending\). Creation, readiness and public validation share a 30\-second budget. The result reference is the immutable created version; its pending kid is the RFC7638 thumbprint of its public JWK. Activate that kid before manager injection. No files are written, remote resources deleted, or failed creates retried. Reconciliation and cleanup are operator\-owned, and the client is caller\-owned. New and Open continue to open existing immutable versions only.
+
 <a name="New"></a>
 ### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L70>)
 
@@ -108,7 +118,7 @@ Open validates configuration and opens its existing immutable version using the 
 The returned provider owns the created client: call Close after all operations finish. On failure Open closes the created client. A connection supplied via option.WithGRPCConn is subject to the official client's Close behavior, which may close it \(including on an opening failure\). Supply a dedicated connection, not one shared with unrelated clients.
 
 <a name="Provider.Activate"></a>
-### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L283>)
+### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L342>)
 
 ```go
 func (p *Provider) Activate(kid string) error
@@ -117,16 +127,16 @@ func (p *Provider) Activate(kid string) error
 Activate explicitly promotes a pending key. The previous key remains available as a public JWK but cannot sign. No remote version state is changed.
 
 <a name="Provider.Close"></a>
-### func \(\*Provider\) [Close](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L335>)
+### func \(\*Provider\) [Close](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L394>)
 
 ```go
 func (p *Provider) Close() error
 ```
 
-Close releases the client created by Open or configuration loading. For New, the caller owns the supplied client and Close is a no\-op. Connections supplied through option.WithGRPCConn may also be closed by the official client. Call only after all provider operations have completed.
+Close releases the client created by Open or configuration loading. For New or Create, the caller owns the supplied client and Close is a no\-op. Connections supplied through option.WithGRPCConn may also be closed by the official client. Call only after all provider operations have completed.
 
 <a name="Provider.GenerateKey"></a>
-### func \(\*Provider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L205>)
+### func \(\*Provider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L260>)
 
 ```go
 func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error)
@@ -153,7 +163,7 @@ func (p *Provider) ListKeyIds() []string
 ListKeyIds returns only the active public\-key thumbprint, never pending or retained IDs.
 
 <a name="Provider.Purge"></a>
-### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L318>)
+### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L377>)
 
 ```go
 func (p *Provider) Purge(kid string) error
@@ -180,7 +190,7 @@ func (p *Provider) SignKey(kid string, payload []byte) (*dnsid.KeySignature, err
 SignKey signs with an active or pending key. Retained and unknown IDs fail before any API call. Local transitions wait for in\-flight signatures to finish.
 
 <a name="Provider.Supersede"></a>
-### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L303>)
+### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L362>)
 
 ```go
 func (p *Provider) Supersede(kid string) error
