@@ -27,7 +27,7 @@ func (f createBindingService) GetPublicKey(ctx context.Context, in awskms.GetPub
 }
 
 // Mode: fake-only (malformed native resource binding, real independent crypto).
-// Guards: independent review F1, created bare ID bound to unrelated canonical ARN.
+// Guards: a bare created key ID must match the key ID in its canonical ARN.
 // Given a native bare create ID, When metadata reports another canonical key,
 // Then Create fails with no provider, duplicate create, signing or deletion.
 // Given its matching canonical ARN instead, Then creation remains legitimate,

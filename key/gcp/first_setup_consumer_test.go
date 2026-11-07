@@ -46,7 +46,7 @@ func (e *firstSetupEntity) Activate(string) error { panic("consumer activated ca
 // immutable version reopen reconstructs the same manager inputs without create.
 func TestFirstSetup_GCPManagerConsumer(t *testing.T) {
 	// Independent entity fixture, no SDK private-key generation/import helpers.
-	seed := sha256.Sum256([]byte("Go58 caller-owned entity custody independent of RFC8032 service fixture"))
+	seed := sha256.Sum256([]byte("caller-owned entity custody independent of RFC8032 service fixture"))
 	entityPrivate := ed25519.NewKeyFromSeed(seed[:])
 	entityPublic := entityPrivate.Public().(ed25519.PublicKey)
 	entityKey, err := jwk.Import(entityPublic)
