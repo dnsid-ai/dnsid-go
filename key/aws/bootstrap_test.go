@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -257,6 +258,9 @@ func TestCreate_FirstKeyFailures(t *testing.T) {
 			p, err := awskms.Create(context.Background(), f, firstConfig())
 			if err == nil {
 				t.Fatal("accepted invalid creation")
+			}
+			if tc.name != "permission" && tc.name != "empty-reference" && !strings.Contains(err.Error(), f.createRef) {
+				t.Fatalf("error lost created key recovery reference %q: %v", f.createRef, err)
 			}
 			if tc.want != nil && !errors.Is(err, tc.want) {
 				t.Fatalf("lost native error: %v", err)

@@ -51,6 +51,9 @@ func TestCreate_BareIDCanonicalResourceBinding(t *testing.T) {
 				if err == nil {
 					t.Fatalf("accepted bare created ID %q as unrelated canonical ARN %q; provider state=%+v", f.createRef, tc.canonical, p.State())
 				}
+				if !strings.Contains(err.Error(), f.createRef) {
+					t.Fatalf("error lost original bare created key recovery reference %q: %v", f.createRef, err)
+				}
 				if p != nil {
 					t.Fatal("binding failure returned provider")
 				}
