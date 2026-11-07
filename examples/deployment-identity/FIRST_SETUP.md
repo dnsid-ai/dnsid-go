@@ -8,6 +8,13 @@ provision an entity key, run automatically from `main`, or claim protocol issuan
 Do not call it for an established identity or retry an indeterminate creation:
 remote resource discovery and cleanup belong to the operator.
 
+Before returning success, the helper validates the unsigned publication inputs,
+including available public keys and distinct RFC7638 entity/operational
+thumbprints, without signing a record. Validation failure after local activation
+returns a nil manager, an error, and the already-created ACTIVE recovery state;
+it does not delete or recreate the remote key. This does not change the general
+`NewIdentityManager` constructor's validation boundary.
+
 The returned state contains only public immutable references. The application
 owns its durable handoff (and must reconcile a remote create whose response is
 lost). Publish `manager.GetEntityKeySet()` at `ek`, `manager.GetKeySet()` at `ku`,

@@ -30,5 +30,14 @@ func PrepareFirstSetup(ctx context.Context, client awskms.Client, cfg dnsid.Conf
 	}
 	state := operational.State()
 	manager, err := dnsid.NewIdentityManager(cfg, operational, dnsid.WithEntityKeyProvider(entity))
-	return manager, state, err
+	if err != nil {
+		return nil, state, err
+	}
+	// Reuse non-signing publication validation, including active public-key
+	// availability and RFC7638 separation. Keep the activated recovery state
+	// on failure; validation must not sign, delete or recreate a remote key.
+	if _, err := manager.BuildUnsignedTXTRecord(); err != nil {
+		return nil, state, err
+	}
+	return manager, state, nil
 }
