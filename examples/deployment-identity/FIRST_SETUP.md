@@ -52,9 +52,21 @@ operational, err := awskms.Load(ctx, client, awskms.Config{
 // demonstrates open-only config.Construct and exact published-key binding.
 ```
 
-For GCP, use `gcpkms.Create(ctx, client, existingCryptoKeyParent)`: retain its
-returned immutable version reference, derive the pending RFC7638 kid from that
-version's public JWK, and explicitly Activate it. Reopen with
+For GCP, obtain the validated pending kid and immutable version directly:
+
+```go
+operational, pendingKid, savedVersion, err := gcpkms.Create(ctx, client, existingCryptoKeyParent)
+if err != nil {
+    return err // A known created version is included in post-create errors for reconciliation.
+}
+if err := operational.Activate(pendingKid); err != nil {
+    return err
+}
+// Retain savedVersion in application-owned state for open-only startup.
+```
+
+Before activation, the active listing is empty and the default JWK is nil;
+`operational.JWK(pendingKid)` exposes the pending public key. Reopen with
 `gcpkms.New(ctx, client, gcpkms.Config{KeyVersionName: savedVersion})`. A compatible
 software Ed25519 signing parent must already exist; no previous version is needed.
 No cloud resources are deleted implicitly on failure and injected clients remain
