@@ -473,8 +473,14 @@ func (p *Provider) createKey(ctx context.Context, cleanup bool) (string, error) 
 		return "", fmt.Errorf("dnsid/awskms: CreateSigningKey returned no key ID")
 	}
 	kid, err := p.canonicalKid(ctx, out.KeyID)
-	if err == nil && strings.HasPrefix(out.KeyID, "arn:") && kid != out.KeyID {
-		err = fmt.Errorf("dnsid/awskms: created key binding mismatch")
+	if err == nil && kid != out.KeyID {
+		// Native creation may return a bare key ID rather than its ARN.
+		// Canonicalization must preserve that exact resource, not adopt a
+		// different key merely because its public metadata is valid.
+		reference, parseErr := arn.Parse(kid)
+		if strings.HasPrefix(out.KeyID, "arn:") || parseErr != nil || reference.Service != "kms" || reference.Resource != "key/"+out.KeyID {
+			err = fmt.Errorf("dnsid/awskms: created key binding mismatch")
+		}
 	}
 	if err == nil {
 		err = ctx.Err()
