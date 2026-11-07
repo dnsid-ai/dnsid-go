@@ -213,7 +213,7 @@ func Load(ctx context.Context, client Client, cfg Config) (*Provider, error)
 Load constructs a [Provider](<#Provider>) from an existing rotation state. It applies the defaults documented on [Config](<#Config>), then canonicalizes every key ID in cfg.State against KMS, verifying that each key exists, is a SIGN\_VERIFY key of the configured key spec, and supports the configured signing algorithm. It returns an error if client is nil, cfg.State.ActiveKeyID is empty, the algorithm is unsupported, cfg.KeySpec does not match the algorithm, or any state key fails validation.
 
 <a name="New"></a>
-### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L790>)
+### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L796>)
 
 ```go
 func New(ctx context.Context, client Client, cfg Config) (*Provider, error)
@@ -222,7 +222,7 @@ func New(ctx context.Context, client Client, cfg Config) (*Provider, error)
 New constructs a [Provider](<#Provider>). It is equivalent to [Load](<#Load>).
 
 <a name="Provider.Activate"></a>
-### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L502>)
+### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L508>)
 
 ```go
 func (p *Provider) Activate(kid string) error
@@ -267,7 +267,7 @@ func (p *Provider) ListKeyIds() []string
 ListKeyIds returns the active kid first, followed by retained kids, implementing \[dnsid.KeyProvider\]. Pending kids are not listed.
 
 <a name="Provider.Purge"></a>
-### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L544>)
+### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L550>)
 
 ```go
 func (p *Provider) Purge(kid string) error
@@ -303,7 +303,7 @@ func (p *Provider) State() State
 State returns a copy of the provider's current rotation state, with all key IDs in canonical \(KMS\-reported\) form. Persist it and supply it back through [Config.State](<#Config>) to reconstruct the provider later.
 
 <a name="Provider.Supersede"></a>
-### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L528>)
+### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L534>)
 
 ```go
 func (p *Provider) Supersede(kid string) error
