@@ -2,9 +2,11 @@ package awskms_test
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
+	dnsid "github.com/dnsid-ai/dnsid-go"
 	awskms "github.com/dnsid-ai/dnsid-go/key/aws"
 )
 
@@ -76,5 +78,61 @@ func TestCreate_BareIDCanonicalResourceBinding(t *testing.T) {
 				t.Fatalf("creates=%d deletions=%d", f.creates, f.deletes)
 			}
 		})
+	}
+}
+
+// Reuse the binding fixture while allowing an established active/retained state
+// and recording the exact cleanup target rather than rejecting all deletion.
+type generateBindingService struct {
+	createBindingService
+	deleted []string
+}
+
+func (f *generateBindingService) GetPublicKey(ctx context.Context, in awskms.GetPublicKeyInput) (awskms.GetPublicKeyOutput, error) {
+	if in.KeyID == "active" || in.KeyID == "retained" {
+		out, err := f.firstService.GetPublicKey(ctx, awskms.GetPublicKeyInput{KeyID: firstARN})
+		out.KeyID = in.KeyID
+		return out, err
+	}
+	return f.createBindingService.GetPublicKey(ctx, in)
+}
+
+func (f *generateBindingService) ScheduleKeyDeletion(_ context.Context, in awskms.ScheduleKeyDeletionInput) error {
+	f.deleted = append(f.deleted, in.KeyID)
+	return nil
+}
+
+// Mode: fake-only (substituted native public metadata).
+// Given an established signer and opt-in failed-generation cleanup,
+// When a bare created ID resolves to valid metadata for another canonical ARN,
+// Then return and delete only the original ID once, preserving lifecycle state.
+func TestGenerateKey_BareIDBindingMismatchDeletesOriginal(t *testing.T) {
+	base := newFirstService(t)
+	base.created = true // The active and retained fixture keys already exist.
+	base.createRef = "11111111-1111-4111-8111-111111111111"
+	f := &generateBindingService{createBindingService: createBindingService{
+		firstService: base,
+		canonical:    "arn:aws:kms:us-east-1:111122223333:key/22222222-2222-4222-8222-222222222222",
+	}}
+	cfg := firstConfig()
+	cfg.State = awskms.State{ActiveKeyID: "active", RetainedKeyIDs: []string{"retained"}}
+	cfg.ScheduleDeletionOnPurge = true
+	p, err := awskms.Load(context.Background(), f, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := p.State()
+	kid, err := p.GenerateKey(dnsid.JoseAlgEdDSA)
+	if err == nil || !strings.Contains(err.Error(), "created key binding mismatch") || kid != base.createRef {
+		t.Fatalf("GenerateKey = (%q, %v), want original created ID and binding mismatch", kid, err)
+	}
+	if base.creates != 1 {
+		t.Fatalf("creates = %d, want exactly one", base.creates)
+	}
+	if !reflect.DeepEqual(f.deleted, []string{base.createRef}) {
+		t.Fatalf("deleted = %v, want only original created ID %q once", f.deleted, base.createRef)
+	}
+	if after := p.State(); !reflect.DeepEqual(after, before) || len(after.PendingKeyIDs) != 0 {
+		t.Fatalf("state = %+v, want unchanged %+v and no phantom pending key", after, before)
 	}
 }
