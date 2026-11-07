@@ -15,6 +15,22 @@ returns a nil manager, an error, and the already-created ACTIVE recovery state;
 it does not delete or recreate the remote key. This does not change the general
 `NewIdentityManager` constructor's validation boundary.
 
+## Creation-specific authorization
+
+Unlike the adjacent [README's open-only executable](README.md#provider-installation-and-aws-access),
+first setup requires creation permissions as well as public-key access and signing:
+
+- **AWS:** authorize `kms:CreateKey`, plus `kms:GetPublicKey` and `kms:Sign`
+  on the created key, through applicable IAM and KMS key-policy authorization.
+- **GCP:** authorize `cloudkms.cryptoKeys.get` on the existing parent,
+  `cloudkms.cryptoKeyVersions.create` under it, and
+  `cloudkms.cryptoKeyVersions.get` (for pending-generation readiness),
+  `cloudkms.cryptoKeyVersions.viewPublicKey`, and
+  `cloudkms.cryptoKeyVersions.useToSign` for its versions through applicable IAM
+  policy. This path does not provision the parent or require a prior version.
+
+## Public-reference handoff
+
 The returned state contains only public immutable references. The application
 owns its durable handoff (and must reconcile a remote create whose response is
 lost). Publish `manager.GetEntityKeySet()` at `ek`, `manager.GetKeySet()` at `ku`,
