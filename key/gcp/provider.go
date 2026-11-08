@@ -287,7 +287,7 @@ func (p *Provider) createVersion(ctx context.Context, creator versionCreator, pa
 	if err != nil {
 		return "", err
 	}
-	if response == nil || validateVersion(response.Name) != nil || !strings.HasPrefix(response.Name, parent+"/cryptoKeyVersions/") || response.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
+	if response == nil || validateVersion(response.Name) != nil || !strings.HasPrefix(response.Name, parent+"/cryptoKeyVersions/") {
 		return "", fmt.Errorf("dnsid/gcpkms: generated version has invalid binding or metadata")
 	}
 	version := response.Name
@@ -296,6 +296,9 @@ func (p *Provider) createVersion(ctx context.Context, creator versionCreator, pa
 			err = fmt.Errorf("dnsid/gcpkms: created version %s: %w", version, err)
 		}
 	}()
+	if response.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
+		return "", fmt.Errorf("dnsid/gcpkms: generated version has invalid binding or metadata")
+	}
 	for response.State != kmspb.CryptoKeyVersion_ENABLED {
 		if response.State != kmspb.CryptoKeyVersion_PENDING_GENERATION {
 			return "", fmt.Errorf("dnsid/gcpkms: generated version is not enabled or pending generation")
