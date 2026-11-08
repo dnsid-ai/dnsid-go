@@ -118,7 +118,7 @@ Open validates configuration and opens its existing immutable version using the 
 The returned provider owns the created client: call Close after all operations finish. On failure Open closes the created client. A connection supplied via option.WithGRPCConn is subject to the official client's Close behavior, which may close it \(including on an opening failure\). Supply a dedicated connection, not one shared with unrelated clients.
 
 <a name="Provider.Activate"></a>
-### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L350>)
+### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L353>)
 
 ```go
 func (p *Provider) Activate(kid string) error
@@ -127,7 +127,7 @@ func (p *Provider) Activate(kid string) error
 Activate explicitly promotes a pending key. The previous key remains available as a public JWK but cannot sign. No remote version state is changed.
 
 <a name="Provider.Close"></a>
-### func \(\*Provider\) [Close](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L402>)
+### func \(\*Provider\) [Close](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L405>)
 
 ```go
 func (p *Provider) Close() error
@@ -163,7 +163,7 @@ func (p *Provider) ListKeyIds() []string
 ListKeyIds returns only the active public\-key thumbprint, never pending or retained IDs.
 
 <a name="Provider.Purge"></a>
-### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L385>)
+### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L388>)
 
 ```go
 func (p *Provider) Purge(kid string) error
@@ -190,7 +190,7 @@ func (p *Provider) SignKey(kid string, payload []byte) (*dnsid.KeySignature, err
 SignKey signs with an active or pending key. Retained and unknown IDs fail before any API call. Local transitions wait for in\-flight signatures to finish.
 
 <a name="Provider.Supersede"></a>
-### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L370>)
+### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L373>)
 
 ```go
 func (p *Provider) Supersede(kid string) error
