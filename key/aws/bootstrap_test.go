@@ -335,3 +335,26 @@ func TestCreate_CanceledFirstKey(t *testing.T) {
 		t.Fatal("canceled create retried/opened/signed/deleted")
 	}
 }
+
+// Mode: fake-only (caller cancellation after valid matching public output).
+// Given opt-in purge deletion, When initial creation is canceled after its
+// public read succeeds, Then reconciliation still belongs to the caller.
+func TestCreate_LateCancellationLeavesOriginalForReconciliation(t *testing.T) {
+	firstNoFiles(t)
+	f := newFirstService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.mutate = func(_ *awskms.GetPublicKeyOutput) { cancel() }
+	cfg := firstConfig()
+	cfg.ScheduleDeletionOnPurge = true
+	p, err := awskms.Create(ctx, f, cfg)
+	if p != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Create = (%v, %v), want nil provider and caller cancellation", p, err)
+	}
+	if !strings.Contains(err.Error(), f.createRef) {
+		t.Fatalf("error lost original created key recovery reference %q: %v", f.createRef, err)
+	}
+	if f.creates != 1 || f.reads != 1 || f.signs != 0 || f.deletes != 0 {
+		t.Fatalf("creates=%d reads=%d signs=%d deletes=%d, want 1/1/0/0", f.creates, f.reads, f.signs, f.deletes)
+	}
+}

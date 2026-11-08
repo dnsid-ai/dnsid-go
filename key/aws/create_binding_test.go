@@ -2,9 +2,11 @@ package awskms_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	awskms "github.com/dnsid-ai/dnsid-go/key/aws"
@@ -103,7 +105,7 @@ type generateBindingService struct {
 }
 
 func (f *generateBindingService) GetPublicKey(ctx context.Context, in awskms.GetPublicKeyInput) (awskms.GetPublicKeyOutput, error) {
-	if in.KeyID == "active" || in.KeyID == "retained" {
+	if in.KeyID == "active" || in.KeyID == "retained" || in.KeyID == "pending" {
 		out, err := f.firstService.GetPublicKey(ctx, awskms.GetPublicKeyInput{KeyID: firstARN})
 		out.KeyID = in.KeyID
 		return out, err
@@ -148,5 +150,80 @@ func TestGenerateKey_BareIDBindingMismatchDeletesOriginal(t *testing.T) {
 	}
 	if after := p.State(); !reflect.DeepEqual(after, before) || len(after.PendingKeyIDs) != 0 {
 		t.Fatalf("state = %+v, want unchanged %+v and no phantom pending key", after, before)
+	}
+}
+
+// Only the uncached newly created key waits. Load's existing-key reads remain
+// immediate; the valid output is prepared before synchronizing on the real
+// operation deadline. Returning nil error leaves the late verdict to production.
+type lateDeadlineService struct {
+	*generateBindingService
+	expiredOperation context.Context
+}
+
+func (f *lateDeadlineService) GetPublicKey(ctx context.Context, in awskms.GetPublicKeyInput) (awskms.GetPublicKeyOutput, error) {
+	out, err := f.generateBindingService.GetPublicKey(ctx, in)
+	if err != nil || in.KeyID != f.createRef {
+		return out, err
+	}
+	f.expiredOperation = ctx
+	// Bound a broken fixture independently of the configured operation timeout.
+	outer := time.NewTimer(2 * time.Second)
+	defer outer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-outer.C:
+		f.t.Fatal("new-key public read did not observe the operation deadline")
+	}
+	return out, nil
+}
+
+func (f *lateDeadlineService) ScheduleKeyDeletion(ctx context.Context, in awskms.ScheduleKeyDeletionInput) error {
+	if f.expiredOperation == nil || !errors.Is(f.expiredOperation.Err(), context.DeadlineExceeded) {
+		f.t.Error("cleanup did not follow the expired generation operation")
+	}
+	if ctx == f.expiredOperation || ctx.Err() != nil {
+		f.t.Error("cleanup reused expired generation context")
+	}
+	if deadline, ok := ctx.Deadline(); !ok || !deadline.After(time.Now()) {
+		f.t.Error("cleanup context has no fresh unexpired deadline")
+	}
+	return f.generateBindingService.ScheduleKeyDeletion(ctx, in)
+}
+
+// Mode: fake-only (successful native public read after operation expiry).
+// Given active, retained and pending keys and opt-in rotation cleanup, When a
+// distinct new key validates after its deadline, Then return and delete only
+// its original ID once without changing lifecycle state. Cache rollback is not
+// required: validated public material is separate from lifecycle registration.
+func TestGenerateKey_LateDeadlineDeletesOriginal(t *testing.T) {
+	base := newFirstService(t)
+	base.created = true
+	base.createRef = "11111111-1111-4111-8111-111111111111"
+	f := &lateDeadlineService{generateBindingService: &generateBindingService{
+		createBindingService: createBindingService{firstService: base, canonical: firstARN},
+	}}
+	cfg := firstConfig()
+	cfg.State = awskms.State{ActiveKeyID: "active", RetainedKeyIDs: []string{"retained"}, PendingKeyIDs: []string{"pending"}}
+	cfg.ScheduleDeletionOnPurge = true
+	cfg.OperationTimeout = 100 * time.Millisecond
+	p, err := awskms.Load(context.Background(), f, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := p.State()
+	readsBefore := base.reads
+	kid, err := p.GenerateKey(dnsid.JoseAlgEdDSA)
+	if kid != base.createRef || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("GenerateKey = (%q, %v), want original created ID and deadline exceeded", kid, err)
+	}
+	if base.creates != 1 || base.reads != readsBefore+1 || base.signs != 0 {
+		t.Fatalf("creates=%d new reads=%d signs=%d, want 1/1/0", base.creates, base.reads-readsBefore, base.signs)
+	}
+	if !reflect.DeepEqual(f.deleted, []string{base.createRef}) {
+		t.Fatalf("deleted = %v, want only original created ID %q once", f.deleted, base.createRef)
+	}
+	if after := p.State(); !reflect.DeepEqual(after, before) {
+		t.Fatalf("state = %+v, want unchanged %+v", after, before)
 	}
 }
