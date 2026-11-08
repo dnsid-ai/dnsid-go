@@ -341,7 +341,7 @@ func (p *Provider) JWKWithError(kidOpt ...string) (jwk.Key, error) {
 	if len(kidOpt) > 0 {
 		kid = kidOpt[0]
 	}
-	if kid != p.state.ActiveKeyID && !contains(p.state.RetainedKeyIDs, kid) && !contains(p.state.PendingKeyIDs, kid) {
+	if kid == "" || (kid != p.state.ActiveKeyID && !contains(p.state.RetainedKeyIDs, kid) && !contains(p.state.PendingKeyIDs, kid)) {
 		p.mu.RUnlock()
 		return nil, nil
 	}
