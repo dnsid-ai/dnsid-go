@@ -45,6 +45,7 @@ Copyright 2026 Known Systems AI, Inc.
 - [type GetPublicKeyInput](<#GetPublicKeyInput>)
 - [type GetPublicKeyOutput](<#GetPublicKeyOutput>)
 - [type Provider](<#Provider>)
+  - [func Create\(ctx context.Context, client Client, cfg Config\) \(\*Provider, error\)](<#Create>)
   - [func Load\(ctx context.Context, client Client, cfg Config\) \(\*Provider, error\)](<#Load>)
   - [func New\(ctx context.Context, client Client, cfg Config\) \(\*Provider, error\)](<#New>)
   - [func \(p \*Provider\) Activate\(kid string\) error](<#Provider.Activate>)
@@ -69,7 +70,7 @@ Copyright 2026 Known Systems AI, Inc.
 
 
 <a name="Client"></a>
-## type [Client](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L86-L98>)
+## type [Client](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L88-L100>)
 
 Client is the narrow AWS KMS surface a [Provider](<#Provider>) depends on. [SDKClient](<#SDKClient>) adapts the AWS SDK for Go v2 KMS client; test doubles can implement Client directly.
 
@@ -90,13 +91,13 @@ type Client interface {
 ```
 
 <a name="Config"></a>
-## type [Config](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L45-L81>)
+## type [Config](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L47-L83>)
 
-Config configures a [Provider](<#Provider>). The zero value is not usable on its own: State.ActiveKeyID must identify an existing KMS signing key. [Load](<#Load>) applies the defaults documented on each field.
+Config configures a [Provider](<#Provider>). The zero value is not usable on its own: Load requires State.ActiveKeyID to identify an existing KMS signing key. [Load](<#Load>) applies the defaults documented on each field.
 
 ```go
 type Config struct {
-    // State is the initial rotation state. State.ActiveKeyID is required.
+    // State is the rotation state. Load requires an active key; Create requires empty state.
     State State
 
     // Algorithm is the KMS signing algorithm used for every signing
@@ -135,7 +136,7 @@ type Config struct {
 ```
 
 <a name="CreateSigningKeyInput"></a>
-## type [CreateSigningKeyInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L102-L106>)
+## type [CreateSigningKeyInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L104-L108>)
 
 CreateSigningKeyInput carries the parameters for Client.CreateSigningKey: the KMS key spec plus the description and tags to apply to the new key.
 
@@ -148,7 +149,7 @@ type CreateSigningKeyInput struct {
 ```
 
 <a name="CreateSigningKeyOutput"></a>
-## type [CreateSigningKeyOutput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L110>)
+## type [CreateSigningKeyOutput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L112>)
 
 CreateSigningKeyOutput reports the ID — preferably the ARN — of a newly created KMS key.
 
@@ -157,7 +158,7 @@ type CreateSigningKeyOutput struct{ KeyID string }
 ```
 
 <a name="GetPublicKeyInput"></a>
-## type [GetPublicKeyInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L113>)
+## type [GetPublicKeyInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L115>)
 
 GetPublicKeyInput identifies the KMS key to fetch with Client.GetPublicKey.
 
@@ -166,7 +167,7 @@ type GetPublicKeyInput struct{ KeyID string }
 ```
 
 <a name="GetPublicKeyOutput"></a>
-## type [GetPublicKeyOutput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L118-L124>)
+## type [GetPublicKeyOutput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L120-L126>)
 
 GetPublicKeyOutput carries a KMS key's DER\-encoded \(PKIX\) public key and the metadata the provider validates: the canonical key ID, key spec, key usage, and supported signing algorithms.
 
@@ -181,7 +182,7 @@ type GetPublicKeyOutput struct {
 ```
 
 <a name="Provider"></a>
-## type [Provider](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L216-L222>)
+## type [Provider](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L218-L224>)
 
 Provider is an AWS KMS\-backed implementation of \[dnsid.KeyProvider\]. Private key material stays in KMS: the provider fetches and caches public keys as JWKs and delegates every signing operation to the KMS Sign API.
 
@@ -193,8 +194,17 @@ type Provider struct {
 }
 ```
 
+<a name="Create"></a>
+### func [Create](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L283>)
+
+```go
+func Create(ctx context.Context, client Client, cfg Config) (*Provider, error)
+```
+
+Create explicitly creates the first signing key inside KMS. Config.State must be empty. The validated canonical reference is available in State.PendingKeyIDs; Activate is required before ordinary signing or manager injection. No state is persisted. Failure never retries creation or deletes the remote key, even when ScheduleDeletionOnPurge is configured; reconciliation is operator\-owned. The supplied client remains caller\-owned. Load and New remain open\-only.
+
 <a name="Load"></a>
-### func [Load](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L231>)
+### func [Load](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L233>)
 
 ```go
 func Load(ctx context.Context, client Client, cfg Config) (*Provider, error)
@@ -203,7 +213,7 @@ func Load(ctx context.Context, client Client, cfg Config) (*Provider, error)
 Load constructs a [Provider](<#Provider>) from an existing rotation state. It applies the defaults documented on [Config](<#Config>), then canonicalizes every key ID in cfg.State against KMS, verifying that each key exists, is a SIGN\_VERIFY key of the configured key spec, and supports the configured signing algorithm. It returns an error if client is nil, cfg.State.ActiveKeyID is empty, the algorithm is unsupported, cfg.KeySpec does not match the algorithm, or any state key fails validation.
 
 <a name="New"></a>
-### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L723>)
+### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L796>)
 
 ```go
 func New(ctx context.Context, client Client, cfg Config) (*Provider, error)
@@ -212,7 +222,7 @@ func New(ctx context.Context, client Client, cfg Config) (*Provider, error)
 New constructs a [Provider](<#Provider>). It is equivalent to [Load](<#Load>).
 
 <a name="Provider.Activate"></a>
-### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L437>)
+### func \(\*Provider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L508>)
 
 ```go
 func (p *Provider) Activate(kid string) error
@@ -221,7 +231,7 @@ func (p *Provider) Activate(kid string) error
 Activate promotes a pending key to active and moves the previously active key to the retained list, implementing \[dnsid.KeyProvider\]. The kid may be any KMS identifier for the key; it returns an error if it does not resolve to a pending key.
 
 <a name="Provider.GenerateKey"></a>
-### func \(\*Provider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L399>)
+### func \(\*Provider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L454>)
 
 ```go
 func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error)
@@ -230,7 +240,7 @@ func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error)
 GenerateKey creates a new KMS signing key and records it as pending, implementing \[dnsid.KeyProvider\]. alg must match the JOSE algorithm the provider is configured for \(ES256 for ECDSA\_SHA\_256, EdDSA for ED25519\_SHA\_512\). On success it returns the canonical kid of the new key. If the new key fails post\-creation validation, the KMS key ID is returned alongside the error and, when Config.ScheduleDeletionOnPurge is set, deletion of the orphaned key is scheduled.
 
 <a name="Provider.JWK"></a>
-### func \(\*Provider\) [JWK](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L281>)
+### func \(\*Provider\) [JWK](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L329>)
 
 ```go
 func (p *Provider) JWK(kidOpt ...string) jwk.Key
@@ -239,7 +249,7 @@ func (p *Provider) JWK(kidOpt ...string) jwk.Key
 JWK returns one public JWK, implementing \[dnsid.KeyProvider\]. With no kid it returns the active key. It returns nil when the kid is not the active key or among the retained or pending keys, and also when fetching the public key from KMS fails; use [Provider.JWKWithError](<#Provider.JWKWithError>) to distinguish the two. The returned key is a clone, so mutating it does not affect the provider.
 
 <a name="Provider.JWKWithError"></a>
-### func \(\*Provider\) [JWKWithError](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L290>)
+### func \(\*Provider\) [JWKWithError](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L338>)
 
 ```go
 func (p *Provider) JWKWithError(kidOpt ...string) (jwk.Key, error)
@@ -248,7 +258,7 @@ func (p *Provider) JWKWithError(kidOpt ...string) (jwk.Key, error)
 JWKWithError is like [Provider.JWK](<#Provider.JWK>) but reports fetch failures. It returns \(nil, nil\) when the kid is not known to the provider, and \(nil, err\) when the key could not be fetched from KMS or failed validation. Fetched public keys are cached for the life of the provider.
 
 <a name="Provider.ListKeyIds"></a>
-### func \(\*Provider\) [ListKeyIds](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L313>)
+### func \(\*Provider\) [ListKeyIds](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L361>)
 
 ```go
 func (p *Provider) ListKeyIds() []string
@@ -257,7 +267,7 @@ func (p *Provider) ListKeyIds() []string
 ListKeyIds returns the active kid first, followed by retained kids, implementing \[dnsid.KeyProvider\]. Pending kids are not listed.
 
 <a name="Provider.Purge"></a>
-### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L477>)
+### func \(\*Provider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L550>)
 
 ```go
 func (p *Provider) Purge(kid string) error
@@ -266,7 +276,7 @@ func (p *Provider) Purge(kid string) error
 Purge removes a pending or retained key, implementing \[dnsid.KeyProvider\]. The kid must be the canonical form reported by [Provider.State](<#Provider.State>); the active key cannot be purged. When Config.ScheduleDeletionOnPurge is set, the underlying KMS key is scheduled for deletion after Config.DeletionWindowInDays days; if scheduling fails, the key is restored to its previous list and the error is returned.
 
 <a name="Provider.Sign"></a>
-### func \(\*Provider\) [Sign](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L326>)
+### func \(\*Provider\) [Sign](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L378>)
 
 ```go
 func (p *Provider) Sign(payload []byte) (*dnsid.KeySignature, error)
@@ -275,7 +285,7 @@ func (p *Provider) Sign(payload []byte) (*dnsid.KeySignature, error)
 Sign signs payload with the active key using the configured algorithm, implementing \[dnsid.KeyProvider\]. Payloads up to 4096 bytes are sent to KMS as RAW messages; larger payloads are hashed locally with SHA\-256 and sent as a DIGEST, which is only possible for ECDSA\_SHA\_256 — larger Ed25519 payloads return an error. ECDSA signatures are converted from KMS's ASN.1 DER encoding to the raw R||S form JOSE requires, so the returned KeySignature is always JOSE\-ready.
 
 <a name="Provider.SignKey"></a>
-### func \(\*Provider\) [SignKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L338>)
+### func \(\*Provider\) [SignKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L390>)
 
 ```go
 func (p *Provider) SignKey(kid string, payload []byte) (*dnsid.KeySignature, error)
@@ -284,7 +294,7 @@ func (p *Provider) SignKey(kid string, payload []byte) (*dnsid.KeySignature, err
 SignKey signs payload with a specific key, implementing \[dnsid.KeyProvider\]. The kid may be any KMS identifier for the key; it must resolve to the active key or a pending key. Signing with a retained key returns an argument error, and signature encoding follows the rules documented on [Provider.Sign](<#Provider.Sign>).
 
 <a name="Provider.State"></a>
-### func \(\*Provider\) [State](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L269>)
+### func \(\*Provider\) [State](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L317>)
 
 ```go
 func (p *Provider) State() State
@@ -293,7 +303,7 @@ func (p *Provider) State() State
 State returns a copy of the provider's current rotation state, with all key IDs in canonical \(KMS\-reported\) form. Persist it and supply it back through [Config.State](<#Config>) to reconstruct the provider later.
 
 <a name="Provider.Supersede"></a>
-### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L461>)
+### func \(\*Provider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L534>)
 
 ```go
 func (p *Provider) Supersede(kid string) error
@@ -302,7 +312,7 @@ func (p *Provider) Supersede(kid string) error
 Supersede removes a retained key after a completed rotation, implementing \[dnsid.KeyProvider\]. The kid must be the canonical form reported by [Provider.State](<#Provider.State>) or [Provider.ListKeyIds](<#Provider.ListKeyIds>); if it does not name a retained key, Supersede returns an argument error. Removal follows the rules documented on [Provider.Purge](<#Provider.Purge>).
 
 <a name="SDKClient"></a>
-## type [SDKClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L152>)
+## type [SDKClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L154>)
 
 SDKClient adapts an AWS SDK for Go v2 \*kms.Client to the [Client](<#Client>) interface.
 
@@ -311,7 +321,7 @@ type SDKClient struct{ Client *kms.Client }
 ```
 
 <a name="SDKClient.CreateSigningKey"></a>
-### func \(SDKClient\) [CreateSigningKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L157>)
+### func \(SDKClient\) [CreateSigningKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L159>)
 
 ```go
 func (c SDKClient) CreateSigningKey(ctx context.Context, in CreateSigningKeyInput) (CreateSigningKeyOutput, error)
@@ -320,7 +330,7 @@ func (c SDKClient) CreateSigningKey(ctx context.Context, in CreateSigningKeyInpu
 CreateSigningKey creates a SIGN\_VERIFY KMS key with the requested key spec, description, and tags. It returns the new key's ARN when KMS reports one, and the bare key ID otherwise.
 
 <a name="SDKClient.GetPublicKey"></a>
-### func \(SDKClient\) [GetPublicKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L178>)
+### func \(SDKClient\) [GetPublicKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L180>)
 
 ```go
 func (c SDKClient) GetPublicKey(ctx context.Context, in GetPublicKeyInput) (GetPublicKeyOutput, error)
@@ -329,7 +339,7 @@ func (c SDKClient) GetPublicKey(ctx context.Context, in GetPublicKeyInput) (GetP
 GetPublicKey fetches the public key and metadata of the KMS key named by in.KeyID.
 
 <a name="SDKClient.ScheduleKeyDeletion"></a>
-### func \(SDKClient\) [ScheduleKeyDeletion](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L202>)
+### func \(SDKClient\) [ScheduleKeyDeletion](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L204>)
 
 ```go
 func (c SDKClient) ScheduleKeyDeletion(ctx context.Context, in ScheduleKeyDeletionInput) error
@@ -338,7 +348,7 @@ func (c SDKClient) ScheduleKeyDeletion(ctx context.Context, in ScheduleKeyDeleti
 ScheduleKeyDeletion schedules the KMS key named by in.KeyID for deletion after in.PendingWindowInDays days.
 
 <a name="SDKClient.Sign"></a>
-### func \(SDKClient\) [Sign](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L188>)
+### func \(SDKClient\) [Sign](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L190>)
 
 ```go
 func (c SDKClient) Sign(ctx context.Context, in SignInput) (SignOutput, error)
@@ -347,7 +357,7 @@ func (c SDKClient) Sign(ctx context.Context, in SignInput) (SignOutput, error)
 Sign asks KMS to sign in.Message with in.KeyID, sending it as a RAW message or, when in.Digest is true, as a precomputed DIGEST.
 
 <a name="ScheduleKeyDeletionInput"></a>
-## type [ScheduleKeyDeletionInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L146-L149>)
+## type [ScheduleKeyDeletionInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L148-L151>)
 
 ScheduleKeyDeletionInput carries the parameters for Client.ScheduleKeyDeletion: the key to delete and the KMS pending\-deletion window in days.
 
@@ -359,7 +369,7 @@ type ScheduleKeyDeletionInput struct {
 ```
 
 <a name="SignInput"></a>
-## type [SignInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L128-L133>)
+## type [SignInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L130-L135>)
 
 SignInput carries the parameters for Client.Sign. When Digest is true, Message is a precomputed digest rather than the raw payload.
 
@@ -373,7 +383,7 @@ type SignInput struct {
 ```
 
 <a name="SignOutput"></a>
-## type [SignOutput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L137-L141>)
+## type [SignOutput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L139-L143>)
 
 SignOutput carries a KMS signature together with the key ID and signing algorithm KMS reports having used.
 
@@ -386,13 +396,13 @@ type SignOutput struct {
 ```
 
 <a name="State"></a>
-## type [State](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L30-L40>)
+## type [State](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L32-L42>)
 
 State records the key rotation state of a [Provider](<#Provider>): which KMS key is active, which retained keys remain published for verification, and which pending keys await activation. The provider does not persist state itself; capture it with [Provider.State](<#Provider.State>) and supply it back through [Config.State](<#Config>) when reconstructing the provider.
 
 ```go
 type State struct {
-    // ActiveKeyID identifies the KMS key used by Sign. Required.
+    // ActiveKeyID identifies the KMS key used by Sign. Required by Load; empty after Create until activation.
     ActiveKeyID string
 
     // RetainedKeyIDs identify previously active keys that are still

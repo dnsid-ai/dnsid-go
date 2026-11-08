@@ -8,10 +8,12 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	dnsid "github.com/dnsid-ai/dnsid-go"
@@ -28,7 +30,7 @@ const rawSignLimit = 4096
 // capture it with [Provider.State] and supply it back through [Config.State]
 // when reconstructing the provider.
 type State struct {
-	// ActiveKeyID identifies the KMS key used by Sign. Required.
+	// ActiveKeyID identifies the KMS key used by Sign. Required by Load; empty after Create until activation.
 	ActiveKeyID string
 
 	// RetainedKeyIDs identify previously active keys that are still
@@ -40,10 +42,10 @@ type State struct {
 }
 
 // Config configures a [Provider]. The zero value is not usable on its own:
-// State.ActiveKeyID must identify an existing KMS signing key. [Load] applies
+// Load requires State.ActiveKeyID to identify an existing KMS signing key. [Load] applies
 // the defaults documented on each field.
 type Config struct {
-	// State is the initial rotation state. State.ActiveKeyID is required.
+	// State is the rotation state. Load requires an active key; Create requires empty state.
 	State State
 
 	// Algorithm is the KMS signing algorithm used for every signing
@@ -235,20 +237,33 @@ func Load(ctx context.Context, client Client, cfg Config) (*Provider, error) {
 	if cfg.State.ActiveKeyID == "" {
 		return nil, fmt.Errorf("dnsid/awskms: active key ID is required")
 	}
+	var err error
+	cfg, err = normalizeConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	p := &Provider{client: client, cfg: cfg, state: cloneState(cfg.State), cache: map[string]jwk.Key{}}
+	if err := p.canonicalizeState(ctx); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func normalizeConfig(cfg Config) (Config, error) {
 	if cfg.Algorithm == "" {
 		cfg.Algorithm = types.SigningAlgorithmSpecEcdsaSha256
 	}
 	if _, err := joseAlg(cfg.Algorithm); err != nil {
-		return nil, err
+		return cfg, err
 	}
 	keySpec, err := defaultKeySpec(cfg.Algorithm)
 	if err != nil {
-		return nil, err
+		return cfg, err
 	}
 	if cfg.KeySpec == "" {
 		cfg.KeySpec = keySpec
 	} else if cfg.KeySpec != keySpec {
-		return nil, fmt.Errorf("dnsid/awskms: key spec %s does not match algorithm %s", cfg.KeySpec, cfg.Algorithm)
+		return cfg, fmt.Errorf("dnsid/awskms: key spec %s does not match algorithm %s", cfg.KeySpec, cfg.Algorithm)
 	}
 	if cfg.DeletionWindowInDays == 0 {
 		cfg.DeletionWindowInDays = 30
@@ -256,9 +271,42 @@ func Load(ctx context.Context, client Client, cfg Config) (*Provider, error) {
 	if cfg.OperationTimeout == 0 {
 		cfg.OperationTimeout = 30 * time.Second
 	}
-	p := &Provider{client: client, cfg: cfg, state: cloneState(cfg.State), cache: map[string]jwk.Key{}}
-	if err := p.canonicalizeState(ctx); err != nil {
+	return cfg, nil
+}
+
+// Create explicitly creates the first signing key inside KMS. Config.State must
+// be empty. The validated canonical reference is available in State.PendingKeyIDs;
+// Activate is required before ordinary signing or manager injection. No state is
+// persisted. Failure never retries creation or deletes the remote key, even when
+// ScheduleDeletionOnPurge is configured; reconciliation is operator-owned.
+// The supplied client remains caller-owned. Load and New remain open-only.
+func Create(ctx context.Context, client Client, cfg Config) (*Provider, error) {
+	if client == nil {
+		return nil, fmt.Errorf("dnsid/awskms: nil client")
+	}
+	if cfg.State.ActiveKeyID != "" || len(cfg.State.PendingKeyIDs) != 0 || len(cfg.State.RetainedKeyIDs) != 0 {
+		return nil, fmt.Errorf("dnsid/awskms: initial creation requires empty state")
+	}
+	cfg, err := normalizeConfig(cfg)
+	if err != nil {
 		return nil, err
+	}
+	p := &Provider{client: client, cfg: cfg, cache: map[string]jwk.Key{}}
+	if cfg.OperationTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cfg.OperationTimeout)
+		defer cancel()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	kid, err := p.createKey(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	reference, err := arn.Parse(kid)
+	if err != nil || reference.Service != "kms" || reference.Partition == "" || reference.Region == "" || reference.AccountID == "" || !strings.HasPrefix(reference.Resource, "key/") || len(reference.Resource) <= len("key/") || strings.ContainsAny(kid, " \t\r\n#") {
+		return nil, fmt.Errorf("dnsid/awskms: created key %q has no immutable KMS key ARN", kid)
 	}
 	return p, nil
 }
@@ -293,7 +341,7 @@ func (p *Provider) JWKWithError(kidOpt ...string) (jwk.Key, error) {
 	if len(kidOpt) > 0 {
 		kid = kidOpt[0]
 	}
-	if kid != p.state.ActiveKeyID && !contains(p.state.RetainedKeyIDs, kid) && !contains(p.state.PendingKeyIDs, kid) {
+	if kid == "" || (kid != p.state.ActiveKeyID && !contains(p.state.RetainedKeyIDs, kid) && !contains(p.state.PendingKeyIDs, kid)) {
 		p.mu.RUnlock()
 		return nil, nil
 	}
@@ -313,7 +361,11 @@ func (p *Provider) JWKWithError(kidOpt ...string) (jwk.Key, error) {
 func (p *Provider) ListKeyIds() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return append([]string{p.state.ActiveKeyID}, p.state.RetainedKeyIDs...)
+	ids := make([]string, 0, 1+len(p.state.RetainedKeyIDs))
+	if p.state.ActiveKeyID != "" {
+		ids = append(ids, p.state.ActiveKeyID)
+	}
+	return append(ids, p.state.RetainedKeyIDs...)
 }
 
 // Sign signs payload with the active key using the configured algorithm,
@@ -352,6 +404,9 @@ func (p *Provider) SignKey(kid string, payload []byte) (*dnsid.KeySignature, err
 }
 
 func (p *Provider) signKey(kid string, payload []byte) (*dnsid.KeySignature, error) {
+	if kid == "" {
+		return nil, dnsid.NewArgumentError("dnsid/awskms: no active key", nil)
+	}
 	p.mu.RLock()
 	alg := p.cfg.Algorithm
 	p.mu.RUnlock()
@@ -406,6 +461,10 @@ func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error) {
 	}
 	ctx, cancel := p.operationContext()
 	defer cancel()
+	return p.createKey(ctx, p.cfg.ScheduleDeletionOnPurge)
+}
+
+func (p *Provider) createKey(ctx context.Context, cleanup bool) (string, error) {
 	out, err := p.client.CreateSigningKey(ctx, CreateSigningKeyInput{KeySpec: p.cfg.KeySpec, Description: p.cfg.Description, Tags: p.cfg.Tags})
 	if err != nil {
 		return "", err
@@ -414,8 +473,20 @@ func (p *Provider) GenerateKey(alg dnsid.JoseAlg) (string, error) {
 		return "", fmt.Errorf("dnsid/awskms: CreateSigningKey returned no key ID")
 	}
 	kid, err := p.canonicalKid(ctx, out.KeyID)
+	if err == nil && kid != out.KeyID {
+		// Native creation may return a bare key ID rather than its ARN.
+		// Canonicalization must preserve that exact resource, not adopt a
+		// different key merely because its public metadata is valid.
+		reference, parseErr := arn.Parse(kid)
+		if strings.HasPrefix(out.KeyID, "arn:") || parseErr != nil || reference.Service != "kms" || reference.Resource != "key/"+out.KeyID {
+			err = fmt.Errorf("dnsid/awskms: created key binding mismatch")
+		}
+	}
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil {
-		if p.cfg.ScheduleDeletionOnPurge {
+		if cleanup {
 			deleteCtx, deleteCancel := p.operationContext()
 			defer deleteCancel()
 			if deleteErr := p.client.ScheduleKeyDeletion(deleteCtx, ScheduleKeyDeletionInput{KeyID: out.KeyID, PendingWindowInDays: p.cfg.DeletionWindowInDays}); deleteErr != nil {
@@ -448,7 +519,9 @@ func (p *Provider) Activate(kid string) error {
 		return fmt.Errorf("dnsid/awskms: no pending key %q", kid)
 	}
 	p.state.PendingKeyIDs = append(p.state.PendingKeyIDs[:idx], p.state.PendingKeyIDs[idx+1:]...)
-	p.state.RetainedKeyIDs = append(p.state.RetainedKeyIDs, p.state.ActiveKeyID)
+	if p.state.ActiveKeyID != "" {
+		p.state.RetainedKeyIDs = append(p.state.RetainedKeyIDs, p.state.ActiveKeyID)
+	}
 	p.state.ActiveKeyID = canonical
 	return nil
 }

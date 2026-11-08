@@ -48,6 +48,9 @@ Code can instead inject an appropriately trusted `LogRegistry` through
 
 ## Provider installation and AWS access
 
+The executable remains open-only; [explicit first setup for AWS and GCP](FIRST_SETUP.md)
+shows separate key creation, including a helper that is not called by `main`.
+
 This example has its own Go module to keep AWS dependencies out of the core SDK.
 Its `go.mod` links the root SDK and optional `key/aws` module to this checkout.
 `go mod download` installs their dependencies. In another application, add the

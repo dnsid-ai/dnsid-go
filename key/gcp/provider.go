@@ -187,6 +187,64 @@ func (p *Provider) signKey(kid string, payload []byte) (*dnsid.KeySignature, err
 	return &dnsid.KeySignature{Kid: kid, Alg: dnsid.JoseAlgEdDSA, Signature: append([]byte(nil), response.Signature...)}, nil
 }
 
+type parentGetter interface {
+	GetCryptoKey(context.Context, *kmspb.GetCryptoKeyRequest, ...gax.CallOption) (*kmspb.CryptoKey, error)
+}
+
+var parentName = regexp.MustCompile(`^projects/[A-Za-z0-9_-]+/locations/[A-Za-z0-9_-]+/keyRings/[A-Za-z0-9_-]+/cryptoKeys/[A-Za-z0-9_-]+$`)
+
+// Create explicitly creates the first software Ed25519 version under an existing
+// ASYMMETRIC_SIGN CryptoKey with a software EC_SIGN_ED25519 template. No prior
+// version is required or read. The client must also support GetCryptoKey and
+// CreateCryptoKeyVersion (and GetCryptoKeyVersion while generation is pending).
+// Creation, readiness and public validation share a 30-second budget. Success
+// returns the provider, validated pending RFC7638 public-key thumbprint (kid),
+// and immutable created version reference. The active listing and default JWK
+// remain empty until Activate is called with that kid, before manager injection.
+// Errors return no provider, kid or reference; after a validated create response,
+// the error includes the known version for reconciliation and wraps its cause.
+// No files are written, remote resources deleted, or failed creates retried.
+// Reconciliation and cleanup are operator-owned, and the client is caller-owned.
+// New and Open continue to open existing immutable versions only.
+func Create(ctx context.Context, client Client, parent string) (*Provider, string, string, error) {
+	if !parentName.MatchString(parent) {
+		return nil, "", "", dnsid.NewArgumentError("dnsid/gcpkms: expected a fully qualified CryptoKey parent", nil)
+	}
+	if client == nil {
+		return nil, "", "", dnsid.NewArgumentError("dnsid/gcpkms: nil client", nil)
+	}
+	getter, ok := client.(parentGetter)
+	if !ok {
+		return nil, "", "", dnsid.NewArgumentError("dnsid/gcpkms: client does not support GetCryptoKey", nil)
+	}
+	creator, ok := client.(versionCreator)
+	if !ok {
+		return nil, "", "", dnsid.NewArgumentError("dnsid/gcpkms: client does not support version creation", nil)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
+	}
+	metadata, err := getter.GetCryptoKey(ctx, &kmspb.GetCryptoKeyRequest{Name: parent})
+	if err != nil {
+		return nil, "", "", err
+	}
+	if metadata == nil || metadata.Name != parent || metadata.Purpose != kmspb.CryptoKey_ASYMMETRIC_SIGN || metadata.VersionTemplate == nil || metadata.VersionTemplate.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || metadata.VersionTemplate.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
+		return nil, "", "", fmt.Errorf("dnsid/gcpkms: incompatible CryptoKey parent or version template")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
+	}
+	p := &Provider{client: client, keys: map[string]*keyEntry{}}
+	kid, err := p.createVersion(ctx, creator, parent, 250*time.Millisecond)
+	if err != nil {
+		return nil, "", "", err
+	}
+	p.version = p.keys[kid].version
+	return p, kid, p.version, nil
+}
+
 type versionCreator interface {
 	CreateCryptoKeyVersion(context.Context, *kmspb.CreateCryptoKeyVersionRequest, ...gax.CallOption) (*kmspb.CryptoKeyVersion, error)
 }
@@ -219,16 +277,28 @@ func (p *Provider) generateKey(ctx context.Context, alg dnsid.JoseAlg, interval 
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	// client and version are immutable; only the inventory and active kid mutate.
+	// The configured version is immutable; only the inventory and active kid mutate.
 	parent := p.version[:strings.LastIndex(p.version, "/cryptoKeyVersions/")]
+	return p.createVersion(ctx, creator, parent, interval)
+}
+
+func (p *Provider) createVersion(ctx context.Context, creator versionCreator, parent string, interval time.Duration) (kid string, err error) {
 	response, err := creator.CreateCryptoKeyVersion(ctx, &kmspb.CreateCryptoKeyVersionRequest{Parent: parent})
 	if err != nil {
 		return "", err
 	}
-	if response == nil || validateVersion(response.Name) != nil || !strings.HasPrefix(response.Name, parent+"/cryptoKeyVersions/") || response.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
+	if response == nil || validateVersion(response.Name) != nil || !strings.HasPrefix(response.Name, parent+"/cryptoKeyVersions/") {
 		return "", fmt.Errorf("dnsid/gcpkms: generated version has invalid binding or metadata")
 	}
 	version := response.Name
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("dnsid/gcpkms: created version %s: %w", version, err)
+		}
+	}()
+	if response.Algorithm != kmspb.CryptoKeyVersion_EC_SIGN_ED25519 || response.ProtectionLevel != kmspb.ProtectionLevel_SOFTWARE {
+		return "", fmt.Errorf("dnsid/gcpkms: generated version has invalid binding or metadata")
+	}
 	for response.State != kmspb.CryptoKeyVersion_ENABLED {
 		if response.State != kmspb.CryptoKeyVersion_PENDING_GENERATION {
 			return "", fmt.Errorf("dnsid/gcpkms: generated version is not enabled or pending generation")
@@ -328,7 +398,7 @@ func (p *Provider) Purge(kid string) error {
 	return nil
 }
 
-// Close releases the client created by Open or configuration loading. For New,
+// Close releases the client created by Open or configuration loading. For New or Create,
 // the caller owns the supplied client and Close is a no-op. Connections supplied
 // through option.WithGRPCConn may also be closed by the official client. Call
 // only after all provider operations have completed.
