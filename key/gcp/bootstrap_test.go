@@ -123,6 +123,7 @@ type firstService struct {
 	created, pending                               bool
 	createErr, publicErr                           error
 	template                                       *kmspb.CryptoKeyVersionTemplate
+	mutateParent                                   func(*kmspb.CryptoKey)
 	mutateVersion                                  func(*kmspb.CryptoKeyVersion)
 	mutatePublic                                   func(*kmspb.PublicKey)
 }
@@ -141,7 +142,11 @@ func (f *firstService) GetCryptoKey(ctx context.Context, req *kmspb.GetCryptoKey
 		return nil, errors.New("wrong existing parent")
 	}
 	// Existing compatible parent has NO primary or prior version.
-	return &kmspb.CryptoKey{Name: firstParent, Purpose: kmspb.CryptoKey_ASYMMETRIC_SIGN, VersionTemplate: f.template}, nil
+	out := &kmspb.CryptoKey{Name: firstParent, Purpose: kmspb.CryptoKey_ASYMMETRIC_SIGN, VersionTemplate: f.template}
+	if f.mutateParent != nil {
+		f.mutateParent(out)
+	}
+	return out, nil
 }
 func (f *firstService) metadata() *kmspb.CryptoKeyVersion {
 	state := kmspb.CryptoKeyVersion_ENABLED
@@ -364,7 +369,7 @@ func TestCreate_FirstVersionFailures(t *testing.T) {
 // Given an incompatible parent or non-parent selector, When creating, Then no
 // version is created and no existing version is read.
 func TestCreate_RejectsParentPrerequisites(t *testing.T) {
-	for _, name := range []string{"empty", "version-not-parent", "wrong-template", "wrong-protection"} {
+	for _, name := range []string{"empty", "version-not-parent", "wrong-template", "wrong-protection", "wrong-parent-name", "wrong-purpose"} {
 		t.Run(name, func(t *testing.T) {
 			firstNoFiles(t)
 			f := newFirstService(t)
@@ -374,13 +379,18 @@ func TestCreate_RejectsParentPrerequisites(t *testing.T) {
 				parent = ""
 			case "version-not-parent":
 				parent = firstVersion
+			case "wrong-parent-name":
+				f.mutateParent = func(p *kmspb.CryptoKey) { p.Name = firstParent + "-other" }
+			case "wrong-purpose":
+				f.mutateParent = func(p *kmspb.CryptoKey) { p.Purpose = kmspb.CryptoKey_ENCRYPT_DECRYPT }
 			case "wrong-template":
 				f.template.Algorithm = kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256
 			case "wrong-protection":
 				f.template.ProtectionLevel = kmspb.ProtectionLevel_HSM
 			}
-			if _, _, _, err := gcpkms.Create(context.Background(), f, parent); err == nil {
-				t.Fatal("accepted invalid parent")
+			p, kid, ref, err := gcpkms.Create(context.Background(), f, parent)
+			if err == nil || p != nil || kid != "" || ref != "" {
+				t.Fatalf("Create = (%v, %q, %q, %v), want nil provider, empty references and error", p, kid, ref, err)
 			}
 			if f.creates != 0 || f.gets != 0 || f.publics != 0 {
 				t.Fatalf("invalid parent caused mutations/prior reads: %+v", f)

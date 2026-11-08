@@ -224,6 +224,57 @@ func TestCreate_FirstKeyPendingActivateReopen(t *testing.T) {
 	}
 }
 
+// Mode: fake-only (AWS service reads counted without external calls).
+// Given a newly created pending key, When looking up absent active/unknown IDs,
+// Then absence is nil/nil without public reads; explicit pending lookup preserves
+// independent public identity without activation or ordinary signing eligibility.
+func TestCreate_JWKWithErrorBeforeActivation(t *testing.T) {
+	firstNoFiles(t)
+	f := newFirstService(t)
+	_, pub := firstFixture(t)
+	p, err := awskms.Create(context.Background(), f, firstConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p == nil {
+		t.Fatal("missing provider")
+	}
+	before := p.State()
+	reads := f.reads
+	for _, tc := range []struct {
+		name string
+		kids []string
+	}{
+		{"no-argument", nil},
+		{"explicit-empty", []string{""}},
+		{"unknown", []string{firstARN + "-unknown"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			key, err := p.JWKWithError(tc.kids...)
+			if key != nil || err != nil {
+				t.Errorf("JWKWithError = (%v, %v), want (nil, nil)", key, err)
+			}
+			if f.reads != reads {
+				t.Errorf("GetPublicKey reads=%d, want unchanged %d", f.reads, reads)
+			}
+		})
+	}
+	key, err := p.JWKWithError(firstARN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstJWK(t, key, firstARN, pub)
+	if !reflect.DeepEqual(p.State(), before) || before.ActiveKeyID != "" || !reflect.DeepEqual(before.PendingKeyIDs, []string{firstARN}) || len(p.ListKeyIds()) != 0 {
+		t.Fatal("public lookup changed pending/active state or listing")
+	}
+	if _, err := p.Sign([]byte("before activation")); err == nil {
+		t.Fatal("pending key signed as active")
+	}
+	if f.creates != 1 || f.signs != 0 || f.deletes != 0 {
+		t.Fatalf("creates=%d signs=%d deletes=%d, want 1/0/0", f.creates, f.signs, f.deletes)
+	}
+}
+
 // Mode: fake-only (fault injection into AWS native service responses).
 // Given create or validation fails, When bootstrapping, Then no active fallback,
 // automatic recreation, destructive cleanup, or setup file is produced.
