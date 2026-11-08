@@ -1,4 +1,4 @@
-# Explicit first setup (AWS)
+# Explicit first setup (AWS and GCP)
 
 `PrepareFirstSetup` is a small injectable composition example. It takes an AWS
 client, identity configuration, and a **distinct, already available entity key
