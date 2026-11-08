@@ -48,7 +48,9 @@ a different selected key fail closed. Configuration does not authorize rotation;
 
 For initial publication setup, callers can open the existing operational key with
 `config.OperationalKeyProviderFrom` and inject it through
-`config.Dependencies.KeyProvider`. This documented setup route does not establish
+`config.Dependencies.KeyProvider`. For explicit AWS/GCP first-key creation instead,
+see the separate [first-setup guide](../examples/deployment-identity/FIRST_SETUP.md).
+This documented setup route does not establish
 published signer binding: the caller owns binding checks and the injected
 provider's lifetime, including cleanup on construction failure. Use ordinary
 configuration-selected construction for subsequent established application signing.
@@ -96,8 +98,10 @@ local state unchanged; cloud cleanup remains operator-owned even if the remote
 version becomes enabled later.
 
 These configuration/provider and onboarding APIs work with the existing server.
-Named creation and automatic permanent recovery are separate workflow changes.
+Configuration-selected or automatic key creation and automatic permanent recovery
+remain separate workflow changes.
 
-See [the deployment-identity example](../examples/deployment-identity/) for loading
-an existing file or AWS KMS key, checking its published binding, and signing an
-HTTP request without sending it.
+See [the open-only deployment-identity executable](../examples/deployment-identity/)
+for loading an existing file or AWS KMS key, checking its published binding, and
+signing an HTTP request without sending it; explicit first-key creation is covered
+in the separate [first-setup guide](../examples/deployment-identity/FIRST_SETUP.md).
