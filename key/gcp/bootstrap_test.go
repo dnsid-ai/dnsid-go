@@ -343,7 +343,7 @@ func TestCreate_FirstVersionFailures(t *testing.T) {
 			tc.setup(f)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			p, _, _, err := gcpkms.Create(ctx, f, firstParent)
+			p, kid, ref, err := gcpkms.Create(ctx, f, firstParent)
 			if err == nil {
 				t.Fatal("accepted invalid create")
 			}
@@ -358,8 +358,29 @@ func TestCreate_FirstVersionFailures(t *testing.T) {
 					t.Fatal("failure substituted usable signer")
 				}
 			}
+			if p != nil || kid != "" || ref != "" {
+				t.Errorf("Create = (%v, %q, %q, %v), want nil provider, empty references and error", p, kid, ref, err)
+			}
 			if f.creates != 1 || f.signs != 0 || f.closes != 0 {
 				t.Fatalf("creates=%d signs=%d caller closes=%d", f.creates, f.signs, f.closes)
+			}
+			switch tc.name {
+			case "wrong-algorithm", "wrong-protection", "empty-reference", "wrong-parent":
+				if f.parents != 1 || f.gets != 0 || f.publics != 0 {
+					t.Errorf("parents=%d version reads=%d public reads=%d, want 1/0/0", f.parents, f.gets, f.publics)
+				}
+			}
+			switch tc.name {
+			case "wrong-algorithm", "wrong-protection":
+				// The immutable name is valid and bound to the exact requested parent;
+				// incompatible metadata must not lose the operator's recovery reference.
+				if !strings.Contains(err.Error(), firstVersion) {
+					t.Errorf("error lost original created version recovery reference %q: %v", firstVersion, err)
+				}
+			case "empty-reference", "wrong-parent":
+				if strings.Contains(err.Error(), "created version ") {
+					t.Errorf("unvalidated name became a trusted created-version binding: %v", err)
+				}
 			}
 		})
 	}
