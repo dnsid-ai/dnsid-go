@@ -32,6 +32,8 @@ func (f createBindingService) GetPublicKey(ctx context.Context, in awskms.GetPub
 // Guards: a bare created key ID must match the key ID in its canonical ARN.
 // Given a native bare create ID, When metadata reports another canonical key,
 // Then Create fails with no provider, duplicate create, signing or deletion.
+// Given empty metadata KeyID instead, Then the final immutable-ARN guard rejects
+// the bare ID, preserves its recovery reference and leaves caller state unchanged.
 // Given its matching canonical ARN instead, Then creation remains legitimate,
 // pending and independently proof-signable, not globally rejected as an alias.
 func TestCreate_BareIDCanonicalResourceBinding(t *testing.T) {
@@ -40,16 +42,25 @@ func TestCreate_BareIDCanonicalResourceBinding(t *testing.T) {
 		reject          bool
 	}{
 		{"matching", firstARN, false},
+		{"empty-public-key-id", "", true},
 		{"mismatched", "arn:aws:kms:us-east-1:111122223333:key/22222222-2222-4222-8222-222222222222", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			firstNoFiles(t)
 			f := newFirstService(t)
 			f.createRef = "11111111-1111-4111-8111-111111111111"
-			p, err := awskms.Create(context.Background(), createBindingService{f, tc.canonical}, firstConfig())
+			cfg := firstConfig()
+			before := cfg.State
+			p, err := awskms.Create(context.Background(), createBindingService{f, tc.canonical}, cfg)
+			if !reflect.DeepEqual(cfg.State, before) {
+				t.Fatalf("caller state changed: %+v, want %+v", cfg.State, before)
+			}
 			if tc.reject {
 				if err == nil {
 					t.Fatalf("accepted bare created ID %q as unrelated canonical ARN %q; provider state=%+v", f.createRef, tc.canonical, p.State())
+				}
+				if tc.canonical == "" && !strings.Contains(err.Error(), "has no immutable KMS key ARN") {
+					t.Fatalf("want final immutable-ARN guard rejection, got %v", err)
 				}
 				if !strings.Contains(err.Error(), f.createRef) {
 					t.Fatalf("error lost original bare created key recovery reference %q: %v", f.createRef, err)

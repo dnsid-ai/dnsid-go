@@ -192,12 +192,15 @@ func (e *setupEntity) Activate(string) error {
 type setupNoRandom struct{ t *testing.T }
 
 func (r setupNoRandom) Read([]byte) (int, error) {
-	r.t.Error("setup attempted local random generation")
+	r.t.Error("setup read from the public crypto/rand.Reader")
 	return 0, io.ErrClosedPipe
 }
 func setupGuard(t *testing.T) {
 	t.Helper()
 	firstNoFiles(t)
+	// Intercept only reads through the public crypto/rand.Reader (including
+	// callers explicitly passing it). Go 1.26 default stdlib key generation can
+	// use internal randomness instead; this is not general no-generation proof.
 	saved := rand.Reader
 	rand.Reader = setupNoRandom{t}
 	t.Cleanup(func() { rand.Reader = saved })
