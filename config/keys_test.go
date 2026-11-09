@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +10,18 @@ import (
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 )
+
+func TestOperationalKeyProviderFrom_MissingCLIRoot(t *testing.T) {
+	for _, domain := range []string{"", "agent.example"} {
+		t.Run(domain, func(t *testing.T) {
+			source := KeySource{Provider: "file", CliDirectory: t.TempDir()}
+			_, err := OperationalKeyProviderFrom(context.Background(), source, domain)
+			if !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("missing CLI key returned %v, want file-not-found", err)
+			}
+		})
+	}
+}
 
 func TestKeySource_LoadMergeAndFactorySelection(t *testing.T) {
 	// Mode: fake-only for the registered cloud factory; real local entity file.
