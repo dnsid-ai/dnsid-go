@@ -150,6 +150,7 @@ EOF
 
 # page slug | module dir | package dir within module | nav label | description
 PACKAGES=(
+	"foundry|.|./foundry|Known Foundry (build-tagged)|Named caller-key Live creation and durable recovery; requires the dnsid_foundry build tag and server acceptance."
 	"config|.|./config|Configuration|Load DNSid SDK configuration from DNSID_* environment variables and DNSid CLI directories; loaders parse, constructors default."
 	"jose|.|./jose|Profile: JOSE|DNSid JOSE profile: create and verify DNSid JWTs and compact JWS."
 	"oidc|.|./oidc|Profile: OIDC|Mint and verify DNSid OIDC tokens."
@@ -176,6 +177,7 @@ NAV_ORDER=(
 	key-aws
 	key-gcp
 	dnsid-registry
+	foundry
 	log
 	log-c2sptlog
 	dnsid-errors
@@ -187,9 +189,11 @@ trap 'rm -rf "$tmp"' EXIT
 
 ROOT_MODULE="$(go list -m)"
 
-banner() { # import path of the package the page documents
+banner() { # import path and optional page slug
 	printf '> Generated from the Go source by scripts/gen-docs.sh — do not edit; run it to regenerate.\n'
-	printf '> Canonical deep reference: [pkg.go.dev/%s](https://pkg.go.dev/%s).\n' "$1" "$1"
+	if [ "${2:-}" != "foundry" ]; then
+		printf '> Canonical deep reference: [pkg.go.dev/%s](https://pkg.go.dev/%s).\n' "$1" "$1"
+	fi
 	printf '> Guides and account setup: [https://docs.dnsid.ai](https://docs.dnsid.ai).\n\n'
 }
 
@@ -249,13 +253,16 @@ for entry in "${PACKAGES[@]}"; do
 		import="$modpath/${pkgdir#./}"
 	fi
 
-	pkgname="$(cd "$moddir" && go list -f '{{.Name}}' "$pkgdir")"
+	# The release-gated package is documented without enabling default imports.
+	tags=(--tags "")
+	[ "$slug" = "foundry" ] && tags=(--tags dnsid_foundry)
+	pkgname="$(cd "$moddir" && go list "${tags[@]}" -f '{{.Name}}' "$pkgdir")"
 
 	repo_path="/"
 	[ "$moddir" != "." ] && repo_path="/$moddir/"
 
 	raw="$tmp/$slug.md"
-	(cd "$moddir" && $GOMARKDOC \
+	(cd "$moddir" && $GOMARKDOC "${tags[@]}" \
 		--output "$raw" \
 		--repository.url "$REPO_URL" \
 		--repository.default-branch main \
@@ -265,7 +272,7 @@ for entry in "${PACKAGES[@]}"; do
 	out="$OUT_DIR/$slug.md"
 	{
 		frontmatter "Go: package $pkgname" "$desc"
-		banner "$import"
+		banner "$import" "$slug"
 		# Drop gomarkdoc's own H1 ("# pkgname") — the docs site renders the
 		# frontmatter title as the page heading.
 		awk 'firsth1==0 && /^# / {firsth1=1; next} {print}' "$raw"

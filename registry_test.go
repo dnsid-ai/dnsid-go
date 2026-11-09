@@ -611,6 +611,7 @@ func TestHTTPRegistryClient_GetRegistration(t *testing.T) {
 				json.NewEncoder(w).Encode(AgentDetail{
 					Domain: "agent.example.com", Managed: tt.managed, Status: "READY", ServerStatus: "READY",
 					DNSPublished: true, ProtocolStatus: &AgentStatus{State: AgentStateActive, LastTransitionAt: now},
+					OIDCIssuerURL: "https://issuer.example.com",
 				})
 			}))
 			defer srv.Close()
@@ -620,7 +621,7 @@ func TestHTTPRegistryClient_GetRegistration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetRegistration: %v", err)
 			}
-			if registration.PublicationAuthority != tt.authority || registration.RegistryStatus != "READY" || !registration.DNSPublished {
+			if registration.PublicationAuthority != tt.authority || registration.RegistryStatus != "READY" || !registration.DNSPublished || registration.OIDCIssuerURL != "https://issuer.example.com" {
 				t.Fatalf("registration = %#v", registration)
 			}
 			if registration.ProtocolStatus == nil || registration.ProtocolStatus.State != AgentStateActive {

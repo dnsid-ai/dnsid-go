@@ -35,6 +35,7 @@ type Loaded struct {
 	Dnsid     dnsid.Config
 	LogTrust  LogTrust
 	Registry  Registry
+	Foundry   FoundryConfig
 	KeySource KeySource
 }
 
@@ -59,6 +60,13 @@ func (t LogTrust) isZero() bool {
 // Registry holds registry control-plane settings.
 type Registry struct {
 	RegistryURL string
+}
+
+// FoundryConfig holds optional account expectations for Known Foundry create.
+// These fields do not select a core identity or grant counterparty trust.
+type FoundryConfig struct {
+	OrganizationID string `json:"organizationId,omitempty"`
+	GovernanceID   string `json:"governanceId,omitempty"`
 }
 
 // KeySource selects an operational provider and non-secret settings.
@@ -261,7 +269,7 @@ func fileExists(path string) bool {
 //
 // Scalar zero values are absent: overlays cannot clear loaded Identity strings,
 // Verification.DNSSECMode or StatusCheckInterval, Transport.DNSServer or
-// CABundlePath, Registry.RegistryURL, or KeySource.EntityKeyPath.
+// CABundlePath, Registry.RegistryURL, Foundry fields, or KeySource.EntityKeyPath.
 // Operational KeySource fields replace as a group; EntityKeyPath merges separately.
 // Non-nil empty slices and maps remain present. To clear a scalar field, edit
 // the merged config before passing it to the ordinary constructor.
@@ -293,6 +301,12 @@ func Merge(base, overlay Loaded) Loaded {
 	}
 	if overlay.Registry.RegistryURL != "" {
 		base.Registry.RegistryURL = overlay.Registry.RegistryURL
+	}
+	if overlay.Foundry.OrganizationID != "" {
+		base.Foundry.OrganizationID = overlay.Foundry.OrganizationID
+	}
+	if overlay.Foundry.GovernanceID != "" {
+		base.Foundry.GovernanceID = overlay.Foundry.GovernanceID
 	}
 	if overlay.KeySource.Provider != "" || overlay.KeySource.KeyRef != "" || overlay.KeySource.Settings != nil || overlay.KeySource.CliDirectory != "" || overlay.KeySource.KeyStorePath != "" {
 		entityKeyPath := base.KeySource.EntityKeyPath
@@ -505,7 +519,7 @@ func operationalKeyProvider(src KeySource, domain string) (dnsid.KeyProvider, er
 		return dnsid.NewLocalKeyProvider(src.KeyStorePath)
 	}
 	path := filepath.Join(src.CliDirectory, "private.jwk")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	if _, err := os.Stat(path); os.IsNotExist(err) && domain != "" {
 		normalized, err := dnsid.NormalizeFQDN(domain)
 		if err != nil {
 			return nil, dnsid.NewArgumentError("dnsid: invalid IdentityConfig.Domain", err)
