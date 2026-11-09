@@ -864,7 +864,9 @@ func (c *HTTPRegistryClient) GetAgentStatus(ctx context.Context, fqdn string) (*
 // OrganizationOnboardingResponse contains authenticated account bindings and
 // live proof/delegation readiness, not an entity-key URL or trust root.
 type OrganizationOnboardingResponse struct {
-	// MissingRequiredFields distinguishes an omitted proof gate from an explicit false gate.
+	// MissingRequiredFields reports an absent/null gi or gi.gate_authorized.
+	// It does not validate org_id, ek.status, or other GI members.
+	// An absent gi can mean governance onboarding has not started.
 	MissingRequiredFields bool   `json:"-"`
 	OrganizationID        string `json:"org_id"`
 	GovernanceDomain      string `json:"governance_domain"`
