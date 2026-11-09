@@ -519,7 +519,7 @@ func operationalKeyProvider(src KeySource, domain string) (dnsid.KeyProvider, er
 		return dnsid.NewLocalKeyProvider(src.KeyStorePath)
 	}
 	path := filepath.Join(src.CliDirectory, "private.jwk")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	if _, err := os.Stat(path); os.IsNotExist(err) && domain != "" {
 		normalized, err := dnsid.NormalizeFQDN(domain)
 		if err != nil {
 			return nil, dnsid.NewArgumentError("dnsid: invalid IdentityConfig.Domain", err)

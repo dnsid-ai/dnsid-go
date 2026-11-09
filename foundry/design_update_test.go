@@ -5,11 +5,41 @@ package foundry
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
+	"github.com/dnsid-ai/dnsid-go/config"
 )
+
+func TestCreateMissingFileKey(t *testing.T) {
+	for _, location := range []string{"keyRef", "cliDirectory"} {
+		t.Run(location, func(t *testing.T) {
+			f := newFixture(t)
+			loaded := f.client.loaded
+			loaded.KeySource = config.KeySource{Provider: "file"}
+			directory := t.TempDir()
+			if location == "keyRef" {
+				loaded.KeySource.KeyRef = filepath.Join(directory, "private.jwk")
+			} else {
+				loaded.KeySource.CliDirectory = directory
+			}
+			deps := f.client.deps
+			deps.KeyProvider = nil
+			client, err := New(loaded, deps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.Create(context.Background(), "missing-file-key")
+			requireKind(t, err, KeyMissing)
+			if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "create the signing key first") || f.registry.createCalls != 0 {
+				t.Fatalf("missing file key lost its remedy or triggered registration: %v", err)
+			}
+		})
+	}
+}
 
 func TestNewRejectsOrdinaryIdentity(t *testing.T) {
 	f := newFixture(t)

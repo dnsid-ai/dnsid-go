@@ -845,7 +845,7 @@ func TestReadinessIsPublicAndBounded(t *testing.T) {
 	}
 }
 
-func TestProfileRemainsPausedAfterStep5(t *testing.T) {
+func TestIdentityManager_SigningPausedDuringIssuanceSubmission(t *testing.T) {
 	f := newFixture(t)
 	id, err := f.client.Create(context.Background(), "profile")
 	if err != nil {

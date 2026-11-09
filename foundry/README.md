@@ -31,6 +31,9 @@ Create requires an existing signing key. An empty `ListKeyIds()` returns
 `KEY_MISSING`; create the key first, for example through explicit KMS-first
 creation. Create never generates, provisions, or selects a key. Foundry account
 and governance expectations come only from file or code, not environment variables.
+A CLI directory key source requires a root `private.jwk`; Foundry cannot use a
+per-domain subdirectory before the registry assigns the domain. Use `keyRef` to
+open an existing key at another path.
 
 Create stops after the identity ID and domain are saved, without waiting for
 public readiness.
