@@ -279,7 +279,7 @@ func Create(ctx context.Context, name string) (*FoundryIdentity, error)
 Create loads environment configuration and the separate DNSID\_API\_KEY secret. Applications with file configuration or injected dependencies use New\(...\).Create.
 
 <a name="FoundryIdentity.Active"></a>
-### func \(\*FoundryIdentity\) [Active](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L619>)
+### func \(\*FoundryIdentity\) [Active](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L626>)
 
 ```go
 func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity, err error)

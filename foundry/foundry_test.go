@@ -580,7 +580,7 @@ func TestCreateValidationAndErrors(t *testing.T) {
 		{"wrong gi", func(f *fixture) { f.client.loaded.Foundry.GovernanceID = "wrong.example" }, Integrity, false},
 		{"pending", func(f *fixture) { f.registry.onboarding.EK.Status = "pending" }, WorkflowOutcome, false},
 		{"no endpoint", func(f *fixture) { f.registry.onboardingErr = &dnsid.RegistryAPIError{StatusCode: 404} }, UnsupportedContract, true},
-		{"missing fields", func(f *fixture) { f.registry.onboarding.GI = nil }, UnsupportedContract, true},
+		{"missing governance", func(f *fixture) { f.registry.onboarding.GI = nil }, WorkflowOutcome, false},
 		{"unsupported algorithm", func(f *fixture) { f.client.deps.KeyProvider = dnsid.GenerateES256KeyProvider() }, UnsupportedAlgorithm, false},
 		{"revoked credential", func(f *fixture) {
 			f.registry.onboardingErr = &dnsid.RegistryAPIError{StatusCode: 403, Code: "KEY_REVOKED"}

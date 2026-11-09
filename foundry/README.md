@@ -5,7 +5,7 @@ generic DNSid registration. It remains gated until the server's named-Live
 requirements are released. There is no sandbox fallback, replacement flow, or
 extra capability probe.
 
-Contract source: `dnsid-sdk-compliance` commit `e01bcf3`.
+Contract source: `dnsid-sdk-compliance` commit `56d0e77`.
 
 The package is excluded from default builds until those requirements are released.
 Developers and the CLI must explicitly opt in with `-tags dnsid_foundry`:

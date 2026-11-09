@@ -398,8 +398,13 @@ func (c *Client) onboarding(ctx context.Context, doc *RecoveryDocument) (*dnsid.
 		}
 		return nil, c.wrap(doc, err)
 	}
-	if value == nil || value.MissingRequiredFields || value.OrganizationID == "" || value.GovernanceDomain == "" || value.GI == nil || value.GI.Domain == "" || value.GI.State == "" || value.EK.Status == "" {
+	if value == nil || value.OrganizationID == "" || value.EK.Status == "" || (value.GI != nil && (value.MissingRequiredFields || value.GI.Domain == "" || value.GI.State == "")) {
 		return nil, &UnsupportedRegistry{failure(UnsupportedContract, doc, fmt.Errorf("incomplete Identity Digital onboarding contract"))}
+	}
+	if value.GovernanceDomain == "" || value.GI == nil {
+		outcome := failure(WorkflowOutcome, doc, fmt.Errorf("organization governance proof and entity delegation must be verified"))
+		outcome.Resumable = true
+		return nil, outcome
 	}
 	gi, err := dnsid.NormalizeFQDN(value.GovernanceDomain)
 	if err != nil {
@@ -410,7 +415,9 @@ func (c *Client) onboarding(ctx context.Context, doc *RecoveryDocument) (*dnsid.
 		return nil, failure(Integrity, doc, fmt.Errorf("onboarding GI binding mismatch"))
 	}
 	if value.GI.State != "verified" || !value.GI.GateAuthorized || value.EK.Status != "verified" {
-		return nil, failure(WorkflowOutcome, doc, fmt.Errorf("organization governance proof and entity delegation must be verified"))
+		outcome := failure(WorkflowOutcome, doc, fmt.Errorf("organization governance proof and entity delegation must be verified"))
+		outcome.Resumable = true
+		return nil, outcome
 	}
 	if expected := c.loaded.Foundry.OrganizationID; expected != "" && expected != value.OrganizationID {
 		return nil, failure(Integrity, doc, fmt.Errorf("unexpected organization ID"))
