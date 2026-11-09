@@ -4,10 +4,50 @@ package foundry
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 )
+
+func TestNewRejectsOrdinaryIdentity(t *testing.T) {
+	f := newFixture(t)
+	loaded := f.client.loaded
+	loaded.Dnsid.Identity = &dnsid.IdentityConfig{Domain: testDomain, GovernanceID: "governance.example"}
+	_, err := New(loaded, f.client.deps)
+	var argument *dnsid.ArgumentError
+	if !errors.As(err, &argument) {
+		t.Fatalf("ordinary identity accepted: %v", err)
+	}
+	if f.registry.createCalls != 0 {
+		t.Fatal("ordinary identity triggered registration")
+	}
+}
+
+func TestActiveRejectsChangedOIDCIssuer(t *testing.T) {
+	f := newFixture(t)
+	f.registry.oidcIssuerURL = "https://issuer.example"
+	id, err := f.client.Create(context.Background(), "issuer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := id.Active(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if f.document("issuer").OIDCIssuerURL != f.registry.oidcIssuerURL {
+		t.Fatal("initial issuer was not saved")
+	}
+	f.registry.oidcIssuerURL = "https://other-issuer.example"
+	_, err = id.Active(context.Background())
+	requireKind(t, err, Integrity)
+	if !strings.Contains(err.Error(), "registry changed saved OIDC issuer") {
+		t.Fatalf("issuer change was not detected: %v", err)
+	}
+	if saved := f.document("issuer"); saved.OIDCIssuerURL != "https://issuer.example" || !saved.SigningPaused {
+		t.Fatal("issuer change replaced the saved binding or did not pause signing")
+	}
+}
 
 func TestCreatePreservesFactsFromInvalidResponse(t *testing.T) {
 	f := newFixture(t)

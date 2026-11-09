@@ -202,7 +202,11 @@ func (s *FileFoundryStore) Import(ctx context.Context, data []byte) error {
 		if err != nil {
 			return err
 		}
-		if string(old) != string(data) {
+		incoming, err := doc.Export()
+		if err != nil {
+			return err
+		}
+		if string(old) != string(incoming) {
 			return fmt.Errorf("foundry: import conflicts with existing state")
 		}
 		return nil

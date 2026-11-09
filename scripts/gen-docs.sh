@@ -189,9 +189,11 @@ trap 'rm -rf "$tmp"' EXIT
 
 ROOT_MODULE="$(go list -m)"
 
-banner() { # import path of the package the page documents
+banner() { # import path and optional page slug
 	printf '> Generated from the Go source by scripts/gen-docs.sh — do not edit; run it to regenerate.\n'
-	printf '> Canonical deep reference: [pkg.go.dev/%s](https://pkg.go.dev/%s).\n' "$1" "$1"
+	if [ "${2:-}" != "foundry" ]; then
+		printf '> Canonical deep reference: [pkg.go.dev/%s](https://pkg.go.dev/%s).\n' "$1" "$1"
+	fi
 	printf '> Guides and account setup: [https://docs.dnsid.ai](https://docs.dnsid.ai).\n\n'
 }
 
@@ -270,7 +272,7 @@ for entry in "${PACKAGES[@]}"; do
 	out="$OUT_DIR/$slug.md"
 	{
 		frontmatter "Go: package $pkgname" "$desc"
-		banner "$import"
+		banner "$import" "$slug"
 		# Drop gomarkdoc's own H1 ("# pkgname") — the docs site renders the
 		# frontmatter title as the page heading.
 		awk 'firsth1==0 && /^# / {firsth1=1; next} {print}' "$raw"

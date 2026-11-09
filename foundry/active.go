@@ -171,7 +171,7 @@ func (i *FoundryIdentity) issue(ctx context.Context, lease FoundryLease, doc *Re
 			if errors.As(err, &workflow) {
 				return withFacts(err, doc)
 			}
-			if !retryable(err) {
+			if !retryable(ctx, err) {
 				return failure(Integrity, doc, err)
 			}
 			return i.client.wrap(doc, err)
@@ -234,12 +234,12 @@ func (i *FoundryIdentity) issue(ctx context.Context, lease FoundryLease, doc *Re
 				}
 				outcome := i.client.wrap(doc, errors.Join(err, recoveryErr))
 				outcome.Kind, outcome.Resumable = Unresolved, true
-				if recoveryErr != nil && !retryable(recoveryErr) {
+				if recoveryErr != nil && !retryable(ctx, recoveryErr) {
 					outcome.Kind, outcome.Resumable = Integrity, false
 				}
 				return outcome
 			}
-			if !retryable(err) {
+			if !retryable(ctx, err) {
 				return i.client.wrap(doc, err)
 			}
 		}
@@ -304,7 +304,7 @@ func (i *FoundryIdentity) verifySavedAcceptance(ctx context.Context, doc *Recove
 		return i.client.wrap(doc, ctx.Err())
 	}
 	if err != nil {
-		if retryable(err) {
+		if retryable(ctx, err) {
 			return i.client.wrap(doc, err)
 		}
 		return failure(Integrity, doc, err)
@@ -583,7 +583,7 @@ func (i *FoundryIdentity) observe(ctx context.Context, lease FoundryLease, doc *
 					return failure(Terminal, doc, err)
 				}
 			}
-			if !retryable(err) {
+			if !retryable(ctx, err) {
 				return failure(Integrity, doc, err)
 			}
 			if err := backoff.wait(ctx); err != nil {
@@ -629,7 +629,7 @@ func (i *FoundryIdentity) observe(ctx context.Context, lease FoundryLease, doc *
 			return i.client.wrap(doc, ctx.Err())
 		}
 		if err != nil {
-			if !retryable(err) {
+			if !retryable(ctx, err) {
 				return failure(Integrity, doc, err)
 			}
 			if err := backoff.wait(ctx); err != nil {
@@ -670,7 +670,7 @@ func (i *FoundryIdentity) observe(ctx context.Context, lease FoundryLease, doc *
 	}
 }
 
-func retryable(err error) bool {
+func retryable(ctx context.Context, err error) bool {
 	var malformed *dnsid.ParseError
 	var invalid *dnsid.ValidationError
 	var argumentError *dnsid.ArgumentError
@@ -681,7 +681,7 @@ func retryable(err error) bool {
 	if errors.As(err, &workflow) {
 		return workflow.Resumable
 	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	if ctx.Err() != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
 		return false
 	}
 	var verification *dnsid.VerificationError

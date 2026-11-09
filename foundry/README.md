@@ -1,11 +1,13 @@
 # Known Foundry creation
 
-This subpackage implements the Known Foundry contract in `dnsid-sdk-compliance`
-commit `e01bcf3`. It is not a generic DNSid registration API. Server acceptance
-SR-1 through SR-7 is still a release gate; no deployed server revision is certified.
-There is no sandbox fallback, replacement flow, or extra capability probe.
+This subpackage implements Known Foundry named caller-key Live creation, not
+generic DNSid registration. It remains gated until the server's named-Live
+requirements are released. There is no sandbox fallback, replacement flow, or
+extra capability probe.
 
-The package is excluded from default builds until server acceptance passes.
+Contract source: `dnsid-sdk-compliance` commit `e01bcf3`.
+
+The package is excluded from default builds until those requirements are released.
 Developers and the CLI must explicitly opt in with `-tags dnsid_foundry`:
 
 ```sh
@@ -21,12 +23,17 @@ and its `Create` method. Both use the same workflow. Injected providers and log
 registries displace loaded selection and must be supplied again on recovery.
 Neither core nor configuration loading imports this package.
 
+Foundry create rejects configuration with ordinary identity fields, including
+those set by `DNSID_DOMAIN` and `DNSID_GOVERNANCE_ID`. Foundry's expected GI is
+`foundry.governanceId`, set through the deployment file or code.
+
 Create requires an existing signing key. An empty `ListKeyIds()` returns
 `KEY_MISSING`; create the key first, for example through explicit KMS-first
 creation. Create never generates, provisions, or selects a key. Foundry account
 and governance expectations come only from file or code, not environment variables.
 
-Create records the assigned identity without waiting for public readiness.
+Create stops after the identity ID and domain are saved, without waiting for
+public readiness.
 `Active(ctx)` completes proof and issuance, then freshly verifies DNS, signed
 HTTPS resources, the current provider key, protocol ACTIVE, and lifecycle-log
 evidence. Registry READY alone is insufficient. Each call uses the caller's

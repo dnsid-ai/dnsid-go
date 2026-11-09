@@ -5,6 +5,7 @@ package foundry
 import (
 	"context"
 	"errors"
+	"net/url"
 	"testing"
 	"time"
 
@@ -82,6 +83,42 @@ func TestRefreshCancellationPreservesVerifiedSigning(t *testing.T) {
 			}
 			if f.document("refresh").SigningPaused {
 				t.Fatal("refresh cancellation persisted a signing pause")
+			}
+		})
+	}
+}
+
+func TestRefreshRequestTimeoutPreservesVerifiedSigning(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{"HTTP timeout", &url.Error{Op: "Get", URL: "https://log.example", Err: context.DeadlineExceeded}},
+		{"transient verification", dnsid.NewVerificationError(dnsid.VerificationCodeLogError, true, "log request timed out", context.DeadlineExceeded)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.registry.competing = true
+			id, err := f.client.Create(context.Background(), "request-timeout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := id.Active(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			f.log.bindingErr = test.err
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			_, err = id.Active(ctx)
+			workflow := requireKind(t, err, Deadline)
+			if ctx.Err() != nil || !workflow.Resumable || !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("request timeout with live caller is not resumable: %v", err)
+			}
+			if f.document("request-timeout").SigningPaused {
+				t.Fatal("request timeout persisted a signing pause")
+			}
+			if _, err := id.Sign([]byte("still verified")); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}

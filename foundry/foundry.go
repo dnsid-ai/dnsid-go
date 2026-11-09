@@ -2,8 +2,7 @@
 
 // Package foundry implements Known Foundry named caller-key Live creation.
 // Importing it requires the dnsid_foundry build tag.
-// It targets the contract pinned at dnsid-sdk-compliance e01bcf3. Server SR-1
-// through SR-7 remain release gates; no deployed server revision is certified.
+// The package remains gated until the server's named-Live requirements are released.
 // Core DNSid, ordinary registration, and configuration loading do not depend on it.
 package foundry
 
@@ -193,7 +192,7 @@ func (i *FoundryIdentity) RegistryStatus() string {
 }
 
 // IdentityManager returns the manager sharing this handle's signing controller.
-// Before step 5 saves publication configuration, it returns SigningPaused.
+// It returns SigningPaused until the publication configuration is saved.
 // All subsequent successful calls return the same instance.
 func (i *FoundryIdentity) IdentityManager() (*dnsid.IdentityManager, error) {
 	i.mu.RLock()
@@ -216,7 +215,7 @@ func (i *FoundryIdentity) Sign(data []byte) ([]byte, error) {
 	return sig.Signature, nil
 }
 
-// Create performs durable setup steps 1–3 and does not wait for public ACTIVE.
+// Create stops after the identity ID and domain are saved; it does not wait for public ACTIVE.
 func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIdentity, err error) {
 	ctx, cancel := operationContext(ctx, createTimeout)
 	defer cancel()

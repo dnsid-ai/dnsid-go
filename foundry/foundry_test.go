@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -176,6 +177,7 @@ type fakeLog struct {
 	f            *fixture
 	events       []dnsidlog.LogEvent
 	historyErr   error
+	bindingErr   error
 	historyCalls int
 	currentThumb string
 }
@@ -193,6 +195,9 @@ func (l *fakeLog) RebuildHistory(context.Context, string) ([]dnsidlog.LogEvent, 
 	return append([]dnsidlog.LogEvent(nil), l.events...), l.historyErr
 }
 func (l *fakeLog) VerifyBilateralBinding(_ context.Context, input dnsidlog.BilateralBindingInput) (dnsidlog.BilateralBinding, error) {
+	if l.bindingErr != nil {
+		return dnsidlog.BilateralBinding{}, l.bindingErr
+	}
 	if len(l.events) == 0 {
 		return dnsidlog.BilateralBinding{}, fmt.Errorf("no accepted issuance")
 	}
@@ -232,6 +237,7 @@ type fakeRegistry struct {
 	status            string
 	statuses          []string
 	responseDomain    string
+	oidcIssuerURL     string
 	name              string
 	requestID         string
 	initial           json.RawMessage
@@ -298,7 +304,7 @@ func (r *fakeRegistry) GetAgentStatus(context.Context, string) (*dnsid.AgentDeta
 		r.status = r.statuses[0]
 		r.statuses = r.statuses[1:]
 	}
-	return &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}, nil
+	return &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, OIDCIssuerURL: r.oidcIssuerURL, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}, nil
 }
 func (r *fakeRegistry) SubmitLiveProof(_ context.Context, _ string, request *dnsid.LiveProofRequest) (*dnsid.LiveProofResponse, error) {
 	r.proofCalls++
@@ -439,40 +445,54 @@ func requirePaused(t *testing.T, err error) {
 }
 
 func TestNameAndHashVectors(t *testing.T) {
-	const initial = "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
-	key, err := RegistrationKey(testOrg, "billing-agent", initial)
-	if err != nil || key != "2sWNUpI4tnAzJ3quPrT78uJNVdo96m4En3cZsggktcA" {
-		t.Fatalf("registration=%s, %v", key, err)
+	data, err := os.ReadFile("../testdata/foundry/registration-vectors.json")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := IssuanceKey(key); got != "pxQMSC0k-V9nn9qLqMRDczyUxyNyQE87LbGuK5SEWGw" {
-		t.Fatal(got)
+	var vectors struct {
+		OrganizationID string `json:"organizationId"`
+		InitialKeyID   string `json:"initialKeyId"`
+		Registration   []struct {
+			Name            string
+			RegistrationKey string
+		}
+		Issuance []struct {
+			RegistrationKey string
+			IssuanceKey     string
+		}
+		RejectedNames []struct {
+			Name        string
+			NameUTF8Hex string `json:"nameUtf8Hex"`
+		}
 	}
-	for _, test := range []struct{ name, want string }{
-		{"billing-agent", "2sWNUpI4tnAzJ3quPrT78uJNVdo96m4En3cZsggktcA"},
-		{"agent", "ksFWEjxU0Yf_F7-_UEwFWQ3J97VRmQPVLjVM5l-3YlY"},
-		{"Agent", "43mRUDBHeMLHZ6AZKy6RTQXox_LZxBDLa3IXLQ0qCGI"},
-		{"agent ", "eVX-4H-42OOxnU2EbgtKoEzYad0bIaaRoCkf5T2BIEM"},
-		{"café", "kBdivhIHZhZ_20_Ku_KnIVYE7x0iSw4K1ceQb2s6fxs"},
-		{"cafe\u0301", "WxS5QzyfB3D0utVhJDzJQTY6eXDMagDV3tqOImr_u6A"},
-		{"\u00a0cafe\u0301\u3000", "x6ARjxrBFYbZ1jCSznnOWBUX9DpFr4edVmYy1zLnyTc"},
-		{strings.Repeat("😀", 255), "AEttzAMd8C-GpyQqR_y5G-IfIawJpRWIMi4ZpfbkqWU"},
-		{"a\"b", "2bWVuTgcCN056vagU5cF40TRXcroeKQCLhd5hTVjhcM"},
-		{"a\\b", "g8sOgOWQxkQncp1g_H2nI81dTe-60Y8p6ryb87s3Vrk"},
-		{"a\u0001b", "oNMzk-Vz7VqZ75bxvj4srioM6Dtxd0lNFT3W_-uOF0A"},
-		{"a\nb", "yM6te8_oTYfg8b2Co21WukeVw4SfYQgCG9brN_W9Bio"},
-		{"<a>&", "D-ZrRgfx1r9BUVg-wF9Pbey_cfLsZjWeOUCRCsYhTnk"},
-		{"a\u2028b", "-0mnonROfh4y6N--aNbASSi_x7pWEcBu8-Ldwmop4mU"},
-		{"a\u007fb", "V9Xm6mXYXgQCT7DLYtBfT-etOMFRmX9mgKK60ocWtTA"},
-		{"a/b", "vQvjQxYsTU1TyU3oai2SQY07iNjuCrSBPH5fCjHqhiE"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			key, err := RegistrationKey(testOrg, test.name, initial)
-			if err != nil || key != test.want {
-				t.Fatalf("registration=%s, want=%s, err=%v", key, test.want, err)
+	if err := json.Unmarshal(data, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	if len(vectors.Registration)+len(vectors.Issuance) != 17 || len(vectors.RejectedNames) != 3 {
+		t.Fatal("incomplete registration, issuance, or rejected-name vectors")
+	}
+	for _, test := range vectors.Registration {
+		t.Run(test.Name, func(t *testing.T) {
+			key, err := RegistrationKey(vectors.OrganizationID, test.Name, vectors.InitialKeyID)
+			if err != nil || key != test.RegistrationKey {
+				t.Fatalf("registration=%s, want=%s, err=%v", key, test.RegistrationKey, err)
 			}
 		})
 	}
-	for _, name := range []string{"", string([]byte{0xed, 0xa0, 0x80}), strings.Repeat("😀", 256)} {
+	for _, test := range vectors.Issuance {
+		if got := IssuanceKey(test.RegistrationKey); got != test.IssuanceKey {
+			t.Fatalf("issuance=%s, want=%s", got, test.IssuanceKey)
+		}
+	}
+	for _, test := range vectors.RejectedNames {
+		name := test.Name
+		if test.NameUTF8Hex != "" {
+			raw, err := hex.DecodeString(test.NameUTF8Hex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			name = string(raw)
+		}
 		if ValidateName(name) == nil {
 			t.Fatalf("accepted %q", name)
 		}

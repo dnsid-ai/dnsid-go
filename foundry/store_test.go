@@ -71,6 +71,13 @@ func TestFileFoundryStore_PortableRoundTripAndUnknownMembers(t *testing.T) {
 	if err := destination.Import(context.Background(), exported); err != nil {
 		t.Fatal(err)
 	}
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, exported, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := destination.Import(context.Background(), indented.Bytes()); err != nil {
+		t.Fatalf("identical indented backup conflicts: %v", err)
+	}
 	loaded, err := destination.LoadIdentity(context.Background(), doc.RegistryURL, doc.OrganizationID, doc.IdentityID)
 	if err != nil || loaded == nil {
 		t.Fatalf("historical identity: %v", err)
