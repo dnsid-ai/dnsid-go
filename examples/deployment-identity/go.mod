@@ -3,8 +3,10 @@ module github.com/dnsid-ai/dnsid-go/examples/deployment-identity
 go 1.26.10
 
 require (
+	github.com/aws/aws-sdk-go-v2/service/kms v1.61.1
 	github.com/dnsid-ai/dnsid-go v0.46.1
 	github.com/dnsid-ai/dnsid-go/key/aws v0.46.1
+	github.com/lestrrat-go/jwx/v3 v3.2.0
 )
 
 require (
@@ -19,7 +21,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/kms v1.61.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.2 // indirect
@@ -31,7 +32,6 @@ require (
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/httprc/v3 v3.0.6 // indirect
-	github.com/lestrrat-go/jwx/v3 v3.2.0 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/transparency-dev/formats v0.1.1 // indirect

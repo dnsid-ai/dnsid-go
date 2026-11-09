@@ -225,32 +225,33 @@ func (l *fakeLog) VerifyNonRevocation(context.Context, string, time.Time) (dnsid
 }
 
 type fakeRegistry struct {
-	f              *fixture
-	logClient      *c2sptlog.Client
-	onboarding     *dnsid.OrganizationOnboardingResponse
-	onboardingErr  error
-	status         string
-	statuses       []string
-	responseDomain string
-	name           string
-	requestID      string
-	initial        json.RawMessage
-	createCalls    int
-	prepareCalls   int
-	prepareErr     error
-	proofCalls     int
-	reissueCalls   int
-	reissueErr     error
-	submissions    [][]byte
-	keys           []string
-	createErr      error
-	submitErr      error
-	challenge      bool
-	expired        bool
-	lostProof      bool
-	competing      bool
-	acceptedEntry  []byte
-	beforeSubmit   func()
+	f                 *fixture
+	logClient         *c2sptlog.Client
+	onboarding        *dnsid.OrganizationOnboardingResponse
+	onboardingErr     error
+	status            string
+	statuses          []string
+	responseDomain    string
+	name              string
+	requestID         string
+	initial           json.RawMessage
+	createCalls       int
+	prepareCalls      int
+	prepareErr        error
+	proofCalls        int
+	reissueCalls      int
+	reissueErr        error
+	submissions       [][]byte
+	keys              []string
+	createErr         error
+	createResponseErr error
+	submitErr         error
+	challenge         bool
+	expired           bool
+	lostProof         bool
+	competing         bool
+	acceptedEntry     []byte
+	beforeSubmit      func()
 }
 
 func (r *fakeRegistry) GetOrganizationOnboarding(context.Context) (*dnsid.OrganizationOnboardingResponse, error) {
@@ -277,7 +278,7 @@ func (r *fakeRegistry) CreateLiveAgent(_ context.Context, input *dnsid.LiveAgent
 	if r.challenge {
 		r.challengeResponse(response, "first")
 	}
-	return response, nil
+	return response, r.createResponseErr
 }
 func (r *fakeRegistry) challengeResponse(response *dnsid.LiveProvisioningResponse, nonce string) {
 	expires := time.Now().Add(time.Hour)
@@ -446,19 +447,30 @@ func TestNameAndHashVectors(t *testing.T) {
 	if got := IssuanceKey(key); got != "pxQMSC0k-V9nn9qLqMRDczyUxyNyQE87LbGuK5SEWGw" {
 		t.Fatal(got)
 	}
-	seen := map[string]bool{}
-	for _, name := range []string{"agent", "Agent", "agent ", "café", "cafe\u0301", "\u00a0cafe\u0301\u3000"} {
-		key, err := RegistrationKey(testOrg, name, initial)
-		if err != nil || seen[key] {
-			t.Fatalf("name=%q, key=%s, err=%v", name, key, err)
-		}
-		seen[key] = true
-	}
-	if key, _ := RegistrationKey(testOrg, "café", initial); key != "kBdivhIHZhZ_20_Ku_KnIVYE7x0iSw4K1ceQb2s6fxs" {
-		t.Fatal(key)
-	}
-	if err := ValidateName(strings.Repeat("😀", 255)); err != nil {
-		t.Fatal(err)
+	for _, test := range []struct{ name, want string }{
+		{"billing-agent", "2sWNUpI4tnAzJ3quPrT78uJNVdo96m4En3cZsggktcA"},
+		{"agent", "ksFWEjxU0Yf_F7-_UEwFWQ3J97VRmQPVLjVM5l-3YlY"},
+		{"Agent", "43mRUDBHeMLHZ6AZKy6RTQXox_LZxBDLa3IXLQ0qCGI"},
+		{"agent ", "eVX-4H-42OOxnU2EbgtKoEzYad0bIaaRoCkf5T2BIEM"},
+		{"café", "kBdivhIHZhZ_20_Ku_KnIVYE7x0iSw4K1ceQb2s6fxs"},
+		{"cafe\u0301", "WxS5QzyfB3D0utVhJDzJQTY6eXDMagDV3tqOImr_u6A"},
+		{"\u00a0cafe\u0301\u3000", "x6ARjxrBFYbZ1jCSznnOWBUX9DpFr4edVmYy1zLnyTc"},
+		{strings.Repeat("😀", 255), "AEttzAMd8C-GpyQqR_y5G-IfIawJpRWIMi4ZpfbkqWU"},
+		{"a\"b", "2bWVuTgcCN056vagU5cF40TRXcroeKQCLhd5hTVjhcM"},
+		{"a\\b", "g8sOgOWQxkQncp1g_H2nI81dTe-60Y8p6ryb87s3Vrk"},
+		{"a\u0001b", "oNMzk-Vz7VqZ75bxvj4srioM6Dtxd0lNFT3W_-uOF0A"},
+		{"a\nb", "yM6te8_oTYfg8b2Co21WukeVw4SfYQgCG9brN_W9Bio"},
+		{"<a>&", "D-ZrRgfx1r9BUVg-wF9Pbey_cfLsZjWeOUCRCsYhTnk"},
+		{"a\u2028b", "-0mnonROfh4y6N--aNbASSi_x7pWEcBu8-Ldwmop4mU"},
+		{"a\u007fb", "V9Xm6mXYXgQCT7DLYtBfT-etOMFRmX9mgKK60ocWtTA"},
+		{"a/b", "vQvjQxYsTU1TyU3oai2SQY07iNjuCrSBPH5fCjHqhiE"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			key, err := RegistrationKey(testOrg, test.name, initial)
+			if err != nil || key != test.want {
+				t.Fatalf("registration=%s, want=%s, err=%v", key, test.want, err)
+			}
+		})
 	}
 	for _, name := range []string{"", string([]byte{0xed, 0xa0, 0x80}), strings.Repeat("😀", 256)} {
 		if ValidateName(name) == nil {
@@ -585,41 +597,19 @@ func TestCreateValidationAndErrors(t *testing.T) {
 
 type emptyProvider struct{ dnsid.KeyProvider }
 
-func (p *emptyProvider) JWK(...string) jwk.Key { return nil }
-
-type ensuringProvider struct {
-	dnsid.KeyProvider
-	calls int
+func (p *emptyProvider) ListKeyIds() []string { return nil }
+func (p *emptyProvider) JWK(...string) jwk.Key {
+	panic("empty provider must be detected through ListKeyIds")
 }
 
-func (p *ensuringProvider) JWK(kid ...string) jwk.Key {
-	if p.KeyProvider == nil {
-		return nil
-	}
-	return p.KeyProvider.JWK(kid...)
-}
-func (p *ensuringProvider) EnsureSigningKey(ctx context.Context) error {
-	p.calls++
-	p.KeyProvider = dnsid.GenerateEd25519KeyProvider()
-	return ctx.Err()
-}
 func TestCreateEmptyProvider(t *testing.T) {
 	f := newFixture(t)
 	f.client.deps.KeyProvider = &emptyProvider{}
 	_, err := f.client.Create(context.Background(), "empty")
 	requireKind(t, err, KeyMissing)
-	provider := &ensuringProvider{}
-	f.client.deps.KeyProvider = provider
-	if _, err := f.client.Create(context.Background(), "ensured"); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(err.Error(), "create the signing key first") || f.registry.createCalls != 0 {
+		t.Fatalf("missing key remedy or unexpected mutation: %v", err)
 	}
-	if provider.calls != 1 {
-		t.Fatal(provider.calls)
-	}
-	// Saved state is never repaired by provisioning a new key.
-	f.client.deps.KeyProvider = &ensuringProvider{}
-	_, err = f.client.Create(context.Background(), "ensured")
-	requireKind(t, err, KeyMissing)
 }
 
 func TestReplayWithoutDomainAndLostCreate(t *testing.T) {
@@ -773,7 +763,7 @@ func TestReplicasAndKeyMismatch(t *testing.T) {
 	client = f.newClient(dnsid.GenerateEd25519KeyProvider(), f.store)
 	_, err = client.Create(context.Background(), "replica")
 	requireKind(t, err, KeyMismatch)
-	if !strings.Contains(err.Error(), "use the provider key this identity was created with; run one identity per cloud provider") || strings.Contains(err.Error(), "https://") {
+	if !strings.Contains(err.Error(), "use this identity's current provider key; run one identity per cloud provider") || strings.Contains(err.Error(), "https://") {
 		t.Fatalf("key mismatch lacks self-contained guidance: %v", err)
 	}
 }

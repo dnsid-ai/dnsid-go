@@ -1,7 +1,7 @@
 # Known Foundry creation
 
 This subpackage implements the Known Foundry contract in `dnsid-sdk-compliance`
-commit `665aa67`. It is not a generic DNSid registration API. Server acceptance
+commit `e01bcf3`. It is not a generic DNSid registration API. Server acceptance
 SR-1 through SR-7 is still a release gate; no deployed server revision is certified.
 There is no sandbox fallback, replacement flow, or extra capability probe.
 
@@ -20,6 +20,11 @@ The tag enables development builds; it does not certify a deployed server.
 and its `Create` method. Both use the same workflow. Injected providers and log
 registries displace loaded selection and must be supplied again on recovery.
 Neither core nor configuration loading imports this package.
+
+Create requires an existing signing key. An empty `ListKeyIds()` returns
+`KEY_MISSING`; create the key first, for example through explicit KMS-first
+creation. Create never generates, provisions, or selects a key. Foundry account
+and governance expectations come only from file or code, not environment variables.
 
 Create records the assigned identity without waiting for public readiness.
 `Active(ctx)` completes proof and issuance, then freshly verifies DNS, signed
@@ -42,19 +47,24 @@ uses a separate five-second cleanup budget, detached from caller cancellation.
 same manager instance. Policy-URL resolution is deferred until evidence is
 requested; the manager still uses the configured trust for verification. Its signing provider and the handle's raw-byte `Sign`
 method share a pause controller. A completed operation can reopen and sign using
-its saved current binding without public network checks. `Active` refreshes that
-observation. Direct access to the original provider bypasses this controller;
+its saved current binding without public network checks, unless a terminal state
+or signing pause was saved. Only a successful `Active` clears a mismatch pause;
+terminal states remain terminal. `Active` refreshes the observation. Direct access to the original provider bypasses this controller;
 the pause is an application safety boundary, not a security boundary. The handle
 and its manager do not expose an application unpause method.
 
 The existing managed issuance coordinator owns preparation and exact-byte
-submission. History recovery runs only after a server rejection, or verification
-of previously saved acceptance. Empty history after rejection is a resumable
+submission. History recovery runs after a documented server rejection or when
+READY has no saved ISSUANCE. A replica using the current key after rotation
+recovers the earlier ISSUANCE through verified key continuity and signed `ku`;
+its frozen creation input and replay key still use the creation key. Saved
+acceptance is verified again. Empty history after rejection is a resumable
 error, not evidence that another issuance is safe. A recovered winner never
 acknowledges the losing local bytes. Only documented issuance rejection codes enter that
 recovery path; HTTP 401, 403, and 404 remain admission errors and never poison
 saved issuance state. Preparations with unresolved outcomes are
-not regenerated. Without durable server reclaim permission, the SDK retains the
+not regenerated. `TLOG_INVALID_ENTRY` remains resumable with its registry code
+when no accepted ISSUANCE is visible. Without durable server reclaim permission, the SDK retains the
 original preparation and issuance key for recovery after server reconciliation.
 
 ## Recovery storage

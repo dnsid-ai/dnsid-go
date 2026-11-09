@@ -164,6 +164,23 @@ func (i *FoundryIdentity) fetchEntity(ctx context.Context, rawURL string) (json.
 }
 
 func (i *FoundryIdentity) issue(ctx context.Context, lease FoundryLease, doc *RecoveryDocument) error {
+	if doc.RegistryStatus == "READY" && doc.Issuance == nil {
+		recovered, err := i.recoverIssuance(ctx, lease, doc)
+		if err != nil {
+			var workflow *Error
+			if errors.As(err, &workflow) {
+				return withFacts(err, doc)
+			}
+			if !retryable(err) {
+				return failure(Integrity, doc, err)
+			}
+			return i.client.wrap(doc, err)
+		}
+		if !recovered {
+			return failure(Unresolved, doc, fmt.Errorf("READY identity has no ISSUANCE in verified history yet"))
+		}
+		return nil
+	}
 	client, err := c2sptlog.New(doc.PublicationConfig.LogRef)
 	if err != nil {
 		return failure(UnsupportedContract, doc, err)
@@ -333,11 +350,59 @@ func (i *FoundryIdentity) recoverIssuance(ctx context.Context, lease FoundryLeas
 	if err != nil {
 		return false, err
 	}
-	if genesis.Type != dnsidlog.LogEventIssuance || genesis.Domain != doc.Domain || genesis.GovernanceID != doc.GovernanceID || genesis.InitialOperationalThumbprint != initialThumb || genesis.InitialEntityThumbprint != entityThumb {
+	if genesis.Domain != doc.Domain || genesis.GovernanceID != doc.GovernanceID || genesis.InitialEntityThumbprint != entityThumb {
 		return false, failure(Integrity, doc, fmt.Errorf("accepted ISSUANCE has different identity or key bindings"))
+	}
+	creation, err := parsePublicKey(doc.CreationInput.PublicKey)
+	if err != nil {
+		return false, err
+	}
+	creationThumb, err := keyThumb(creation)
+	if err != nil {
+		return false, err
+	}
+	if genesis.InitialOperationalThumbprint != initialThumb {
+		// Only a replica without accepted state can recover an earlier issuance key.
+		if initialThumb != creationThumb || (doc.Issuance != nil && doc.Issuance.Recovered) {
+			return false, failure(Integrity, doc, fmt.Errorf("accepted ISSUANCE changed its initial key"))
+		}
+		initial = genesis.InitialOperationalPublicKey
+		initialThumb, err = keyThumb(initial)
+		if err != nil || initialThumb != genesis.InitialOperationalThumbprint {
+			return false, failure(Integrity, doc, fmt.Errorf("invalid ISSUANCE operational key"))
+		}
 	}
 	if _, err := reader.VerifyBilateralBinding(ctx, dnsidlog.BilateralBindingInput{Domain: doc.Domain, GovernanceID: doc.GovernanceID, EntityKey: entity, OperationalKey: initial}); err != nil {
 		return false, err
+	}
+	if initialThumb != creationThumb {
+		if err := reader.VerifyOperationalContinuity(ctx, doc.Domain, initialThumb, creationThumb); err != nil {
+			return false, err
+		}
+		manager, err := i.IdentityManager()
+		if err != nil {
+			return false, err
+		}
+		vd, err := manager.VerifyLocalPublication(ctx)
+		if err != nil {
+			return false, err
+		}
+		key, err := vd.KeySet().CurrentOperationalSigningKey(doc.PublicationConfig.PublishProfile)
+		if err != nil {
+			return false, err
+		}
+		observedThumb, err := key.Thumbprint()
+		if err != nil || observedThumb != creationThumb {
+			return false, failure(KeyMismatch, doc, fmt.Errorf("creation key does not match signed current ku"))
+		}
+	}
+	initialJSON, err := json.Marshal(initial)
+	if err != nil {
+		return false, err
+	}
+	doc.InitialPublicKey = initialJSON
+	if initialThumb != creationThumb {
+		doc.CurrentPublicKey = append(json.RawMessage(nil), doc.CreationInput.PublicKey...)
 	}
 	if doc.Issuance == nil {
 		doc.Issuance = &IssuanceState{}
@@ -486,7 +551,7 @@ func (s *issuanceStore) PersistManagedIssuance(ctx context.Context, state *c2spt
 	issuance.Operation = &retained
 	issuance.StatusCode = s.transportStatus
 	next.Issuance = &issuance
-	if state.Submission != nil && state.Submission.State == dnsid.SubmissionStateAccepted {
+	if state.Submission != nil && state.Submission.State == dnsid.SubmissionStateAccepted && next.Phase != "complete" {
 		next.Phase = "issuance-accepted"
 	}
 	if err := s.lease.Save(ctx, &next); err != nil {

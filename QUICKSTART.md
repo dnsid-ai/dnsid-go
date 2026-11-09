@@ -66,7 +66,11 @@ log you expect to verify:
 
   This is not an environment-variable default and does not trust local or third-party logs.
 - **Local CLI registry:** provision `bob.test`, then `eval "$(dnsid local env bob)"`
-  supplies its identity/key paths, `DNSID_LOG_POLICY_URL`, and local DNS/CA settings;
+  supplies its identity/key paths, `DNSID_LOG_POLICY_URL`, and local DNS/CA settings.
+  With that identity and configured key loaded, startup requires bob's own fresh,
+  verified publication to match the key and its required DNS/HTTPS/log paths to be
+  reachable, even when verifying another target. A manager without identity/key
+  selection skips that own-key check, not log trust or network requirements;
   see the [example README](examples/validate-domain/README.md).
 - **Other logs or independently pinned policy:** set `DNSID_LOG_TRUST_PROFILE_FILE` (preferred
   for stream-bundle verification), `DNSID_LOG_POLICY_FILE`, or an independently trusted
@@ -102,7 +106,10 @@ dnsid init --env production --domain <your-fqdn>   # agent identity     -> ~/.dn
 Under `dnsid local run`, `config.IdentityManagerFromEnvironment` reads the identity and key
 location from the exported `DNSID_*` variables; for a hosted identity in `~/.dnsid`, use
 `config.IdentityManagerFromDnsid(ctx, "", ...)`. Either gives you a manager that can both verify
-*and* sign as your agent:
+*and* sign as your agent, provided its selected operational key already matches
+fresh, verified publication. Configuration-selected construction fails closed for
+missing/corrupt publication or a different published key; changing the key source
+does not authorize rotation:
 
 ```go
 idm, err := config.IdentityManagerFromEnvironment(ctx, nil, dnsid.Config{}, config.Dependencies{})
@@ -114,6 +121,17 @@ fmt.Println("acting as:", idm.Domain())
 
 Loaders only parse: nothing is defaulted or derived, so a missing required field (for example
 `DNSID_LOG_REF`) fails construction instead of being substituted.
+
+For first publication, use the documented initial-setup route: open the existing
+operational key with `config.OperationalKeyProviderFrom` and inject it as
+`config.Dependencies.KeyProvider`. The caller owns the injected provider's cleanup
+and binding checks; this setup manager does not establish authenticated application
+startup. Client-controlled publication needs the entity key to sign the canonical
+record; registry-managed publication waits for and verifies publication. After
+publication, construct normally for established application signing. See
+[configuration](config/README.md) for the setup distinction and optional AWS/GCP
+existing-key imports and settings. Cloud configuration opening never generates
+keys or falls back to a local signer.
 
 ## Step 3 — Mint a DNSid JWT
 

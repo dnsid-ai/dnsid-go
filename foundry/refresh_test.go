@@ -108,13 +108,12 @@ func TestConfirmedPauseSurvivesCallerDeadlineAndRestart(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
+			ctx := &controlledDeadlineContext{Context: context.Background(), done: make(chan struct{}), deadline: time.Now().Add(time.Hour)}
 			store := &expireOnPauseStore{FoundryStore: f.store, caller: ctx}
 			id.client.deps.Store = store
 			_, err = id.Active(ctx)
 			requireKind(t, err, kind)
-			if !store.attempted || !store.detached || !store.bounded || ctx.Err() != context.DeadlineExceeded {
+			if !store.attempted || !store.detached || !store.bounded || !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				t.Fatal("pause was not written with a detached, bounded context after expiry")
 			}
 			if !f.document("durable-pause").SigningPaused {
@@ -137,9 +136,27 @@ func TestConfirmedPauseSurvivesCallerDeadlineAndRestart(t *testing.T) {
 	}
 }
 
+// Expiry is triggered only after Active has classified the unsafe observation.
+type controlledDeadlineContext struct {
+	context.Context
+	done     chan struct{}
+	deadline time.Time
+}
+
+func (c *controlledDeadlineContext) Deadline() (time.Time, bool) { return c.deadline, true }
+func (c *controlledDeadlineContext) Done() <-chan struct{}       { return c.done }
+func (c *controlledDeadlineContext) Err() error {
+	select {
+	case <-c.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+
 type expireOnPauseStore struct {
 	FoundryStore
-	caller                       context.Context
+	caller                       *controlledDeadlineContext
 	attempted, detached, bounded bool
 }
 
@@ -158,7 +175,7 @@ type expireOnPauseLease struct {
 
 func (l expireOnPauseLease) Save(ctx context.Context, doc *RecoveryDocument) error {
 	if doc.SigningPaused {
-		<-l.store.caller.Done()
+		close(l.store.caller.done)
 		l.store.attempted = true
 		l.store.detached = ctx.Err() == nil
 		deadline, ok := ctx.Deadline()

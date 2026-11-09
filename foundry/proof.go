@@ -28,11 +28,11 @@ func challengeTranscript(doc *RecoveryDocument, challenge, message string) (*dns
 	if err := json.Unmarshal(decoded, &transcript); err != nil {
 		return nil, err
 	}
-	initial, err := parsePublicKey(doc.InitialPublicKey)
+	creation, err := parsePublicKey(doc.CreationInput.PublicKey)
 	if err != nil {
 		return nil, err
 	}
-	thumb, err := keyThumb(initial)
+	thumb, err := keyThumb(creation)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (i *FoundryIdentity) prove(ctx context.Context, lease FoundryLease, doc *Re
 		return failure(Integrity, doc, err)
 	}
 	if !time.Now().Before(transcript.ExpiresAt) {
-		response, err := i.client.deps.RegistryClient.ReissueLiveProof(ctx, doc.Domain, &dnsid.LiveProofReissueRequest{RequestID: doc.RequestID, PublicKey: doc.InitialPublicKey})
+		response, err := i.client.deps.RegistryClient.ReissueLiveProof(ctx, doc.Domain, &dnsid.LiveProofReissueRequest{RequestID: doc.RequestID, PublicKey: doc.CreationInput.PublicKey})
 		var api *dnsid.RegistryAPIError
 		if errors.As(err, &api) && api.StatusCode == http.StatusConflict {
 			if _, err := i.client.waitForRegistryReady(ctx, lease, doc); err != nil {
@@ -129,13 +129,13 @@ func (i *FoundryIdentity) prove(ctx context.Context, lease FoundryLease, doc *Re
 		if signature == nil {
 			return failure(Integrity, doc, fmt.Errorf("provider returned no proof signature"))
 		}
-		key, err := parsePublicKey(doc.InitialPublicKey)
+		key, err := parsePublicKey(doc.CreationInput.PublicKey)
 		if err != nil {
 			return err
 		}
 		kid, _ := key.KeyID()
 		if signature.Kid != kid || signature.Alg != dnsid.JoseAlgEdDSA {
-			return failure(KeyMismatch, doc, fmt.Errorf("proof signer differs from initial key"))
+			return failure(KeyMismatch, doc, fmt.Errorf("proof signer differs from creation key"))
 		}
 		if !joseutil.VerifySignature(joseutil.ProtectedHeader{Alg: signature.Alg}, joseutil.SignatureParts{SigningInput: message, Signature: signature.Signature}, []jwk.Key{key}) {
 			return failure(Integrity, doc, fmt.Errorf("provider returned an invalid proof signature"))
@@ -146,7 +146,7 @@ func (i *FoundryIdentity) prove(ctx context.Context, lease FoundryLease, doc *Re
 	if err := lease.Save(ctx, doc); err != nil {
 		return i.client.wrap(doc, err)
 	}
-	response, err := i.client.deps.RegistryClient.SubmitLiveProof(ctx, doc.Domain, &dnsid.LiveProofRequest{RequestID: doc.RequestID, Challenge: doc.Proof.Challenge, PublicKey: doc.InitialPublicKey, Signature: doc.Proof.Signature})
+	response, err := i.client.deps.RegistryClient.SubmitLiveProof(ctx, doc.Domain, &dnsid.LiveProofRequest{RequestID: doc.RequestID, Challenge: doc.Proof.Challenge, PublicKey: doc.CreationInput.PublicKey, Signature: doc.Proof.Signature})
 	if err != nil {
 		return i.client.wrap(doc, err)
 	}

@@ -234,24 +234,23 @@ func (d *RecoveryDocument) validate() error {
 	if err != nil {
 		return err
 	}
-	requestID, err := RegistrationKey(d.OrganizationID, d.Name, thumb)
+	creation, err := parsePublicKey(d.CreationInput.PublicKey)
+	if err != nil {
+		return err
+	}
+	creationThumb, err := keyThumb(creation)
+	if err != nil {
+		return err
+	}
+	requestID, err := RegistrationKey(d.OrganizationID, d.Name, creationThumb)
 	if err != nil {
 		return err
 	}
 	if d.RequestID != requestID || d.CreationInput.Name != d.Name {
 		return fmt.Errorf("foundry: creation input or request ID conflicts with bindings")
 	}
-	input, err := json.Marshal(d.CreationInput.PublicKey)
-	if err != nil {
-		return err
-	}
-	key, err := parsePublicKey(input)
-	if err != nil {
-		return err
-	}
-	inputThumb, err := keyThumb(key)
-	if err != nil || inputThumb != thumb {
-		return fmt.Errorf("foundry: frozen public key conflicts with initial binding")
+	if creationThumb != thumb && (d.Issuance == nil || !d.Issuance.Recovered) {
+		return fmt.Errorf("foundry: creation key differs from initial key without recovered issuance")
 	}
 	if d.CreationInput.Environment != "production" || d.CreationInput.Tier != "live" || !d.CreationInput.Managed {
 		return fmt.Errorf("foundry: invalid frozen Live environment")
@@ -304,7 +303,8 @@ func (d *RecoveryDocument) validate() error {
 		if d.PublicationConfig == nil || len(d.EntityPublicKey) == 0 || d.Issuance == nil {
 			return fmt.Errorf("foundry: accepted phase lacks publication and issuance")
 		}
-		if d.Phase == "complete" && !d.Issuance.Recovered && d.Issuance.Operation != nil && (!d.Issuance.Operation.Complete || d.Issuance.Operation.ActivationBlocked) {
+		// A refresh can temporarily block the coordinator without undoing prior readiness.
+		if d.Phase == "complete" && !d.Issuance.Recovered && d.Issuance.Operation != nil && !d.Issuance.Operation.Complete {
 			return fmt.Errorf("foundry: complete phase has unfinished coordinator state")
 		}
 		if !d.Issuance.Recovered && (d.Issuance.Operation == nil || d.Issuance.Operation.Submission == nil || d.Issuance.Operation.Submission.State != dnsid.SubmissionStateAccepted) {
@@ -330,8 +330,8 @@ func (d *RecoveryDocument) validate() error {
 			if err != nil {
 				return err
 			}
-			if !joseutil.VerifySignature(joseutil.ProtectedHeader{Alg: dnsid.JoseAlgEdDSA}, joseutil.SignatureParts{SigningInput: message, Signature: signature}, []jwk.Key{initial}) {
-				return fmt.Errorf("foundry: persisted proof signature does not match initial key")
+			if !joseutil.VerifySignature(joseutil.ProtectedHeader{Alg: dnsid.JoseAlgEdDSA}, joseutil.SignatureParts{SigningInput: message, Signature: signature}, []jwk.Key{creation}) {
+				return fmt.Errorf("foundry: persisted proof signature does not match creation key")
 			}
 		}
 		switch d.Proof.Outcome {
@@ -353,7 +353,7 @@ func (d *RecoveryDocument) validate() error {
 		if err != nil {
 			return err
 		}
-		if d.PublicationConfig == nil || prepared.Reference().String() != d.PublicationConfig.LogRef || event.Domain != d.Domain || event.GovernanceID != d.GovernanceID || event.InitialOperationalThumbprint != thumb {
+		if d.PublicationConfig == nil || prepared.Reference().String() != d.PublicationConfig.LogRef || event.Domain != d.Domain || event.GovernanceID != d.GovernanceID || event.InitialOperationalThumbprint != creationThumb {
 			return fmt.Errorf("foundry: persisted preparation binding mismatch")
 		}
 		ek, err := parsePublicKey(d.EntityPublicKey)
@@ -367,9 +367,9 @@ func (d *RecoveryDocument) validate() error {
 	}
 	if d.Issuance != nil && d.Issuance.Operation != nil {
 		op := d.Issuance.Operation
-		initialKid, _ := initial.KeyID()
-		if op.OperationalKid == "" || (initialKid != "" && op.OperationalKid != initialKid) {
-			return fmt.Errorf("foundry: issuance key ID conflicts with initial key")
+		creationKid, _ := creation.KeyID()
+		if op.OperationalKid == "" || (creationKid != "" && op.OperationalKid != creationKid) {
+			return fmt.Errorf("foundry: issuance key ID conflicts with creation key")
 		}
 		if op.Submission != nil && op.Submission.KeyID != "" && op.Submission.KeyID != op.OperationalKid {
 			return fmt.Errorf("foundry: issuance receipt key ID mismatch")
@@ -399,7 +399,7 @@ func (d *RecoveryDocument) validate() error {
 				}
 			}
 		}
-		if op.Domain != d.Domain || op.GovernanceID != d.GovernanceID || op.IdempotencyKey != IssuanceKey(d.RequestID) || op.OperationalThumbprint != thumb || d.PublicationConfig == nil || op.LogReference != d.PublicationConfig.LogRef {
+		if op.Domain != d.Domain || op.GovernanceID != d.GovernanceID || op.IdempotencyKey != IssuanceKey(d.RequestID) || op.OperationalThumbprint != creationThumb || d.PublicationConfig == nil || op.LogReference != d.PublicationConfig.LogRef {
 			return fmt.Errorf("foundry: issuance metadata conflicts with saved bindings")
 		}
 		if len(op.EntryBytes) > 0 {
@@ -419,7 +419,7 @@ func (d *RecoveryDocument) validate() error {
 			if err != nil {
 				return err
 			}
-			if event.Domain != d.Domain || event.GovernanceID != d.GovernanceID || event.InitialOperationalThumbprint != thumb || p.Reference().String() != op.LogReference {
+			if event.Domain != d.Domain || event.GovernanceID != d.GovernanceID || event.InitialOperationalThumbprint != creationThumb || p.Reference().String() != op.LogReference {
 				return fmt.Errorf("foundry: persisted issuance binding mismatch")
 			}
 			ek, err := parsePublicKey(d.EntityPublicKey)

@@ -85,6 +85,8 @@ func fullIdentityEnv() map[string]string {
 		"DNSID_DOMAIN":        "agent.example.com",
 		"DNSID_GOVERNANCE_ID": "example.com",
 		"DNSID_STATUS_URL":    "https://api.example.com/status/agent.example.com",
+		"DNSID_KU_URL":        "https://agent.example.com/keys",
+		"DNSID_EK_URL":        "https://example.com/ek",
 		"DNSID_LOG_REF":       "c2sp-tlog:public:https://log.example.com#abc",
 	}
 }
@@ -242,10 +244,14 @@ func TestIdentityManagerFromDnsid_EmptyDirReadsHomeNotEnv(t *testing.T) {
 	for dir, domain := range map[string]string{home + "/.dnsid": "home.example.com", other: "other.example.com"} {
 		newKey(t, filepath.Join(dir, "private.jwk"))
 		writeJSON(t, filepath.Join(dir, "config.json"), map[string]any{
-			"domain": domain, "governance_id": "example.com", "status_url": "https://api.example.com/s", "log_ref": "m:1",
+			"domain": domain, "governance_id": "example.com", "status_url": "https://api.example.com/s", "log_ref": "m:1", "ku_url": "https://" + domain + "/keys", "ek_url": "https://example.com/ek",
 		})
 	}
-	m, err := IdentityManagerFromDnsid(context.Background(), "", dnsid.Config{}, Dependencies{})
+	homeKey, err := dnsid.LoadOrCreateLocalKeyProvider(filepath.Join(home, ".dnsid", "private.jwk"), dnsid.JoseAlgES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := IdentityManagerFromDnsid(context.Background(), "", dnsid.Config{}, cliPublication(t, filepath.Join(home, ".dnsid"), dnsid.Config{}, homeKey))
 	if err != nil || m.Domain() != "home.example.com" {
 		t.Fatalf("IdentityManagerFromDnsid = %v, %v; want ~/.dnsid identity", m, err)
 	}
@@ -400,7 +406,7 @@ func TestConstruct_CliDirectoryWinsOverKeyStore(t *testing.T) {
 	env := fullIdentityEnv()
 	env["DNSID_CONFIG_DIR"] = filepath.Join(dir, "cli")
 	env["DNSID_KEY_STORE"] = filepath.Join(dir, "store.jwk")
-	m, err := IdentityManagerFromEnvironment(context.Background(), mapEnv(env), dnsid.Config{}, Dependencies{})
+	m, err := IdentityManagerFromEnvironment(context.Background(), mapEnv(env), dnsid.Config{}, envPublication(t, env, dnsid.Config{}, cliKey))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +420,7 @@ func TestConstruct_KeyStoreAloneSuppliesOperationalKey(t *testing.T) {
 	storeKey := newKey(t, storePath)
 	env := fullIdentityEnv()
 	env["DNSID_KEY_STORE"] = storePath
-	m, err := IdentityManagerFromEnvironment(context.Background(), mapEnv(env), dnsid.Config{}, Dependencies{})
+	m, err := IdentityManagerFromEnvironment(context.Background(), mapEnv(env), dnsid.Config{}, envPublication(t, env, dnsid.Config{}, storeKey))
 	if err != nil || activeKid(m.KeyProvider()) != activeKid(storeKey) {
 		t.Fatalf("manager = %v, %v", m, err)
 	}
@@ -427,9 +433,9 @@ func TestConstruct_CliEntityKeyPathAndPerDomainLayout(t *testing.T) {
 	newKey(t, filepath.Join(dir, "entity.jwk"))
 	writeJSON(t, filepath.Join(dir, "config.json"), map[string]any{
 		"domain": domain, "governance_id": "example.com", "status_url": "https://api.example.com/s",
-		"log_ref": "m:1", "ek_url": "https://example.com/ek", "entity_key_path": "entity.jwk",
+		"log_ref": "m:1", "ku_url": "https://agent.example.com/keys", "ek_url": "https://example.com/ek", "entity_key_path": "entity.jwk",
 	})
-	m, err := IdentityManagerFromDnsid(context.Background(), dir, dnsid.Config{}, Dependencies{})
+	m, err := IdentityManagerFromDnsid(context.Background(), dir, dnsid.Config{}, cliPublication(t, dir, dnsid.Config{}, opKey))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,12 +462,13 @@ func TestConstruct_CallerKeyProvidersWin(t *testing.T) {
 
 func TestConstruct_OverlayAppliesBeforeValidation(t *testing.T) {
 	dir := t.TempDir()
-	newKey(t, filepath.Join(dir, "private.jwk"))
+	opKey := newKey(t, filepath.Join(dir, "private.jwk"))
 	writeJSON(t, filepath.Join(dir, "config.json"), map[string]any{"domain": "agent.example.com", "governance_id": "example.com"})
 	if _, err := IdentityManagerFromDnsid(context.Background(), dir, dnsid.Config{}, Dependencies{}); err == nil {
 		t.Fatal("missing status_url and log_ref were accepted")
 	}
-	m, err := IdentityManagerFromDnsid(context.Background(), dir, dnsid.Config{Identity: &dnsid.IdentityConfig{StatusURL: "https://api.example.com/s", LogRef: "m:1"}}, Dependencies{})
+	overlay := dnsid.Config{Identity: &dnsid.IdentityConfig{StatusURL: "https://api.example.com/s", LogRef: "m:1", KeyURL: "https://agent.example.com/keys", EntityKeyURL: "https://example.com/ek"}}
+	m, err := IdentityManagerFromDnsid(context.Background(), dir, overlay, cliPublication(t, dir, overlay, opKey))
 	if err != nil || m.Domain() != "agent.example.com" {
 		t.Fatalf("manager = %v, %v", m, err)
 	}
@@ -469,18 +476,19 @@ func TestConstruct_OverlayAppliesBeforeValidation(t *testing.T) {
 
 func TestConvenienceEqualsManualComposition(t *testing.T) {
 	dir := t.TempDir()
-	newKey(t, filepath.Join(dir, "private.jwk"))
+	opKey := newKey(t, filepath.Join(dir, "private.jwk"))
 	env := fullIdentityEnv()
 	env["DNSID_CONFIG_DIR"] = dir
 	env["DNSID_KU_URL"] = "https://agent.example.com/jwks"
 	overlay := dnsid.Config{Verification: dnsid.VerificationConfig{DNSSECMode: dnsid.DNSSECModeRequired}}
 
-	convenient, err := IdentityManagerFromEnvironment(context.Background(), mapEnv(env), overlay, Dependencies{})
+	deps := envPublication(t, env, overlay, opKey)
+	convenient, err := IdentityManagerFromEnvironment(context.Background(), mapEnv(env), overlay, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
 	loaded := mustLoadEnv(t, env)
-	manual, err := Construct(context.Background(), Merge(loaded, Loaded{Dnsid: overlay}), Dependencies{})
+	manual, err := Construct(context.Background(), Merge(loaded, Loaded{Dnsid: overlay}), deps)
 	if err != nil {
 		t.Fatal(err)
 	}

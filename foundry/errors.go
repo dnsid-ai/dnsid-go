@@ -38,10 +38,14 @@ type Error struct {
 	Cause          error
 }
 
+// Error returns the workflow facts, operator remedy, and cause.
 func (e *Error) Error() string {
 	text := fmt.Sprintf("foundry: %s (phase=%s, id=%q, domain=%q, code=%q)", e.Kind, e.Phase, e.IdentityID, e.Domain, e.Code)
+	if e.Kind == KeyMissing {
+		text += "; create the signing key first, for example through explicit KMS-first creation"
+	}
 	if e.Kind == KeyMismatch {
-		text += "; use the provider key this identity was created with; run one identity per cloud provider"
+		text += "; use this identity's current provider key; run one identity per cloud provider"
 	}
 	if e.Cause != nil {
 		text += ": " + e.Cause.Error()
@@ -55,6 +59,7 @@ func (e *Error) Unwrap() error { return e.Cause }
 // UnsupportedRegistry means onboarding did not provide the required contract.
 type UnsupportedRegistry struct{ Detail *Error }
 
+// Error describes the unsupported registry contract.
 func (e *UnsupportedRegistry) Error() string {
 	return "foundry: unsupported registry: " + e.Detail.Error()
 }
@@ -71,6 +76,7 @@ type SigningPaused struct {
 	RegistryStatus string
 }
 
+// Error describes why application signing is paused.
 func (e *SigningPaused) Error() string { return "foundry: application signing is paused: " + e.Reason }
 
 func failure(kind ErrorKind, doc *RecoveryDocument, cause error) *Error {

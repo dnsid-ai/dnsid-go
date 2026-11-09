@@ -98,6 +98,9 @@ func providerPublic(ctx context.Context, provider dnsid.KeyProvider) (jwk.Key, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if len(provider.ListKeyIds()) == 0 {
+		return nil, failure(KeyMissing, nil, fmt.Errorf("provider has no signing key"))
+	}
 	var key jwk.Key
 	var err error
 	switch p := provider.(type) {
@@ -119,7 +122,7 @@ func providerPublic(ctx context.Context, provider dnsid.KeyProvider) (jwk.Key, e
 		return nil, err
 	}
 	if key == nil {
-		return nil, failure(KeyMissing, nil, fmt.Errorf("provider has no signing key"))
+		return nil, failure(Integrity, nil, fmt.Errorf("provider lists keys but has no current public signing key"))
 	}
 	raw, err := json.Marshal(key)
 	if err != nil {
@@ -128,25 +131,8 @@ func providerPublic(ctx context.Context, provider dnsid.KeyProvider) (jwk.Key, e
 	return parsePublicKey(raw)
 }
 
-func validateProviderKey(ctx context.Context, provider dnsid.KeyProvider, provision, live bool) error {
+func validateProviderKey(ctx context.Context, provider dnsid.KeyProvider, live bool) error {
 	key, err := providerPublic(ctx, provider)
-	if isKind(err, KeyMissing) && provision {
-		if err := ctx.Err(); err != nil {
-			return failure(Deadline, nil, err)
-		}
-		switch p := provider.(type) {
-		case interface{ EnsureSigningKey(context.Context) error }:
-			err = p.EnsureSigningKey(ctx)
-		case interface{ EnsureSigningKey() error }:
-			err = p.EnsureSigningKey()
-		default:
-			return failure(KeyMissing, nil, fmt.Errorf("provider has no key and cannot EnsureSigningKey"))
-		}
-		if err != nil {
-			return err
-		}
-		key, err = providerPublic(ctx, provider)
-	}
 	if err != nil {
 		return err
 	}

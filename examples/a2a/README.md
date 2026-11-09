@@ -48,8 +48,17 @@ response signed by: bob.test
 reply: "[from: bob.test; verified sender: alice.test] hello from alice.test"
 ```
 
-Bob also signs every response, including the agent card and errors, with its
-DNSid operational key. Alice requests that signature and rejects any reply that
+During startup each agent first serves only its public operational JWKS, without
+response signing. Card, status, and message routes return unsigned unavailable
+responses until fresh owner-authorized publication verifies and its operational
+key matches the configuration-selected custody (kid, algorithm, and thumbprint).
+Missing, invalid, unreachable, or mismatched publication never enables application
+signing; startup retries within a bounded polling window and shuts down on
+cancellation or failure. Only after this check does Alice send its message.
+
+After authenticated readiness, Bob signs negotiated responses, including the
+agent card and errors, with its DNSid operational key. Alice requests that
+signature and rejects any reply that
 is not signed by `bob.test`. Bob's server applies the response-signing
 middleware after restoring the public `https://bob.test` URL, because the
 signature covers the URL that Alice used.

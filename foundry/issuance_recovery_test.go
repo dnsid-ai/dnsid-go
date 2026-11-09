@@ -51,11 +51,15 @@ func TestIssuanceRejectionWithEmptyOrMissingIssuanceIsResumable(t *testing.T) {
 		{name: "empty history after preparation"},
 		{name: "no issuance after preparation", events: []dnsidlog.LogEvent{{Type: dnsidlog.LogEventDelegation, Domain: testDomain}}},
 		{name: "empty history after submission", submission: true},
+		{name: "invalid entry after submission", submission: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFixture(t)
 			f.log.events = test.events
 			rejection := &dnsid.RegistryAPIError{StatusCode: http.StatusConflict, Code: "TLOG_PREPARATION_MISMATCH"}
+			if test.name == "invalid entry after submission" {
+				rejection.StatusCode, rejection.Code = http.StatusUnprocessableEntity, "TLOG_INVALID_ENTRY"
+			}
 			if test.submission {
 				f.registry.submitErr = rejection
 			} else {
@@ -75,6 +79,17 @@ func TestIssuanceRejectionWithEmptyOrMissingIssuanceIsResumable(t *testing.T) {
 			}
 			if f.document("lagging").Phase == "complete" {
 				t.Fatal("empty history satisfied acceptance")
+			}
+			if test.name == "invalid entry after submission" {
+				reopened, err := f.client.Create(context.Background(), "lagging")
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = reopened.Active(context.Background())
+				outcome = requireKind(t, err, Unresolved)
+				if !outcome.Resumable || outcome.Code != rejection.Code || len(f.registry.submissions) != 1 || f.registry.prepareCalls != 1 {
+					t.Fatalf("restart lost resumability or resubmitted rejected bytes: %v", err)
+				}
 			}
 		})
 	}

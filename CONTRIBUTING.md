@@ -176,6 +176,19 @@ remote_branch_pushed=1
 gh api "repos/$test_repo/commits/$(git rev-parse HEAD)" --jq '.commit.verification'
 ```
 
+## Releases and manual reruns
+
+The first release containing the GCP module must use a newly computed, unused
+version through the normal `release/next` process. That process updates the root,
+AWS and GCP module release inputs together. Do not manually dispatch the new
+three-module release workflow against a pre-GCP `.release-version`: historical
+root/AWS-only releases remain historical, not partial releases to repair.
+
+A new release publishes root, `key/aws/` and `key/gcp/` tags atomically. A manual
+rerun with all three tags already present skips tag creation but continues SBOM
+generation and GitHub release creation/upload. Any nonempty partial tag set fails;
+do not backfill, delete, or retag releases to bypass that check.
+
 ## Reporting security issues
 
 See [SECURITY.md](SECURITY.md) — do not file public issues for vulnerabilities.

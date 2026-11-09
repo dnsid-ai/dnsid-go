@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
 )
@@ -95,7 +96,7 @@ func TestConfigFactory_OpensExistingKeys(t *testing.T) {
 			source.EntityKeyPath = entityPath
 			path := filepath.Join(t.TempDir(), "deployment.json")
 			document, err := json.Marshal(map[string]any{
-				"dnsid":     map[string]any{"identity": map[string]any{"domain": "agent.example", "governanceId": "account.example", "statusUrl": "https://agent.example/status", "entityKeyUrl": "https://account.example/ek", "logRef": "m:1"}},
+				"dnsid":     map[string]any{"identity": map[string]any{"domain": "agent.example", "governanceId": "account.example", "statusUrl": "https://agent.example/status", "keyUrl": "https://agent.example/keys", "entityKeyUrl": "https://account.example/ek", "logRef": "m:1"}},
 				"keySource": source,
 			})
 			if err != nil {
@@ -108,8 +109,19 @@ func TestConfigFactory_OpensExistingKeys(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Establish publication before configuration startup with the independent
+			// fixture provider. Startup itself still opens the official AWS client.
+			algorithm := types.SigningAlgorithmSpecEcdsaSha256
+			if wantAlgorithm == dnsid.JoseAlgEdDSA {
+				algorithm = types.SigningAlgorithmSpecEd25519Sha512
+			}
+			fixtureProvider, err := New(context.Background(), fake, Config{State: State{ActiveKeyID: reference}, Algorithm: algorithm})
+			if err != nil {
+				t.Fatal(err)
+			}
+			deps := setupAWSPublication(t, loaded.Dnsid, fixtureProvider)
 			// When constructing through the actual configuration factory.
-			manager, err := config.Construct(context.Background(), loaded, config.Dependencies{})
+			manager, err := config.Construct(context.Background(), loaded, deps)
 			var provider dnsid.KeyProvider
 			if manager != nil {
 				provider = manager.KeyProvider()

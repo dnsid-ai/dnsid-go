@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -75,44 +77,120 @@ func main() {
 }
 
 func run() error {
+	return runWithDependencies(config.Dependencies{})
+}
+
+// handlerSlot publishes only fully initialized handlers. Holding the read lock
+// through dispatch also lets shutdown drain requests before closing custody.
+type handlerSlot struct {
+	sync.RWMutex
+	handler http.Handler
+}
+
+func (s *handlerSlot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.RLock()
+	defer s.RUnlock()
+	s.handler.ServeHTTP(w, r)
+}
+
+func runWithDependencies(deps config.Dependencies) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	app, port, err := newApplication(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	loaded, port, err := loadApplicationConfig()
 	if err != nil {
 		return err
 	}
-
+	// Injection supplies only public setup material, never an application signer.
+	provider, err := config.OperationalKeyProviderFrom(ctx, loaded.KeySource, loaded.Dnsid.Identity.Domain)
+	if err != nil {
+		return err
+	}
+	defer closeProvider(provider)
+	setupDeps := deps
+	setupDeps.KeyProvider = provider
+	setup, err := config.Construct(ctx, loaded, setupDeps)
+	if err != nil {
+		return err
+	}
+	bootstrap := http.NewServeMux()
+	bootstrap.HandleFunc("GET /.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, setup.GetKeySet().Raw())
+	})
+	bootstrap.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "identity publication is not ready", http.StatusServiceUnavailable)
+	})
+	slot := &handlerSlot{handler: bootstrap}
 	server := &http.Server{
 		Addr:              ":" + strconv.Itoa(port),
-		Handler:           app.publicRequests(app.signatures.ResponseSigningMiddleware(app.routes())),
+		Handler:           slot,
 		ReadHeaderTimeout: 5 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
+	// Drain handlers before closing either caller-owned provider on every return.
+	var authenticated dnsid.KeyProvider
+	defer func() {
+		cancel()
+		shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
+		defer done()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
+		}
+		slot.Lock()
+		defer slot.Unlock()
+		closeProvider(authenticated)
+	}()
 	errCh := make(chan error, 1)
-	go func() { errCh <- server.ListenAndServe() }()
+	go func() { errCh <- server.ListenAndServe(); cancel() }()
+	var identity *dnsid.IdentityManager
+	// Never inject operational custody here: retain Construct's fresh publication
+	// verification AND selected kid, algorithm and thumbprint binding.
+	deps.KeyProvider = nil
+	err = poll(ctx, "self-publication "+setup.Domain(), func() error {
+		var err error
+		identity, err = config.Construct(ctx, loaded, deps)
+		return err
+	})
+	if err != nil {
+		select {
+		case serveErr := <-errCh:
+			if !errors.Is(serveErr, http.ErrServerClosed) {
+				return serveErr
+			}
+		default:
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
+	authenticated = identity.KeyProvider()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	app, err := applicationFromIdentity(loaded, identity)
+	if err != nil {
+		return err
+	}
+	handler := app.publicRequests(app.signatures.ResponseSigningMiddleware(app.routes()))
+	slot.Lock()
+	slot.handler = handler
+	slot.Unlock()
 	fmt.Printf("%s -> %s\n", app.identity.Domain(), app.publicURL)
-
-	// Verification succeeds once the testnet has published this agent's DNS
-	// record, JWKS, status document, and lifecycle-log entry.
-	if err := poll(ctx, "self-verify "+app.identity.Domain(), func() error {
-		_, err := app.identity.VerifyDomain(ctx, app.identity.Domain())
-		return err
-	}); err != nil {
-		return err
-	}
-
-	// An argument switches the process into client mode after its server starts.
 	if len(os.Args) > 1 {
-		err = app.sendHello(ctx, os.Args[1])
-		_ = server.Shutdown(context.Background())
-		return err
+		return app.sendHello(ctx, os.Args[1])
 	}
-
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return server.Shutdown(shutdownCtx)
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
+		default:
+		}
+		return nil
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
@@ -121,42 +199,71 @@ func run() error {
 	}
 }
 
-func newApplication(ctx context.Context) (*application, int, error) {
+func closeProvider(provider dnsid.KeyProvider) {
+	if closer, ok := provider.(io.Closer); ok {
+		_ = closer.Close()
+	}
+}
+
+func loadApplicationConfig() (config.Loaded, int, error) {
 	port, err := strconv.Atoi(os.Getenv("DNSID_AGENT_PORT"))
 	if err != nil || port < 1 || port > 65535 {
-		return nil, 0, fmt.Errorf("DNSID_AGENT_PORT is required; run with `dnsid local run`")
+		return config.Loaded{}, 0, fmt.Errorf("DNSID_AGENT_PORT is required; run with `dnsid local run`")
 	}
-
-	// `dnsid local run` exports the identity, key location, log trust
-	// (DNSID_LOG_POLICY_URL), and the testnet's DNS server and CA. The same
-	// transport config also drives the outbound A2A client. Production
-	// applications leave transport unset for SDK defaults.
+	// Local run supplies identity, custody, explicit log trust, DNS and CA.
 	loaded, err := config.LoadEnvironment(nil)
 	if err != nil {
-		return nil, 0, err
+		return loaded, 0, err
 	}
-	identity, err := config.Construct(ctx, loaded, config.Dependencies{})
+	if err := loaded.Dnsid.Validate(); err != nil {
+		return loaded, 0, err
+	}
+	if loaded.Dnsid.Identity == nil {
+		return loaded, 0, fmt.Errorf("A2A requires a local identity; run with `dnsid local run`")
+	}
+	return loaded, port, nil
+}
+
+func newApplication(ctx context.Context) (*application, int, error) {
+	return newApplicationWithDependencies(ctx, config.Dependencies{})
+}
+
+func newApplicationWithDependencies(ctx context.Context, deps config.Dependencies) (*application, int, error) {
+	loaded, port, err := loadApplicationConfig()
 	if err != nil {
 		return nil, 0, err
 	}
+	identity, err := config.Construct(ctx, loaded, deps)
+	if err != nil {
+		return nil, 0, err
+	}
+	app, err := applicationFromIdentity(loaded, identity)
+	if err != nil {
+		if deps.KeyProvider == nil {
+			closeProvider(identity.KeyProvider())
+		}
+		return nil, 0, err
+	}
+	return app, port, nil
+}
+
+func applicationFromIdentity(loaded config.Loaded, identity *dnsid.IdentityManager) (*application, error) {
 	httpClient, err := dnsid.CreateDnsidHTTPClient(loaded.Dnsid.Transport)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-
 	publicURL := "https://" + identity.Domain()
 	card, err := signedAgentCard(identity, publicURL)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-
 	return &application{
 		identity:   identity,
 		signatures: httpsig.NewFromIdentityManagerKeyProvider(identity, httpsig.Config{}),
 		httpClient: httpClient,
 		card:       card,
 		publicURL:  publicURL,
-	}, port, nil
+	}, nil
 }
 
 func (a *application) routes() http.Handler {

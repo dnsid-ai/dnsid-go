@@ -35,7 +35,27 @@ jobs:
           go test ./...
           go test -tags dnsid_foundry ./...
           (cd key/aws && go test ./...)
+          (cd key/gcp && go test ./...)
           (cd examples/deployment-identity && go test ./...)
+
+  gcp-consumer-macos:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.10"
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            key/gcp/go.sum
+      # Local TLS Google RPC/ADC and publication fixtures only; no live cloud.
+      - name: Verify registered GCP consumers and certificate trust on macOS
+        working-directory: key/gcp
+        run: go test -count=1 -timeout=3m -run '^TestRegisteredGCP(Consumer|ExternalConsumerModule|TransportTrust)$' -v .
 
   release-gates:
     runs-on: ubuntu-latest
@@ -56,9 +76,11 @@ jobs:
         run: |
           go vet -tags dnsid_foundry ./...
           (cd key/aws && go vet ./...)
+          (cd key/gcp && go vet ./...)
           (cd examples/deployment-identity && go vet ./...)
           go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -tags dnsid_foundry ./...
           (cd key/aws && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
+          (cd key/gcp && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
           (cd examples/deployment-identity && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
 
       - name: Vet Foundry platform-specific locking
@@ -81,18 +103,25 @@ jobs:
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13.1
+          working-directory: key/gcp
+
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.1
           working-directory: examples/deployment-identity
 
       - name: Run race tests
         run: |
           go test -race -tags dnsid_foundry ./...
           (cd key/aws && go test -race ./...)
+          (cd key/gcp && go test -race ./...)
           (cd examples/deployment-identity && go test -race ./...)
 
       - name: Check module files are tidy
         run: |
           go mod tidy -diff
           (cd key/aws && go mod tidy -diff)
+          (cd key/gcp && go mod tidy -diff)
           (cd examples/deployment-identity && go mod tidy -diff)
 
   docs:
@@ -111,9 +140,10 @@ jobs:
       # comment (internal/, cmd/, and examples/ are deliberately not passed).
       - name: Lint exported doc comments
         run: |
-          go run github.com/mgechev/revive@v1.15.0 -config revive.toml \
-            . ./jose/... ./oidc/... ./httpsig/... ./webbotauth/... ./log/...
+          GOFLAGS='-tags=dnsid_foundry' go run github.com/mgechev/revive@v1.15.0 -config revive.toml \
+            . ./jose/... ./oidc/... ./httpsig/... ./webbotauth/... ./log/... ./foundry/...
           (cd key/aws && go run github.com/mgechev/revive@v1.15.0 -config ../../revive.toml ./...)
+          (cd key/gcp && go run github.com/mgechev/revive@v1.15.0 -config ../../revive.toml ./...)
 
       # Advisory only: the regen-docs workflow pushes regenerated reference
       # docs to same-repo PR branches automatically. The warning matters for

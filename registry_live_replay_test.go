@@ -21,8 +21,11 @@ func TestHTTPRegistryClient_LiveReplayDomain(t *testing.T) {
 		name, wireDomain, challengeDomain string
 		want                              string
 		invalid                           bool
+		includeDomain                     bool
 	}{
 		{name: "absent"},
+		{name: "null", includeDomain: true},
+		{name: "empty", includeDomain: true, wireDomain: ""},
 		{name: "replay", wireDomain: "Agent.Example.", want: "agent.example"},
 		{name: "invalid", wireDomain: "invalid domain", invalid: true},
 		{name: "matching transcript", wireDomain: "Agent.Example.", challengeDomain: "agent.example", want: "agent.example"},
@@ -31,7 +34,9 @@ func TestHTTPRegistryClient_LiveReplayDomain(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				response := map[string]any{"request_id": "replay-key", "agent_id": "agent-id", "status": "provisioning", "challenge": "", "challenge_message": ""}
-				if test.wireDomain != "" {
+				if test.name == "null" {
+					response["domain"] = nil
+				} else if test.includeDomain || test.wireDomain != "" {
 					response["domain"] = test.wireDomain
 				}
 				if test.challengeDomain != "" {
@@ -52,6 +57,9 @@ func TestHTTPRegistryClient_LiveReplayDomain(t *testing.T) {
 			if test.invalid {
 				if err == nil {
 					t.Fatal("accepted invalid domain")
+				}
+				if response == nil || response.RequestID != "replay-key" || response.AgentID != "agent-id" {
+					t.Fatalf("validation discarded creation facts: %+v", response)
 				}
 				return
 			}

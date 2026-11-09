@@ -63,8 +63,16 @@ func TestLoadDeploymentFile_FoundryAbsentAndWhitespace(t *testing.T) {
 			t.Fatalf("input=%s loaded=%+v err=%v", input, loaded, err)
 		}
 	}
-	loaded, err := LoadEnvironment(func(string) string { return "" })
+	loaded, err := LoadEnvironment(func(name string) string {
+		if name == "DNSID_GOVERNANCE_ID" {
+			return "core-governance.example"
+		}
+		return ""
+	})
 	if err != nil || loaded.Foundry != (FoundryConfig{}) {
 		t.Fatal("environment inferred Foundry expectations")
+	}
+	if loaded.Dnsid.Identity == nil || loaded.Dnsid.Identity.GovernanceID != "core-governance.example" {
+		t.Fatal("environment governance ID did not remain a core identity setting")
 	}
 }

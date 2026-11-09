@@ -50,6 +50,7 @@ jobs:
             echo "version=$NEXT" >> "$GITHUB_OUTPUT"
             echo "$NEXT" > .release-version
             (cd key/aws && go mod edit -require github.com/dnsid-ai/dnsid-go@$NEXT)
+            (cd key/gcp && go mod edit -require github.com/dnsid-ai/dnsid-go@$NEXT)
             (cd examples/deployment-identity && go mod edit \
               -require github.com/dnsid-ai/dnsid-go@$NEXT \
               -require github.com/dnsid-ai/dnsid-go/key/aws@$NEXT)

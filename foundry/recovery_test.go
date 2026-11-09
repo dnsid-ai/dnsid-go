@@ -115,11 +115,16 @@ func TestInvalidCountersignatureDoesNotPoisonIssuance(t *testing.T) {
 	if len(f.registry.submissions) != 0 {
 		t.Fatal("invalid countersignature sent to registry")
 	}
+	saved := f.document("signature").Issuance
+	if saved == nil || saved.PreparedBytes == "" || saved.Operation == nil || len(saved.Operation.EntryBytes) != 0 {
+		t.Fatal("invalid local signature was persisted or prepared bytes were discarded")
+	}
+	prepared := saved.PreparedBytes
 	provider.corrupt = false
 	if _, err := id.Active(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if f.registry.prepareCalls != 1 || len(f.registry.submissions) != 1 {
+	if f.registry.prepareCalls != 1 || len(f.registry.submissions) != 1 || f.document("signature").Issuance.PreparedBytes != prepared {
 		t.Fatal("prepared bytes or issuance key poisoned")
 	}
 }
@@ -340,4 +345,14 @@ func TestRefreshBindingMismatchDurablyPausesSigning(t *testing.T) {
 	}
 	_, err = reopened.Sign([]byte("data"))
 	requirePaused(t, err)
+	f.publish(f.operational, "governance.example", testLR, dnsid.AgentStateActive)
+	if _, err := reopened.Active(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if f.document("mismatch").SigningPaused {
+		t.Fatal("verified Active did not clear the mismatch pause")
+	}
+	if _, err := reopened.Sign([]byte("data")); err != nil {
+		t.Fatal(err)
+	}
 }

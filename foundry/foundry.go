@@ -1,7 +1,8 @@
 //go:build dnsid_foundry
 
 // Package foundry implements Known Foundry named caller-key Live creation.
-// It targets the contract pinned at dnsid-sdk-compliance 665aa67. Server SR-1
+// Importing it requires the dnsid_foundry build tag.
+// It targets the contract pinned at dnsid-sdk-compliance e01bcf3. Server SR-1
 // through SR-7 remain release gates; no deployed server revision is certified.
 // Core DNSid, ordinary registration, and configuration loading do not depend on it.
 package foundry
@@ -234,7 +235,7 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 	}
 	// Validate an already-open key before account discovery, without provisioning.
 	if c.deps.KeyProvider != nil {
-		if err := validateProviderKey(ctx, c.deps.KeyProvider, false, false); err != nil && !isKind(err, KeyMissing) {
+		if err := validateProviderKey(ctx, c.deps.KeyProvider, false); err != nil && !isKind(err, KeyMissing) {
 			return nil, err
 		}
 	}
@@ -288,7 +289,7 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 			return nil, c.wrap(doc, err)
 		}
 	}
-	if err := validateProviderKey(ctx, provider, doc == nil, doc == nil || doc.Phase == "creation-pending"); err != nil {
+	if err := validateProviderKey(ctx, provider, doc == nil || doc.Phase == "creation-pending"); err != nil {
 		var structured *Error
 		if errors.As(err, &structured) {
 			return nil, withFacts(err, doc)

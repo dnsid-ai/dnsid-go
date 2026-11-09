@@ -4,6 +4,7 @@ package foundry
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -58,27 +59,90 @@ func TestLazyLogTrustConstructionDoesNotFetchPolicy(t *testing.T) {
 	}
 }
 
-func TestNoStateReplicaAfterRotationReturnsKeyMismatch(t *testing.T) {
-	f := newFixture(t)
-	id, err := f.client.Create(context.Background(), "rotated-replica")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := id.Active(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	successor := dnsid.GenerateEd25519KeyProvider()
-	store, err := NewFileFoundryStore(filepath.Join(t.TempDir(), "replica"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.store = store
-	client := f.newClient(successor, store)
-	before := f.publicCalls
-	_, err = client.Create(context.Background(), "rotated-replica")
-	requireKind(t, err, KeyMismatch)
-	if f.publicCalls != before || f.log.historyCalls != 0 || f.registry.prepareCalls != 1 {
-		t.Fatal("no-state replica tried to resolve or adopt a rotated identity")
+func TestNoStateReplicaAfterRotationRecoversCurrentKey(t *testing.T) {
+	for _, scenario := range []string{"verified rotation", "replayed proof", "rejected preparation", "unrelated key", "wrong signed ku"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newFixture(t)
+			id, err := f.client.Create(context.Background(), "rotated-replica")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := id.Active(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			original := f.document("rotated-replica")
+			successor := dnsid.GenerateEd25519KeyProvider()
+			currentThumb, err := keyThumb(successor.JWK())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.publish(successor, "governance.example", testLR, dnsid.AgentStateActive)
+			if scenario != "unrelated key" {
+				f.log.currentThumb = currentThumb
+				f.log.events = append(f.log.events, dnsidlog.LogEvent{Type: dnsidlog.LogEventKeyRotation, Domain: testDomain, NewOperationalPublicKey: successor.JWK(), NewOperationalThumbprint: currentThumb})
+			}
+			if scenario == "wrong signed ku" {
+				f.publish(f.operational, "governance.example", testLR, dnsid.AgentStateActive)
+			}
+			// Server rotation replaces the stored key used for caller-key replay.
+			f.registry.initial, err = json.Marshal(successor.JWK())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.registry.challenge = scenario == "replayed proof"
+			f.registry.status = "provider_deferred"
+			f.registry.statuses = []string{"READY"}
+			if scenario == "rejected preparation" {
+				f.registry.statuses = []string{"VERIFIED"}
+			}
+			store, err := NewFileFoundryStore(filepath.Join(t.TempDir(), "replica"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.store = store
+			client := f.newClient(successor, store)
+			replica, err := client.Create(context.Background(), "rotated-replica")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = replica.Sign([]byte("data"))
+			requirePaused(t, err)
+			_, err = replica.Active(context.Background())
+			switch scenario {
+			case "unrelated key":
+				requireKind(t, err, Integrity)
+			case "wrong signed ku":
+				requireKind(t, err, Integrity)
+			default:
+				if err != nil {
+					t.Fatal(err)
+				}
+				saved := f.document("rotated-replica")
+				if !sameJSON(saved.InitialPublicKey, original.InitialPublicKey) || !sameJSON(saved.CurrentPublicKey, saved.CreationInput.PublicKey) || !sameJSON(saved.CurrentPublicKey, f.registry.initial) || saved.RequestID == original.RequestID || !saved.Issuance.Recovered {
+					t.Fatal("recovery lost initial, current, or creation key bindings")
+				}
+				if scenario == "replayed proof" && (saved.Proof == nil || saved.Proof.Outcome != "accepted" || f.registry.proofCalls != 1) {
+					t.Fatal("recovery lost the creation-key proof")
+				}
+				if _, err := replica.Sign([]byte("data")); err != nil {
+					t.Fatal(err)
+				}
+				reopened, err := client.Create(context.Background(), "rotated-replica")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := reopened.Sign([]byte("data")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			preparations := 1
+			if scenario == "rejected preparation" {
+				preparations++
+			}
+			if f.log.historyCalls != 1 || f.registry.prepareCalls != preparations || len(f.registry.submissions) != 1 {
+				t.Fatal("recovery prepared or submitted another ISSUANCE")
+			}
+		})
 	}
 }
 

@@ -150,6 +150,7 @@ EOF
 
 # page slug | module dir | package dir within module | nav label | description
 PACKAGES=(
+	"foundry|.|./foundry|Known Foundry (build-tagged)|Named caller-key Live creation and durable recovery; requires the dnsid_foundry build tag and server acceptance."
 	"config|.|./config|Configuration|Load DNSid SDK configuration from DNSID_* environment variables and DNSid CLI directories; loaders parse, constructors default."
 	"jose|.|./jose|Profile: JOSE|DNSid JOSE profile: create and verify DNSid JWTs and compact JWS."
 	"oidc|.|./oidc|Profile: OIDC|Mint and verify DNSid OIDC tokens."
@@ -158,6 +159,7 @@ PACKAGES=(
 	"log|.|./log|Lifecycle log|Agent lifecycle log abstractions for DNSid."
 	"log-c2sptlog|.|./log/c2sptlog|Transparency log|C2SP transparency-log (tlog) client support for DNSid lifecycle logs."
 	"key-aws|key/aws|.|Key providers: AWS KMS|AWS KMS-backed key provider for DNSid."
+	"key-gcp|key/gcp|.|Key providers: Google Cloud KMS|Google Cloud KMS-backed Ed25519 key provider for DNSid."
 )
 
 # Docs-site nav (and overview package-map) order — the shared cross-SDK
@@ -173,7 +175,9 @@ NAV_ORDER=(
 	oidc
 	dnsid-keys
 	key-aws
+	key-gcp
 	dnsid-registry
+	foundry
 	log
 	log-c2sptlog
 	dnsid-errors
@@ -247,13 +251,16 @@ for entry in "${PACKAGES[@]}"; do
 		import="$modpath/${pkgdir#./}"
 	fi
 
-	pkgname="$(cd "$moddir" && go list -f '{{.Name}}' "$pkgdir")"
+	# The release-gated package is documented without enabling default imports.
+	tags=(--tags "")
+	[ "$slug" = "foundry" ] && tags=(--tags dnsid_foundry)
+	pkgname="$(cd "$moddir" && go list "${tags[@]}" -f '{{.Name}}' "$pkgdir")"
 
 	repo_path="/"
 	[ "$moddir" != "." ] && repo_path="/$moddir/"
 
 	raw="$tmp/$slug.md"
-	(cd "$moddir" && $GOMARKDOC \
+	(cd "$moddir" && $GOMARKDOC "${tags[@]}" \
 		--output "$raw" \
 		--repository.url "$REPO_URL" \
 		--repository.default-branch main \
@@ -291,7 +298,7 @@ fi
 {
 	frontmatter "Go: SDK overview" "Package map for the DNSid Go SDK and where to start."
 	banner "$ROOT_MODULE"
-	printf 'The Go SDK is the module `%s`, plus the separately tagged `key/aws` submodule. Install it with:\n\n' "$ROOT_MODULE"
+	printf 'The Go SDK is the module `%s`, plus the separately tagged `key/aws` and `key/gcp` submodules. Install it with:\n\n' "$ROOT_MODULE"
 	printf '```bash\ngo get %s\n```\n\n' "$ROOT_MODULE"
 	printf 'Start with the root package: `IdentityManager` is the facade for verifying domains, creating and publishing identity records, and loading the agent identity your application acts as. The root package is documented across the `dnsid` pages below; the other packages are application profiles and infrastructure you pull in as needed.\n\n'
 	printf '| Page | What it covers |\n'
