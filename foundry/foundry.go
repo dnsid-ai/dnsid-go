@@ -519,7 +519,7 @@ func withFacts(err error, doc *RecoveryDocument) error {
 }
 
 func (c *Client) deadlineError(ctx context.Context, doc *RecoveryDocument, err error) error {
-	if ctx.Err() == nil {
+	if err == nil || ctx.Err() == nil {
 		return err
 	}
 	var structured *Error

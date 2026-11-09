@@ -88,6 +88,31 @@ func TestRefreshCancellationPreservesVerifiedSigning(t *testing.T) {
 	}
 }
 
+func TestActive_SuccessPreservedAfterCallerDeadline(t *testing.T) {
+	f := newFixture(t)
+	id, err := f.client.Create(context.Background(), "deadline-after-success")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := &controlledDeadlineContext{Context: context.Background(), done: make(chan struct{}), deadline: time.Now().Add(time.Hour)}
+	id.client.deps.Store = expireOnCloseStore{FoundryStore: f.store, caller: ctx}
+
+	active, err := id.Active(ctx)
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatal("caller deadline did not expire before Active returned")
+	}
+	doc := f.document("deadline-after-success")
+	if doc.Phase != "complete" || doc.SigningPaused {
+		t.Fatal("Active did not save completed, unpaused state")
+	}
+	if _, signErr := id.Sign([]byte("completed before deadline")); signErr != nil {
+		t.Fatal(signErr)
+	}
+	if err != nil || active != id {
+		t.Fatalf("successful Active was changed by caller deadline: identity=%p, err=%v", active, err)
+	}
+}
+
 func TestRefreshRequestTimeoutPreservesVerifiedSigning(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -173,7 +198,7 @@ func TestConfirmedPauseSurvivesCallerDeadlineAndRestart(t *testing.T) {
 	}
 }
 
-// Expiry is triggered only after Active has classified the unsafe observation.
+// Store hooks trigger expiry without wall-clock timers.
 type controlledDeadlineContext struct {
 	context.Context
 	done     chan struct{}
@@ -189,6 +214,33 @@ func (c *controlledDeadlineContext) Err() error {
 	default:
 		return nil
 	}
+}
+
+type expireOnCloseStore struct {
+	FoundryStore
+	caller *controlledDeadlineContext
+}
+
+func (s expireOnCloseStore) Lock(ctx context.Context, key OperationKey) (FoundryLease, error) {
+	lease, err := s.FoundryStore.Lock(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return expireOnCloseLease{FoundryLease: lease, ctx: ctx, caller: s.caller}, nil
+}
+
+type expireOnCloseLease struct {
+	FoundryLease
+	ctx    context.Context
+	caller *controlledDeadlineContext
+}
+
+func (l expireOnCloseLease) Close() error {
+	err := l.FoundryLease.Close()
+	close(l.caller.done)
+	// Wait for cancellation to reach Active's derived context before returning.
+	<-l.ctx.Done()
+	return err
 }
 
 type expireOnPauseStore struct {
