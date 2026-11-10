@@ -1,6 +1,7 @@
 package awskms
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -8,7 +9,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	dnsid "github.com/dnsid-ai/dnsid-go"
 	"testing"
 )
 
@@ -147,6 +150,62 @@ func TestMultiRegionSameKey(t *testing.T) {
 				if ed25519.Verify(raw, append(append([]byte{}, payload...), 1), sig) || ed25519.Verify(wrong, payload, sig) {
 					t.Fatal("tamper/wrong-key accepted")
 				}
+			}
+		})
+	}
+}
+
+// F2 Mode: fake-only (AWS call accounting); packet/vendor RAW bound, not DIGEST.
+type rawBoundary61 struct {
+	*regional61
+	signs, creates int
+}
+
+func (f *rawBoundary61) Sign(ctx context.Context, in SignInput) (SignOutput, error) {
+	f.signs++
+	return f.regional61.Sign(ctx, in)
+}
+func (f *rawBoundary61) CreateSigningKey(context.Context, CreateSigningKeyInput) (CreateSigningKeyOutput, error) {
+	f.creates++
+	return CreateSigningKeyOutput{}, fmt.Errorf("unexpected generation")
+}
+
+func TestAWSRawBoundary61(t *testing.T) {
+	for _, size := range []int{4096, 4097} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			// Given a pre-existing Ed25519 key and a fake that can sign either size.
+			seed, _ := hex.DecodeString("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+			public, _ := hex.DecodeString("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+			ref := topology61()[0][0]
+			client := &rawBoundary61{regional61: &regional61{t, ref, ed25519.NewKeyFromSeed(seed)}}
+			p, err := Load(context.Background(), client, Config{State: State{ActiveKeyID: ref}, Algorithm: types.SigningAlgorithmSpecEd25519Sha512})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := bytes.Repeat([]byte{0x61}, size)
+			// When signing through both public runtime entry points.
+			for _, named := range []bool{false, true} {
+				before := client.signs
+				var sig *dnsid.KeySignature
+				if named {
+					sig, err = p.SignKey(ref, payload)
+				} else {
+					sig, err = p.Sign(payload)
+				}
+				// Then the inclusive boundary signs RAW; oversized data never reaches KMS.
+				if size == 4096 {
+					if err != nil || sig == nil {
+						t.Fatalf("4096 bytes must sign: %v", err)
+					}
+					if client.signs != before+1 || sig.Kid != ref || string(sig.Alg) != "EdDSA" || !ed25519.Verify(public, payload, sig.Signature) {
+						t.Fatal("4096-byte native signature/binding failed")
+					}
+				} else if err == nil || sig != nil || client.signs != before {
+					t.Errorf("4097 bytes must fail before native Sign: error=%v resultPresent=%v nativeCalls=%d", err, sig != nil, client.signs-before)
+				}
+			}
+			if client.creates != 0 {
+				t.Errorf("generation calls=%d, want zero", client.creates)
 			}
 		})
 	}
