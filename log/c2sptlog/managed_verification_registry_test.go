@@ -2,6 +2,7 @@ package c2sptlog
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,10 @@ witness dnsid-witness-1 witness.dev.dnsid.ai/w1+50822ded+BAH9KuulelD3yZBDTneG46g
 quorum dnsid-witness-1
 `
 	expectedManagedDevelopmentBundleVerifierKey = "dnsid-stream-bundle+0c241174+AeuT9PKyiewb9hkzygvki7UuOs5ly2kfY/C4Tfh7/ix0"
-	expectedManagedProductionPolicy             = `log log.dnsid.ai+f10a26bc+Aeo6u4o1XvQlcRczgY462ZdIGpm/ejBC2G3vSbyYYqqY
+	// expectedManagedDevelopmentOverflowBundleVerifierKey signs dev bundles over the
+	// 4096-byte KMS limit (Identity-Digital/dnsid#3286).
+	expectedManagedDevelopmentOverflowBundleVerifierKey = "dnsid-stream-bundle+62f7f9fa+ATdOWF5P759HgvDod9mIC0r1nXhTtJ7x1Ws0fjTvqwDV"
+	expectedManagedProductionPolicy                     = `log log.dnsid.ai+f10a26bc+Aeo6u4o1XvQlcRczgY462ZdIGpm/ejBC2G3vSbyYYqqY
 witness dnsid-witness-1 witness.dnsid.ai/w1+706fd4fb+BLqX21Sx9xG5+5vK7kSK5omcu9+2il20PLdfpOp8lQOJ
 quorum dnsid-witness-1
 `
@@ -33,7 +37,7 @@ func TestManagedDevelopmentCatalogEntryIsReviewedTrustProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if profile.PolicyDocument != expectedManagedDevelopmentPolicy || len(profile.BundleVerifierKeys) != 1 || profile.BundleVerifierKeys[0] != expectedManagedDevelopmentBundleVerifierKey {
+	if profile.PolicyDocument != expectedManagedDevelopmentPolicy || len(profile.BundleVerifierKeys) != 2 || profile.BundleVerifierKeys[0] != expectedManagedDevelopmentBundleVerifierKey || profile.BundleVerifierKeys[1] != expectedManagedDevelopmentOverflowBundleVerifierKey {
 		t.Fatalf("unexpected pinned development trust profile: %+v", profile)
 	}
 }
@@ -249,5 +253,60 @@ func TestDnsidManagedVerificationRegistry_HonorsTransport(t *testing.T) {
 	}
 	if _, err := NewDnsidManagedVerificationRegistry(context.Background(), DnsidManagedVerificationConfig{Transport: transport, ResourceFetcher: &testBoundedFetcher{}}); err != nil {
 		t.Fatal("explicit fetcher should override SDK transport:", err)
+	}
+}
+
+// Reviewed service fixtures from Identity-Digital/dnsid#3286, captured
+// 2026-11-10. The dev log signs a bundle of at most 4096 signed bytes with its
+// KMS key and a larger one with a secret-held key, so the pinned development
+// profile must accept both: a two-event stream signed by the KMS key and a
+// three-event stream (issuance, key rotation, revocation) signed by the
+// secret-held key. Each verifies at a clock just inside its expiry.
+func TestManagedDevelopmentProfileVerifiesBundlesFromBothBundleKeys(t *testing.T) {
+	profile, err := ParseTrustProfile([]byte(managedDevelopmentProfile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifiers, err := profile.validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		fixture, kid string
+		events       int
+	}{
+		{"c2sp-dev-stream-bundle-kms-key.json", "dnsid-stream-bundle+0c241174", 2},
+		{"c2sp-dev-stream-bundle-overflow-key.json", "dnsid-stream-bundle+62f7f9fa", 3},
+	} {
+		t.Run(tc.kid, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("testdata", tc.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var bundle struct {
+				Expires int64 `json:"expires"`
+				Sig     struct {
+					Kid string `json:"kid"`
+				} `json:"sig"`
+			}
+			if err := json.Unmarshal(data, &bundle); err != nil {
+				t.Fatal(err)
+			}
+			if bundle.Sig.Kid != tc.kid {
+				t.Fatalf("fixture kid = %q, want %q", bundle.Sig.Kid, tc.kid)
+			}
+			verified, err := VerifyStreamBundle(context.Background(), data, StreamBundleTrust{
+				PolicyDocument:    []byte(profile.PolicyDocument),
+				BundleVerifiers:   verifiers,
+				Now:               func() time.Time { return time.Unix(bundle.Expires-60, 0) },
+				MaxBundleLifetime: managedVerificationFreshness,
+			})
+			if err != nil {
+				t.Fatalf("pinned development profile rejects a %s-signed stream bundle: %v", tc.kid, err)
+			}
+			if verified.Reference.LogPrefix != "https://log.dev.dnsid.ai" || verified.LoggedState != "REVOKED" || len(verified.Events) != tc.events || verified.SignerKeyID != tc.kid {
+				t.Fatalf("unexpected development bundle: %s %s, %d events, signer %q", verified.Reference.LogPrefix, verified.LoggedState, len(verified.Events), verified.SignerKeyID)
+			}
+		})
 	}
 }
