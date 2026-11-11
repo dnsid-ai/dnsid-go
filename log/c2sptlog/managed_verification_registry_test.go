@@ -26,6 +26,9 @@ witness dnsid-witness-1 witness.dnsid.ai/w1+706fd4fb+BLqX21Sx9xG5+5vK7kSK5omcu9+
 quorum dnsid-witness-1
 `
 	expectedManagedProductionBundleVerifierKey = "dnsid-stream-bundle+2e77a3f1+AbKj/zrAfK04/NM07Zj7kxP2YXbM5neT8ym6juXC2PXG"
+	// expectedManagedProductionOverflowBundleVerifierKey signs production bundles over the
+	// 4096-byte KMS limit (Identity-Digital/dnsid#3286).
+	expectedManagedProductionOverflowBundleVerifierKey = "dnsid-stream-bundle+0f5a76a0+AXavEa0+EGj/qZFH4QuAOeomigSukspWQHC7PrVJa7pj"
 )
 
 func TestManagedDevelopmentCatalogEntryIsReviewedTrustProfile(t *testing.T) {
@@ -57,7 +60,7 @@ func TestManagedProductionCatalogEntryIsReviewedTrustProfile(t *testing.T) {
 	if profile.PolicyDocument != expectedManagedProductionPolicy {
 		t.Fatalf("production policy = %q, want %q", profile.PolicyDocument, expectedManagedProductionPolicy)
 	}
-	if len(profile.BundleVerifierKeys) != 1 || profile.BundleVerifierKeys[0] != expectedManagedProductionBundleVerifierKey {
+	if len(profile.BundleVerifierKeys) != 2 || profile.BundleVerifierKeys[0] != expectedManagedProductionBundleVerifierKey || profile.BundleVerifierKeys[1] != expectedManagedProductionOverflowBundleVerifierKey {
 		t.Fatalf("production bundle verifier keys = %#v", profile.BundleVerifierKeys)
 	}
 }
@@ -68,6 +71,9 @@ witness dnsid-witness-1 witness.partners.dnsid.ai/w1+a115eb67+BB0avWVeSelUBk2w8F
 quorum dnsid-witness-1
 `
 	expectedManagedPartnersBundleVerifierKey = "dnsid-stream-bundle+b1e0b597+AQt9ol4cfwPHxdH4NHNRidsAvU2bYE7KVItOlBG/bsaZ"
+	// expectedManagedPartnersOverflowBundleVerifierKey signs partner bundles over the
+	// 4096-byte KMS limit (Identity-Digital/dnsid#3286).
+	expectedManagedPartnersOverflowBundleVerifierKey = "dnsid-stream-bundle+bc0d8136+AVfizbWWQD+s2N7OfpOeP7IaWF8nAeTqT4JpD03vKqc6"
 )
 
 func TestManagedPartnersCatalogEntryIsReviewedTrustProfile(t *testing.T) {
@@ -85,7 +91,7 @@ func TestManagedPartnersCatalogEntryIsReviewedTrustProfile(t *testing.T) {
 	if profile.PolicyDocument != expectedManagedPartnersPolicy {
 		t.Fatalf("partners policy = %q, want %q", profile.PolicyDocument, expectedManagedPartnersPolicy)
 	}
-	if len(profile.BundleVerifierKeys) != 1 || profile.BundleVerifierKeys[0] != expectedManagedPartnersBundleVerifierKey {
+	if len(profile.BundleVerifierKeys) != 2 || profile.BundleVerifierKeys[0] != expectedManagedPartnersBundleVerifierKey || profile.BundleVerifierKeys[1] != expectedManagedPartnersOverflowBundleVerifierKey {
 		t.Fatalf("partners bundle verifier keys = %#v", profile.BundleVerifierKeys)
 	}
 }
