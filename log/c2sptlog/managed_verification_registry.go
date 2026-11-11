@@ -46,6 +46,19 @@ const (
     "dnsid-stream-bundle+bc0d8136+AVfizbWWQD+s2N7OfpOeP7IaWF8nAeTqT4JpD03vKqc6"
   ]
 }`
+
+	// managedStagingProfile matches the reviewed service profile embedded in the
+	// DNSid CLI; the log's discovery endpoints are not trust anchors.
+	managedStagingProfile = `{
+  "version": 1,
+  "scope": "public",
+  "log_prefix": "https://log.stg.dnsid.ai",
+  "tlog_policy": "log log.stg.dnsid.ai+f6ad3bd8+ARl6baGOUzNIH2QvsnlqA8C71WM4SYecXE7eAwmytAsL\nwitness dnsid-witness-1 witness.stg.dnsid.ai/w1+11a84cde+BEKB6hwsWXOm+PMnS7/JvO4i6bazjzJ8ojECphOTB3gt\nquorum dnsid-witness-1\n",
+  "bundle_verifier_keys": [
+    "dnsid-stream-bundle+65c31b14+AXCMTPR4I/fqOgSHge4AEMp+1pWcflDqC1YEDaHDe3Ps",
+    "dnsid-stream-bundle+cdd64875+ATu1SYXvRiZPBUzrUJAfKHeMH3eHr3T22jKez/C3Yl1m"
+  ]
+}`
 )
 
 // DnsidManagedVerificationConfig configures shared infrastructure for
@@ -80,6 +93,7 @@ var dnsidManagedTrustCatalog = []managedTrustEntry{
 	{scope: "public", logPrefix: "https://log.dev.dnsid.ai", trustProfileDocument: managedDevelopmentProfile},
 	{scope: "public", logPrefix: "https://log.dnsid.ai", trustProfileDocument: managedProductionProfile},
 	{scope: "public", logPrefix: "https://log.partners.dnsid.ai", trustProfileDocument: managedPartnersProfile},
+	{scope: "public", logPrefix: "https://log.stg.dnsid.ai", trustProfileDocument: managedStagingProfile},
 }
 
 // NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed,
@@ -87,8 +101,9 @@ var dnsidManagedTrustCatalog = []managedTrustEntry{
 // separately named factory is an explicit application trust decision; the
 // generic NewVerificationRegistry never selects these roots implicitly.
 //
-// The catalog covers the development, production, and partner
-// (https://log.partners.dnsid.ai) logs. Each prefers signed stream bundles with
+// The catalog covers the development, production, partner
+// (https://log.partners.dnsid.ai), and staging (https://log.stg.dnsid.ai) logs.
+// Each prefers signed stream bundles with
 // safe raw-scan fallback. The default checkpoint store is restart-ephemeral;
 // deployments needing rollback protection across restarts should inject durable
 // storage and retain the returned registry for the process lifetime.
