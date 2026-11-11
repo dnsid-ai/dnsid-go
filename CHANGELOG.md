@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.47.0] - 2026-11-10
+
+### Features
+
+- feat!: optional Google Cloud KMS Ed25519 provider; all configuration-selected key providers now require fresh verified publication at startup and DNS/HTTPS/log availability; caller-injected initial setup retains caller-owned binding checks and provider lifetime responsibility ([#130](https://github.com/dnsid-ai/dnsid-go/pull/130))
+- feat: explicit AWS/GCP KMS-first operational key setup (#58) ([#136](https://github.com/dnsid-ai/dnsid-go/pull/136))
+- feat: add Known Foundry named creation ([#132](https://github.com/dnsid-ai/dnsid-go/pull/132))
+- feat: trust dnsid-dev's secret-held stream-bundle key ([#137](https://github.com/dnsid-ai/dnsid-go/pull/137))
+
+### Bug Fixes
+
+- fix: omit blank deployment key-source strings ([#126](https://github.com/dnsid-ai/dnsid-go/pull/126))
+
+### Testing
+
+- ci(security): bump shared workflow to v1.4.1 ([#127](https://github.com/dnsid-ai/dnsid-go/pull/127))
+- ci(security): bump shared workflow to v1.5.0 ([#129](https://github.com/dnsid-ai/dnsid-go/pull/129))
+- test: guard operational local-key startup warnings (#57) ([#131](https://github.com/dnsid-ai/dnsid-go/pull/131))
+
 ## [0.46.1] - 2026-11-04
 
 ### Features
