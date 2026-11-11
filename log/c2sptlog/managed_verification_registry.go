@@ -47,8 +47,11 @@ const (
   ]
 }`
 
-	// managedStagingProfile matches the reviewed service profile embedded in the
-	// DNSid CLI; the log's discovery endpoints are not trust anchors.
+	// managedStagingProfile matches the reviewed service profile
+	// internal/c2sptrust/profiles/staging.json in Identity-Digital/dnsid (its second
+	// bundle key from Identity-Digital/dnsid#3526); the log's discovery endpoints are
+	// not trust anchors. note.NewVerifier rejects a key whose ID does not match its
+	// key bytes.
 	managedStagingProfile = `{
   "version": 1,
   "scope": "public",
