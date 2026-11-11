@@ -29,7 +29,8 @@ const (
   "log_prefix": "https://log.dnsid.ai",
   "tlog_policy": "log log.dnsid.ai+f10a26bc+Aeo6u4o1XvQlcRczgY462ZdIGpm/ejBC2G3vSbyYYqqY\nwitness dnsid-witness-1 witness.dnsid.ai/w1+706fd4fb+BLqX21Sx9xG5+5vK7kSK5omcu9+2il20PLdfpOp8lQOJ\nquorum dnsid-witness-1\n",
   "bundle_verifier_keys": [
-    "dnsid-stream-bundle+2e77a3f1+AbKj/zrAfK04/NM07Zj7kxP2YXbM5neT8ym6juXC2PXG"
+    "dnsid-stream-bundle+2e77a3f1+AbKj/zrAfK04/NM07Zj7kxP2YXbM5neT8ym6juXC2PXG",
+    "dnsid-stream-bundle+0f5a76a0+AXavEa0+EGj/qZFH4QuAOeomigSukspWQHC7PrVJa7pj"
   ]
 }`
 
@@ -41,7 +42,24 @@ const (
   "log_prefix": "https://log.partners.dnsid.ai",
   "tlog_policy": "log log.partners.dnsid.ai+f0143e09+Ae5vrTVQUr0h2GKbeHq70ml37N+uVBsU4NpZD4qMqAu1\nwitness dnsid-witness-1 witness.partners.dnsid.ai/w1+a115eb67+BB0avWVeSelUBk2w8FtTbT+orf2i826q9VemA0jaXxg4\nquorum dnsid-witness-1\n",
   "bundle_verifier_keys": [
-    "dnsid-stream-bundle+b1e0b597+AQt9ol4cfwPHxdH4NHNRidsAvU2bYE7KVItOlBG/bsaZ"
+    "dnsid-stream-bundle+b1e0b597+AQt9ol4cfwPHxdH4NHNRidsAvU2bYE7KVItOlBG/bsaZ",
+    "dnsid-stream-bundle+bc0d8136+AVfizbWWQD+s2N7OfpOeP7IaWF8nAeTqT4JpD03vKqc6"
+  ]
+}`
+
+	// managedStagingProfile matches the reviewed service profile
+	// internal/c2sptrust/profiles/staging.json in Identity-Digital/dnsid (its second
+	// bundle key from Identity-Digital/dnsid#3526); the log's discovery endpoints are
+	// not trust anchors. note.NewVerifier rejects a key whose ID does not match its
+	// key bytes.
+	managedStagingProfile = `{
+  "version": 1,
+  "scope": "public",
+  "log_prefix": "https://log.stg.dnsid.ai",
+  "tlog_policy": "log log.stg.dnsid.ai+f6ad3bd8+ARl6baGOUzNIH2QvsnlqA8C71WM4SYecXE7eAwmytAsL\nwitness dnsid-witness-1 witness.stg.dnsid.ai/w1+11a84cde+BEKB6hwsWXOm+PMnS7/JvO4i6bazjzJ8ojECphOTB3gt\nquorum dnsid-witness-1\n",
+  "bundle_verifier_keys": [
+    "dnsid-stream-bundle+65c31b14+AXCMTPR4I/fqOgSHge4AEMp+1pWcflDqC1YEDaHDe3Ps",
+    "dnsid-stream-bundle+cdd64875+ATu1SYXvRiZPBUzrUJAfKHeMH3eHr3T22jKez/C3Yl1m"
   ]
 }`
 )
@@ -78,6 +96,7 @@ var dnsidManagedTrustCatalog = []managedTrustEntry{
 	{scope: "public", logPrefix: "https://log.dev.dnsid.ai", trustProfileDocument: managedDevelopmentProfile},
 	{scope: "public", logPrefix: "https://log.dnsid.ai", trustProfileDocument: managedProductionProfile},
 	{scope: "public", logPrefix: "https://log.partners.dnsid.ai", trustProfileDocument: managedPartnersProfile},
+	{scope: "public", logPrefix: "https://log.stg.dnsid.ai", trustProfileDocument: managedStagingProfile},
 }
 
 // NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed,
@@ -85,8 +104,9 @@ var dnsidManagedTrustCatalog = []managedTrustEntry{
 // separately named factory is an explicit application trust decision; the
 // generic NewVerificationRegistry never selects these roots implicitly.
 //
-// The catalog covers the development, production, and partner
-// (https://log.partners.dnsid.ai) logs. Each prefers signed stream bundles with
+// The catalog covers the development, production, partner
+// (https://log.partners.dnsid.ai), and staging (https://log.stg.dnsid.ai) logs.
+// Each prefers signed stream bundles with
 // safe raw-scan fallback. The default checkpoint store is restart-ephemeral;
 // deployments needing rollback protection across restarts should inject durable
 // storage and retain the returned registry for the process lifetime.

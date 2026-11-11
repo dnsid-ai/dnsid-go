@@ -164,7 +164,7 @@ and your resolver. Optional cloud providers also use provider defaults and crede
 
 - DNS TXT lookup of `_dnsid.<domain>` through your system resolver (no hardcoded resolver)
 - HTTPS GET to the JWKS and status URLs published in that TXT record
-- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` / `log.partners.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws` or `key/gcp`
+- Opt-in only, never contacted unless you configure them: `https://log.dnsid.ai` / `log.dev.dnsid.ai` / `log.partners.dnsid.ai` / `log.stg.dnsid.ai` (C2SP transparency log via `log/c2sptlog`, bundled public trust roots), cloud KMS endpoints via `key/aws` or `key/gcp`
 - `key/gcp` uses the official Google KMS client over gRPC/TLS (default `cloudkms.googleapis.com:443`). Opening fetches the public key; signing sends the raw payload to KMS, not just a digest. Application Default Credentials (ADC) discovery may probe metadata; token acquisition and refresh vary by environment and credential type (for example OAuth token service, STS federation, IAM Credentials impersonation, or configured external credential sources). Some flows use self-signed JWTs without token exchange. Endpoint/auth options and credential configuration can change destinations; this is not a fixed egress allowlist or a claim that every flow calls all these services. See [provider lifecycle](docs/reference/key-gcp.md) and [transport operations](OPERATIONS.md#proxy-and-tls-options).
 - The DNSid SDK itself has no telemetry, usage reporting, update checks, or crash reporting; this does not describe every upstream cloud-client option or feature
 
