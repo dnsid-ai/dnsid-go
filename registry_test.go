@@ -1622,6 +1622,7 @@ func TestRegistryAPIErrorSubmissionSemantics(t *testing.T) {
 		retry     bool
 	}{
 		{"busy", http.StatusConflict, "TLOG_SUBMISSION_BUSY", SubmissionStatePending, true, true},
+		{"publication required", http.StatusConflict, "TLOG_PUBLICATION_REQUIRED", SubmissionStatePending, true, true},
 		{"indeterminate", http.StatusConflict, "TLOG_SUBMISSION_INDETERMINATE", SubmissionStateIndeterminate, true, true},
 		{"idempotency mismatch", http.StatusConflict, "TLOG_IDEMPOTENCY_MISMATCH", SubmissionStateRejected, false, false},
 		{"503 without code", http.StatusServiceUnavailable, "", SubmissionStateIndeterminate, true, true},

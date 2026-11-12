@@ -961,7 +961,9 @@ func (c *HTTPRegistryClient) RejectAgent(ctx context.Context, fqdn string) (*Lif
 }
 
 // VerifyAgent explicitly requests self-managed verification, including a retry
-// from ERROR regardless of error code. Live returns HTTP 409 INVALID_TRANSITION.
+// from ERROR regardless of error code. Ordinary self-managed registration needs
+// one call after the record, JWKS, and TLS are served; otherwise it stays
+// PROVISIONING until it times out. Live returns HTTP 409 INVALID_TRANSITION.
 // The request does not establish readiness; Create and polling never call it.
 func (c *HTTPRegistryClient) VerifyAgent(ctx context.Context, fqdn string) (*LifecycleResponse, error) {
 	return registryJSON[LifecycleResponse](c, ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/verify", nil)
@@ -1313,7 +1315,7 @@ func (e *RegistryAPIError) RetrySameEntry() bool {
 		return true
 	}
 	switch e.Code {
-	case "TLOG_SUBMISSION_BUSY", "TLOG_SUBMISSION_INDETERMINATE":
+	case "TLOG_SUBMISSION_BUSY", "TLOG_SUBMISSION_INDETERMINATE", "TLOG_PUBLICATION_REQUIRED":
 		return true
 	case "IDEMPOTENCY_MISMATCH", "TLOG_IDEMPOTENCY_MISMATCH", "TLOG_PREPARATION_MISMATCH", "TLOG_INVALID_ENTRY":
 		return false
@@ -1333,7 +1335,8 @@ func (e *RegistryAPIError) SubmissionState() SubmissionState {
 	switch e.Code {
 	case "TLOG_SUBMISSION_INDETERMINATE":
 		return SubmissionStateIndeterminate
-	case "TLOG_SUBMISSION_BUSY":
+	// Publication lag on owner-produced ISSUANCE: retry the same bytes once the record is live.
+	case "TLOG_SUBMISSION_BUSY", "TLOG_PUBLICATION_REQUIRED":
 		return SubmissionStatePending
 	case "IDEMPOTENCY_MISMATCH", "TLOG_IDEMPOTENCY_MISMATCH", "TLOG_PREPARATION_MISMATCH", "TLOG_INVALID_ENTRY":
 		return SubmissionStateRejected

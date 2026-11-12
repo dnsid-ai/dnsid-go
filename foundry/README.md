@@ -8,7 +8,7 @@ extra capability probe.
 The server contract requires HTTP 201 Live creation and replay with a matching
 Idempotency-Key, boolean `dns_published` on authenticated managed detail, and
 bilateral ISSUANCE before readiness. See [compatibility](../COMPATIBILITY.md#registration-without-nonce-proof)
-and the [design contract](https://github.com/dnsid-ai/dnsid-sdk-compliance/blob/e2d4d3ff5f4b9d815e837c33639e9a26c2329ec3/docs/sdk-design/13-known-foundry.md).
+and the [design contract](https://github.com/dnsid-ai/dnsid-sdk-compliance/blob/9f7a71fb24596a37712152f7bf5500f125a44b3b/docs/sdk-design/13-known-foundry.md).
 
 The package is excluded from default builds until those requirements are released.
 Developers and the CLI must explicitly opt in with `-tags dnsid_foundry`:
