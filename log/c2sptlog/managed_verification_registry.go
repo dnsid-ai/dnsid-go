@@ -62,6 +62,48 @@ const (
     "dnsid-stream-bundle+cdd64875+ATu1SYXvRiZPBUzrUJAfKHeMH3eHr3T22jKez/C3Yl1m"
   ]
 }`
+
+	// managedKnownDevelopmentProfile matches the reviewed service profile
+	// internal/c2sptrust/profiles/known-dev.json in Identity-Digital/dnsid for the
+	// Known development log (https://log.dev.knownsystems.ai); the log's discovery endpoints are not trust anchors.
+	managedKnownDevelopmentProfile = `{
+  "version": 1,
+  "scope": "public",
+  "log_prefix": "https://log.dev.knownsystems.ai",
+  "tlog_policy": "log log.dev.knownsystems.ai+78742e4f+AWJIIC/ZPaSwAprXLHT+JZ7lbTipE3MciQOdUGqG1T3j\nwitness dnsid-witness-1 witness.dev.knownsystems.ai/w1+21be2f43+BLsio+pQhADB8grceyZnOVERcoq+V6oJuUNy/IEfhsgt\nquorum dnsid-witness-1\n",
+  "bundle_verifier_keys": [
+    "dnsid-stream-bundle+138e0d41+AXy9jwvH7hY3LgjqoZn3GmNllKTj2TyNApRLKbt/2WSU",
+    "dnsid-stream-bundle+ad87852b+AWWyHhKGf9oKqaRCQfrk9kixjuz4fmhI5P08W5bsYxzj"
+  ]
+}`
+
+	// managedKnownStagingProfile matches the reviewed service profile
+	// internal/c2sptrust/profiles/known-staging.json in Identity-Digital/dnsid for the
+	// Known staging log (https://log.stg.knownsystems.ai); the log's discovery endpoints are not trust anchors.
+	managedKnownStagingProfile = `{
+  "version": 1,
+  "scope": "public",
+  "log_prefix": "https://log.stg.knownsystems.ai",
+  "tlog_policy": "log log.stg.knownsystems.ai+d3504618+AaUJP26XksZKcjmWHs7Cyq244q2efKUH1geUNb6bK5G7\nwitness dnsid-witness-1 witness.stg.knownsystems.ai/w1+e3954927+BA8QcWZ+kIuuakqhAbltJ1lFAYeuEqE98AYWyG9eKTil\nquorum dnsid-witness-1\n",
+  "bundle_verifier_keys": [
+    "dnsid-stream-bundle+85bbbf6c+AQEr6kb1rP1ZUJxEUl5ai5KxD86uHDRhHoF9rGewVgvC",
+    "dnsid-stream-bundle+64bf74b3+Aa0M4XaiO7BzP4fn7gLnWOw570/ml9x8xnEiv5fUqIW1"
+  ]
+}`
+
+	// managedKnownProductionProfile matches the reviewed service profile
+	// internal/c2sptrust/profiles/known-production.json in Identity-Digital/dnsid for the
+	// Known production log (https://log.knownsystems.ai); the log's discovery endpoints are not trust anchors.
+	managedKnownProductionProfile = `{
+  "version": 1,
+  "scope": "public",
+  "log_prefix": "https://log.knownsystems.ai",
+  "tlog_policy": "log log.knownsystems.ai+ffa9d1c9+Ad/NRlpkBsb9RjFstpUI2V38LF0G9DaJgHWtx5UtS6a7\nwitness dnsid-witness-1 witness.knownsystems.ai/w1+f726713e+BPq3DkSLKz0bMwDnwhwb9yhsGKT/0g0iPKZYekuumLfV\nquorum dnsid-witness-1\n",
+  "bundle_verifier_keys": [
+    "dnsid-stream-bundle+4c5de6cf+AeoiHt6HX3fniAPFeNMerJ52HKAlfLxbwFnxvyVM8GPj",
+    "dnsid-stream-bundle+4296adc5+AX8gHt0vQT0mICUKU2svFWcdcIhcQmGHYuR2kk/EsXex"
+  ]
+}`
 )
 
 // DnsidManagedVerificationConfig configures shared infrastructure for
@@ -97,6 +139,9 @@ var dnsidManagedTrustCatalog = []managedTrustEntry{
 	{scope: "public", logPrefix: "https://log.dnsid.ai", trustProfileDocument: managedProductionProfile},
 	{scope: "public", logPrefix: "https://log.partners.dnsid.ai", trustProfileDocument: managedPartnersProfile},
 	{scope: "public", logPrefix: "https://log.stg.dnsid.ai", trustProfileDocument: managedStagingProfile},
+	{scope: "public", logPrefix: "https://log.dev.knownsystems.ai", trustProfileDocument: managedKnownDevelopmentProfile},
+	{scope: "public", logPrefix: "https://log.stg.knownsystems.ai", trustProfileDocument: managedKnownStagingProfile},
+	{scope: "public", logPrefix: "https://log.knownsystems.ai", trustProfileDocument: managedKnownProductionProfile},
 }
 
 // NewDnsidManagedVerificationRegistry creates a LogRegistry for the reviewed,
@@ -104,9 +149,11 @@ var dnsidManagedTrustCatalog = []managedTrustEntry{
 // separately named factory is an explicit application trust decision; the
 // generic NewVerificationRegistry never selects these roots implicitly.
 //
-// The catalog covers the development, production, partner
-// (https://log.partners.dnsid.ai), and staging (https://log.stg.dnsid.ai) logs.
-// Each prefers signed stream bundles with
+// The catalog covers the DNSid development, production, partner
+// (https://log.partners.dnsid.ai), and staging (https://log.stg.dnsid.ai) logs,
+// and the Known development (https://log.dev.knownsystems.ai), staging
+// (https://log.stg.knownsystems.ai), and production (https://log.knownsystems.ai)
+// logs. Each prefers signed stream bundles with
 // safe raw-scan fallback. The default checkpoint store is restart-ephemeral;
 // deployments needing rollback protection across restarts should inject durable
 // storage and retain the returned registry for the process lifetime.
