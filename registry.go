@@ -814,8 +814,13 @@ func (c *HTTPRegistryClient) ListAgents(ctx context.Context, opts *ListAgentsOpt
 
 // GetAgentStatus returns the registry's detailed view of the agent at fqdn,
 // including workflow status, DNS publication state, and any workflow error.
+// UnsupportedRegistryResponse retains detail when managed publication is unsupported.
 func (c *HTTPRegistryClient) GetAgentStatus(ctx context.Context, fqdn string) (*AgentDetail, error) {
-	return registryJSON[AgentDetail](c, ctx, http.MethodGet, "/api/v1/agent/"+url.PathEscape(fqdn)+"/status", nil)
+	detail, err := registryJSON[AgentDetail](c, ctx, http.MethodGet, "/api/v1/agent/"+url.PathEscape(fqdn)+"/status", nil)
+	if err == nil && detail.Managed == "dnsid" && detail.MissingDNSPublished {
+		return detail, &UnsupportedRegistryResponse{Detail: detail}
+	}
+	return detail, err
 }
 
 // OrganizationOnboardingResponse contains authenticated account bindings and
@@ -871,7 +876,7 @@ func (c *HTTPRegistryClient) GetOrganizationOnboarding(ctx context.Context) (*Or
 // GetRegistration returns normalized registry workflow state for fqdn,
 // mapping the registry's managed mode ("self" or "dnsid") to a
 // PublicationAuthority. It returns a *ValidationError for unknown managed
-// modes.
+// modes, or *UnsupportedRegistryResponse for missing or invalid managed publication state.
 func (c *HTTPRegistryClient) GetRegistration(ctx context.Context, fqdn string) (*AgentRegistration, error) {
 	detail, err := c.GetAgentStatus(ctx, fqdn)
 	if err != nil {
@@ -882,9 +887,6 @@ func (c *HTTPRegistryClient) GetRegistration(ctx context.Context, fqdn string) (
 	case "self":
 		authority = PublicationAuthorityClient
 	case "dnsid":
-		if detail.MissingDNSPublished {
-			return nil, NewValidationError("dnsid: unsupported registry: dns_published must be a boolean", nil)
-		}
 		authority = PublicationAuthorityRegistry
 	default:
 		return nil, NewValidationError(fmt.Sprintf("dnsid: registry returned unknown managed mode %q", detail.Managed), nil)
@@ -958,14 +960,14 @@ func (c *HTTPRegistryClient) RejectAgent(ctx context.Context, fqdn string) (*Lif
 	return registryJSON[LifecycleResponse](c, ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/reject", nil)
 }
 
-// VerifyAgent asks the registry to run its verification step for fqdn and
-// advance the registration workflow.
+// VerifyAgent explicitly requests self-managed verification, including a retry
+// from ERROR regardless of error code. Live returns HTTP 409 INVALID_TRANSITION.
+// The request does not establish readiness; Create and polling never call it.
 func (c *HTTPRegistryClient) VerifyAgent(ctx context.Context, fqdn string) (*LifecycleResponse, error) {
 	return registryJSON[LifecycleResponse](c, ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/verify", nil)
 }
 
-// ConfirmReady confirms the agent at fqdn is ready to go live. It is an
-// alias for VerifyAgent.
+// ConfirmReady is an alias for VerifyAgent. It does not establish readiness.
 func (c *HTTPRegistryClient) ConfirmReady(ctx context.Context, fqdn string) (*LifecycleResponse, error) {
 	return c.VerifyAgent(ctx, fqdn)
 }
@@ -1353,18 +1355,6 @@ func registryJSON[T any](c *HTTPRegistryClient, ctx context.Context, method, pat
 	var out T
 	if err := c.doJSON(ctx, method, path, in, &out, headers...); err != nil {
 		return nil, err
-	}
-	return &out, nil
-}
-
-func registryJSONStatus[T any](c *HTTPRegistryClient, ctx context.Context, method, path string, in any, expectedStatus int, headers ...map[string]string) (*T, error) {
-	var out T
-	status, err := c.doJSONStatus(ctx, method, path, in, &out, headers...)
-	if err != nil {
-		return nil, err
-	}
-	if status != expectedStatus {
-		return nil, NewValidationError(fmt.Sprintf("dnsid: registry returned HTTP %d, want HTTP %d", status, expectedStatus), nil)
 	}
 	return &out, nil
 }

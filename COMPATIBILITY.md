@@ -76,10 +76,18 @@ during PROVISIONING, not after VERIFIED or READY. Authenticated registry-managed
 detail must include boolean `dns_published`: false means wait; absent, null, or
 non-boolean means unsupported. The operational ISSUANCE
 signature proves possession. Completion still requires registry convergence and
-fresh public ACTIVE and lifecycle-log evidence. Recovery documents now save
-`registrationKey` and `issuanceKey`; old `requestId` and `proof-pending` state is
-read without resuming a nonce exchange. Existing exact issuance bytes and keys
-are retained.
+fresh public ACTIVE and lifecycle-log evidence. Missing or invalid managed
+publication state raises `UnsupportedRegistryResponse` with known detail;
+Foundry maps it to `UnsupportedRegistry`.
+
+Recovery documents use `schemaVersion: 2` with explicit `registrationKey` and
+`issuanceKey`. Only `creation-pending`, `identity-known`, `issuance-accepted`, and
+`complete` phases are supported. Version 1 and `proof-pending` documents are
+rejected without modification; there is no automatic migration or replacement.
+Keep existing backups and reconcile old recovery state before upgrading.
+Exact issuance bytes and keys in supported documents are retained. Rejected
+creation responses are saved as diagnostic evidence, not identity bindings;
+recovery replays the frozen request with its original registration key.
 
 ### Since v0.36.0: breaking C2SP logical-identity correction
 

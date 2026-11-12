@@ -316,7 +316,7 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 		}
 		source := c.loaded.KeySource
 		source.EntityKeyPath = ""
-		doc = &RecoveryDocument{SchemaVersion: 1, Phase: "creation-pending", RegistryURL: key.RegistryURL, OrganizationID: key.OrganizationID, Name: name, GovernanceID: onboarding.GovernanceDomain, LogTrust: trust, KeySource: source, InitialPublicKey: initial, RegistrationKey: requestID, IssuanceKey: IssuanceKey(requestID), CreationInput: CreationInput{Name: name, PublicKey: initial, Environment: "production", Tier: "live", Managed: true}}
+		doc = &RecoveryDocument{SchemaVersion: 2, Phase: "creation-pending", RegistryURL: key.RegistryURL, OrganizationID: key.OrganizationID, Name: name, GovernanceID: onboarding.GovernanceDomain, LogTrust: trust, KeySource: source, InitialPublicKey: initial, RegistrationKey: requestID, IssuanceKey: IssuanceKey(requestID), CreationInput: CreationInput{Name: name, PublicKey: initial, Environment: "production", Tier: "live", Managed: true}}
 		if err := lease.Save(ctx, doc); err != nil {
 			return nil, c.wrap(doc, err)
 		}
@@ -327,35 +327,38 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 		input := &dnsid.LiveAgentRegistrationInput{Name: doc.CreationInput.Name, PublicKey: doc.CreationInput.PublicKey, Environment: doc.CreationInput.Environment, CapabilitiesURL: doc.CreationInput.CapabilitiesURL}
 		response, callErr := c.deps.RegistryClient.CreateLiveAgent(ctx, input, doc.RegistrationKey)
 		if response != nil {
-			if response.ID != "" {
-				if doc.IdentityID != "" && doc.IdentityID != response.ID {
-					return nil, failure(Integrity, doc, fmt.Errorf("replay changed identity ID"))
+			candidate := *doc
+			if callErr == nil {
+				switch {
+				case response.ID == "" || response.Status == "":
+					callErr = dnsid.NewValidationError("foundry: incomplete Live creation facts", nil)
+				case doc.IdentityID != "" && doc.IdentityID != response.ID:
+					callErr = dnsid.NewValidationError("foundry: replay changed identity ID", nil)
+				default:
+					candidate.IdentityID = response.ID
+					candidate.RegistryStatus = response.Status
 				}
-				doc.IdentityID = response.ID
 			}
-			if response.Status != "" {
-				doc.RegistryStatus = response.Status
-			}
-			if response.ID == "" || response.Status == "" {
-				callErr = errors.Join(callErr, dnsid.NewValidationError("foundry: incomplete Live creation facts", nil))
-			}
-			if response.Domain != "" && doc.IdentityID != "" {
+			if callErr == nil && response.Domain != "" {
 				domain, err := dnsid.NormalizeFQDN(response.Domain)
 				if err != nil || domain != response.Domain || (doc.Domain != "" && doc.Domain != domain) {
-					callErr = errors.Join(callErr, dnsid.NewValidationError("foundry: invalid or changed Live domain", err))
+					callErr = dnsid.NewValidationError("foundry: invalid or changed Live domain", err)
 				} else {
-					doc.Domain = domain
-					doc.Phase = "identity-known"
+					candidate.Domain = domain
+					candidate.Phase = "identity-known"
+					candidate.PublicationConfig = &response.PublicationConfig
+					candidate.OIDCIssuerURL = response.OIDCIssuerURL
 				}
 			}
-			if callErr == nil && doc.Domain != "" {
-				cfg := publicationIdentity(doc.Domain, &response.PublicationConfig)
-				if err := cfg.Validate(); err != nil {
-					callErr = dnsid.NewValidationError("foundry: invalid Live publication configuration", err)
-				} else {
-					doc.PublicationConfig = &response.PublicationConfig
-					doc.OIDCIssuerURL = response.OIDCIssuerURL
+			if callErr == nil {
+				if err := candidate.validate(); err != nil {
+					callErr = dnsid.NewValidationError("foundry: invalid Live creation response", err)
 				}
+			}
+			if callErr != nil {
+				doc.RejectedCreation = response
+			} else {
+				*doc = candidate
 			}
 			if err := lease.Save(ctx, doc); err != nil {
 				return nil, c.wrap(doc, errors.Join(callErr, err))
@@ -599,8 +602,12 @@ func registryOutcome(doc *RecoveryDocument) error {
 
 func (c *Client) readDetail(ctx context.Context, lease FoundryLease, doc *RecoveryDocument) (*dnsid.AgentDetail, error) {
 	detail, err := c.deps.RegistryClient.GetAgentStatus(ctx, doc.Domain)
-	if err != nil {
+	var unsupported *dnsid.UnsupportedRegistryResponse
+	if err != nil && !errors.As(err, &unsupported) {
 		return nil, c.wrap(doc, err)
+	}
+	if detail == nil && unsupported != nil {
+		detail = unsupported.Detail
 	}
 	if detail == nil {
 		return nil, failure(Integrity, doc, fmt.Errorf("empty registry detail"))
@@ -617,8 +624,14 @@ func (c *Client) readDetail(ctx context.Context, lease FoundryLease, doc *Recove
 	if err := registryOutcome(doc); err != nil {
 		return nil, err
 	}
-	if detail.Managed != "dnsid" || detail.MissingDNSPublished {
-		return nil, &UnsupportedRegistry{Detail: failure(UnsupportedContract, doc, fmt.Errorf("registry-managed detail requires managed=dnsid and boolean dns_published"))}
+	if detail.Managed != "dnsid" {
+		return nil, &UnsupportedRegistry{Detail: failure(UnsupportedContract, doc, fmt.Errorf("registry-managed detail requires managed=dnsid"))}
+	}
+	if unsupported != nil || detail.MissingDNSPublished {
+		if unsupported == nil {
+			unsupported = &dnsid.UnsupportedRegistryResponse{Detail: detail}
+		}
+		return nil, &UnsupportedRegistry{Detail: failure(UnsupportedContract, doc, unsupported)}
 	}
 	return detail, nil
 }

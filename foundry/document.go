@@ -48,7 +48,9 @@ type RecoveryDocument struct {
 	OIDCIssuerURL     string                   `json:"oidcIssuerUrl,omitempty"`
 	EntityPublicKey   json.RawMessage          `json:"entityPublicKey,omitempty"`
 	Issuance          *IssuanceState           `json:"issuance,omitempty"`
-	original          map[string]any
+	// RejectedCreation is diagnostic evidence, never an identity binding.
+	RejectedCreation *dnsid.CreateAgentResponse `json:"rejectedCreation,omitempty"`
+	original         map[string]any
 }
 
 // CreationInput freezes the complete non-secret Live wire request.
@@ -135,17 +137,6 @@ func ParseRecoveryDocument(data []byte) (*RecoveryDocument, error) {
 	if err := noSecrets(obj); err != nil {
 		return nil, err
 	}
-	// Old nonce metadata is inert; resume the same identity through ISSUANCE.
-	if doc.RegistrationKey == "" {
-		doc.RegistrationKey, _ = obj["requestId"].(string)
-	}
-	if doc.IssuanceKey == "" {
-		doc.IssuanceKey = IssuanceKey(doc.RegistrationKey)
-	}
-	if doc.Phase == "proof-pending" {
-		doc.Phase = "identity-known"
-	}
-	delete(obj, "requestId")
 	doc.original = obj
 	if err := doc.validate(); err != nil {
 		return nil, err
@@ -210,7 +201,7 @@ func preserveUnknown(old, next map[string]any, schema reflect.Type) {
 }
 
 func (d *RecoveryDocument) validate() error {
-	if d == nil || d.SchemaVersion != 1 {
+	if d == nil || d.SchemaVersion != 2 {
 		return fmt.Errorf("foundry: unsupported recovery schema")
 	}
 	switch d.Phase {

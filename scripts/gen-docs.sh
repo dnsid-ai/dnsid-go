@@ -134,6 +134,7 @@ ParseError dnsid-errors
 RegistryAPIError dnsid-errors
 RegistrationError dnsid-errors
 RegistryWorkflowError dnsid-errors
+UnsupportedRegistryResponse dnsid-errors
 ValidationError dnsid-errors
 VerificationCode dnsid-errors
 VerificationError dnsid-errors

@@ -5,7 +5,10 @@ generic DNSid registration. It remains gated until the server's named-Live
 requirements are released. There is no sandbox fallback, replacement flow, or
 extra capability probe.
 
-Contract source: `dnsid-sdk-compliance` commit `e588dc7`.
+The server contract requires HTTP 201 Live creation and replay with a matching
+Idempotency-Key, boolean `dns_published` on authenticated managed detail, and
+bilateral ISSUANCE before readiness. See [compatibility](../COMPATIBILITY.md#registration-without-nonce-proof)
+and the [design contract](https://github.com/dnsid-ai/dnsid-sdk-compliance/blob/e2d4d3ff5f4b9d815e837c33639e9a26c2329ec3/docs/sdk-design/13-known-foundry.md).
 
 The package is excluded from default builds until those requirements are released.
 Developers and the CLI must explicitly opt in with `-tags dnsid_foundry`:
@@ -102,11 +105,14 @@ Back up recovery state and the provider's own key state separately. Recovery JSO
 contains only public keys and non-secret provider references, never private keys
 or registry credentials. `RecoveryDocument.Export` produces canonical UTF-8 JSON;
 `ParseRecoveryDocument` and store `Import` reject invalid Unicode, duplicates,
-unknown phases or versions, and inconsistent bindings. Registration and issuance
-idempotency keys are saved explicitly. Old requestId and proof-pending documents
-resume the same identity through ISSUANCE; saved nonce metadata is inert.
-Unknown extension members survive rewriting. Reopen the same provider key or a verified successor at the
-destination. Checkpoint-store initialization and recovery remain application-owned.
+unknown phases or versions, and inconsistent bindings. Recovery uses schema
+version 2 and saves registration and issuance idempotency keys explicitly.
+Version 1 and proof-pending documents are rejected without modification or
+replacement; no automatic migration is performed. Retain old backups and
+reconcile them before upgrading. Rejected creation responses remain diagnostic
+evidence and do not bind the identity used for replay.
+Unknown extension members survive rewriting. Reopen the same provider key or a
+verified successor at the destination. Checkpoint-store initialization and recovery remain application-owned.
 
 CLI integration, hosted cross-SDK scenarios, key-provisioning internals, rotation
 orchestration, and retire/revoke operations are outside this subpackage's create

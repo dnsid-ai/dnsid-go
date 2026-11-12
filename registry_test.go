@@ -629,6 +629,44 @@ func TestHTTPRegistryClient_GetRegistration(t *testing.T) {
 	}
 }
 
+func TestHTTPRegistryClient_ManagedPublicationContract(t *testing.T) {
+	for _, managed := range []string{"dnsid", "self"} {
+		for _, field := range []string{`"extension":true`, `"dns_published":null`, `"dns_published":"true"`, `"dns_published":1`, `"dns_published":false`, `"dns_published":true`} {
+			t.Run(managed+"/"+field, func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method != http.MethodGet || r.URL.Path != "/api/v1/agent/agent.example.com/status" {
+						t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					}
+					fmt.Fprintf(w, `{"id":"id-1","domain":"agent.example.com","status":"PROVISIONING","managed":%q,%s}`, managed, field)
+				}))
+				defer srv.Close()
+				client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client()}
+				detail, detailErr := client.GetAgentStatus(context.Background(), "agent.example.com")
+				registration, registrationErr := client.GetRegistration(context.Background(), "agent.example.com")
+				valid := managed == "self" || field == `"dns_published":true` || field == `"dns_published":false`
+				if valid {
+					if detailErr != nil || registrationErr != nil || detail == nil || registration == nil {
+						t.Fatalf("valid publication rejected: %v, %v", detailErr, registrationErr)
+					}
+					if field == `"dns_published":false` && (detail.DNSPublished || registration.DNSPublished) {
+						t.Fatal("false publication became true")
+					}
+					return
+				}
+				for _, err := range []error{detailErr, registrationErr} {
+					var unsupported *UnsupportedRegistryResponse
+					if !errors.As(err, &unsupported) || unsupported.Detail == nil || unsupported.Detail.ID != "id-1" || unsupported.Detail.Domain != "agent.example.com" || unsupported.Detail.Status != "PROVISIONING" {
+						t.Fatalf("unsupported response lost typed error or facts: %v", err)
+					}
+				}
+				if detail == nil || !detail.MissingDNSPublished || registration != nil {
+					t.Fatal("unsupported response lost detail or returned a registration")
+				}
+			})
+		}
+	}
+}
+
 func TestHTTPRegistryClient_GetRegistrationRejectsUnknownManagedMode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(AgentDetail{Domain: "agent.example.com", Managed: "other", Status: "READY"})
@@ -857,22 +895,34 @@ func TestHTTPRegistryClient_RejectAgent(t *testing.T) {
 	}
 }
 
-func TestHTTPRegistryClient_ConfirmReady(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/agent/agent.example.com/verify" {
-			t.Errorf("unexpected: %s %s", r.Method, r.URL.Path)
-		}
-		json.NewEncoder(w).Encode(LifecycleResponse{ID: "id-1", Status: "READY"})
-	}))
-	defer srv.Close()
-
-	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client(), token: "tok", allowInsecure: true}
-	resp, err := client.ConfirmReady(context.Background(), "agent.example.com")
-	if err != nil {
-		t.Fatalf("ConfirmReady: %v", err)
-	}
-	if resp.Status != "READY" {
-		t.Fatalf("unexpected: %+v", resp)
+func TestHTTPRegistryClient_VerifyAgentAndConfirmReady(t *testing.T) {
+	for _, live := range []bool{false, true} {
+		t.Run(fmt.Sprintf("live=%t", live), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/api/v1/agent/agent.example.com/verify" || r.ContentLength > 0 {
+					t.Errorf("unexpected: %s %s (length=%d)", r.Method, r.URL.Path, r.ContentLength)
+				}
+				if live {
+					w.WriteHeader(http.StatusConflict)
+					fmt.Fprint(w, `{"error":"INVALID_TRANSITION","message":"Live does not support verification"}`)
+					return
+				}
+				json.NewEncoder(w).Encode(LifecycleResponse{ID: "id-1", Status: "PROVISIONING"})
+			}))
+			defer srv.Close()
+			client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client(), token: "tok", allowInsecure: true}
+			for _, verify := range []func(context.Context, string) (*LifecycleResponse, error){client.VerifyAgent, client.ConfirmReady} {
+				resp, err := verify(context.Background(), "agent.example.com")
+				if live {
+					var api *RegistryAPIError
+					if !errors.As(err, &api) || api.StatusCode != http.StatusConflict || api.Code != "INVALID_TRANSITION" {
+						t.Fatalf("Live verification lost rejection: %v", err)
+					}
+				} else if err != nil || resp.Status != "PROVISIONING" {
+					t.Fatalf("self-managed verification: %+v, %v", resp, err)
+				}
+			}
+		})
 	}
 }
 

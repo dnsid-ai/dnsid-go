@@ -68,7 +68,7 @@ func NewParseError(msg string, cause error) *ParseError
 NewParseError creates a parse error with an optional underlying cause.
 
 <a name="PolicyFlag"></a>
-## type [RegistrationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L10-L15>)
+## type [RegistrationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L22-L27>)
 
 RegistrationError retains recovery data after a creation attempt. Failure does not prove that no identity exists. Cause preserves registry errors.
 
@@ -82,7 +82,7 @@ type RegistrationError struct {
 ```
 
 <a name="RegistrationError.Error"></a>
-### func \(\*RegistrationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L17>)
+### func \(\*RegistrationError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L29>)
 
 ```go
 func (e *RegistrationError) Error() string
@@ -91,7 +91,7 @@ func (e *RegistrationError) Error() string
 
 
 <a name="RegistrationError.Unwrap"></a>
-### func \(\*RegistrationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L20>)
+### func \(\*RegistrationError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L32>)
 
 ```go
 func (e *RegistrationError) Unwrap() error
@@ -100,7 +100,7 @@ func (e *RegistrationError) Unwrap() error
 
 
 <a name="RegistryAPIError"></a>
-## type [RegistryAPIError](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1266-L1271>)
+## type [RegistryAPIError](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1268-L1273>)
 
 RegistryAPIError represents a registry transport failure or non\-2xx API response. The registry error schema uses fields "error" and "message".
 
@@ -114,7 +114,7 @@ type RegistryAPIError struct {
 ```
 
 <a name="RegistryAPIError.Error"></a>
-### func \(\*RegistryAPIError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1275>)
+### func \(\*RegistryAPIError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1277>)
 
 ```go
 func (e *RegistryAPIError) Error() string
@@ -123,7 +123,7 @@ func (e *RegistryAPIError) Error() string
 Error implements error, formatting the HTTP status with the registry's error code and message when present.
 
 <a name="RegistryAPIError.RetrySameEntry"></a>
-### func \(\*RegistryAPIError\) [RetrySameEntry](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1306>)
+### func \(\*RegistryAPIError\) [RetrySameEntry](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1308>)
 
 ```go
 func (e *RegistryAPIError) RetrySameEntry() bool
@@ -132,7 +132,7 @@ func (e *RegistryAPIError) RetrySameEntry() bool
 RetrySameEntry reports whether the registry requires retrying the exact submitted bytes with the same idempotency key. An unclassified HTTP 5xx is indeterminate and therefore also requires an exact\-byte retry. Known terminal protocol errors override that transport\-level fallback.
 
 <a name="RegistryAPIError.SubmissionState"></a>
-### func \(\*RegistryAPIError\) [SubmissionState](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1324>)
+### func \(\*RegistryAPIError\) [SubmissionState](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1326>)
 
 ```go
 func (e *RegistryAPIError) SubmissionState() SubmissionState
@@ -141,7 +141,7 @@ func (e *RegistryAPIError) SubmissionState() SubmissionState
 SubmissionState maps a prepared\-event submission failure to the durable lifecycle state shared by managed coordinators.
 
 <a name="RegistryAPIError.Transient"></a>
-### func \(\*RegistryAPIError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1348>)
+### func \(\*RegistryAPIError\) [Transient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1350>)
 
 ```go
 func (e *RegistryAPIError) Transient() bool
@@ -150,7 +150,7 @@ func (e *RegistryAPIError) Transient() bool
 Transient reports whether retrying the registry operation may succeed. Prepared\-event callers must additionally honor RetrySameEntry so a retry never regenerates signed bytes.
 
 <a name="RegistryAPIError.Unwrap"></a>
-### func \(\*RegistryAPIError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1295>)
+### func \(\*RegistryAPIError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1297>)
 
 ```go
 func (e *RegistryAPIError) Unwrap() error
@@ -159,7 +159,7 @@ func (e *RegistryAPIError) Unwrap() error
 Unwrap returns the underlying transport failure, if any.
 
 <a name="RegistryClient"></a>
-## type [RegistryWorkflowError](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1536-L1540>)
+## type [RegistryWorkflowError](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1526-L1530>)
 
 RegistryWorkflowError reports a terminal or interrupted registry workflow.
 
@@ -172,7 +172,7 @@ type RegistryWorkflowError struct {
 ```
 
 <a name="RegistryWorkflowError.Error"></a>
-### func \(\*RegistryWorkflowError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1544>)
+### func \(\*RegistryWorkflowError\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1534>)
 
 ```go
 func (e *RegistryWorkflowError) Error() string
@@ -181,7 +181,7 @@ func (e *RegistryWorkflowError) Error() string
 Error implements error, naming the terminal workflow status when the registration is available.
 
 <a name="RegistryWorkflowError.Unwrap"></a>
-### func \(\*RegistryWorkflowError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1562>)
+### func \(\*RegistryWorkflowError\) [Unwrap](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1552>)
 
 ```go
 func (e *RegistryWorkflowError) Unwrap() error
@@ -190,6 +190,26 @@ func (e *RegistryWorkflowError) Unwrap() error
 Unwrap returns the cancellation or timeout that interrupted the workflow.
 
 <a name="RetireAgentRequest"></a>
+## type [UnsupportedRegistryResponse](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L11-L13>)
+
+UnsupportedRegistryResponse reports missing or invalid dns\_published on authenticated registry\-managed detail. Detail retains known facts for recovery; this is an SDK\-local contract failure, not a server error code.
+
+```go
+type UnsupportedRegistryResponse struct {
+    Detail *AgentDetail
+}
+```
+
+<a name="UnsupportedRegistryResponse.Error"></a>
+### func \(\*UnsupportedRegistryResponse\) [Error](<https://github.com/dnsid-ai/dnsid-go/blob/main/registration.go#L16>)
+
+```go
+func (e *UnsupportedRegistryResponse) Error() string
+```
+
+Error describes the unsupported management response.
+
+<a name="ValidationError"></a>
 ## type [ValidationError](<https://github.com/dnsid-ai/dnsid-go/blob/main/errors.go#L117-L120>)
 
 ValidationError is returned when input parses successfully but fails a semantic or structural rule: required tags missing, FQDN normalization violations, policy\-flag whitelist violations, host equality checks, etc. A ValidationError is always permanent.

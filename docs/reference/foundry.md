@@ -114,7 +114,7 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 Create stops after the identity ID and domain are saved; it does not wait for public ACTIVE.
 
 <a name="CreationInput"></a>
-## type [CreationInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L55-L62>)
+## type [CreationInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L57-L64>)
 
 CreationInput freezes the complete non\-secret Live wire request.
 
@@ -278,7 +278,7 @@ func Create(ctx context.Context, name string) (*FoundryIdentity, error)
 Create loads environment configuration and the separate DNSID\_API\_KEY secret. Applications with file configuration or injected dependencies use New\(...\).Create.
 
 <a name="FoundryIdentity.Active"></a>
-### func \(\*FoundryIdentity\) [Active](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L644>)
+### func \(\*FoundryIdentity\) [Active](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L657>)
 
 ```go
 func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity, err error)
@@ -356,7 +356,7 @@ type FoundryStore interface {
 ```
 
 <a name="IssuanceState"></a>
-## type [IssuanceState](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L67-L73>)
+## type [IssuanceState](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L69-L75>)
 
 IssuanceState retains local coordinator state separately from a verified accepted entry recovered from another replica. Its receipt never acknowledges the local entry bytes.
 
@@ -380,7 +380,7 @@ type OperationKey struct{ RegistryURL, OrganizationID, Name string }
 ```
 
 <a name="RecoveryDocument"></a>
-## type [RecoveryDocument](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L26-L52>)
+## type [RecoveryDocument](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L26-L54>)
 
 RecoveryDocument is the non\-secret, portable recovery state for an exact name. Use ParseRecoveryDocument and Export to validate imported and exported state.
 
@@ -410,12 +410,14 @@ type RecoveryDocument struct {
     OIDCIssuerURL     string                   `json:"oidcIssuerUrl,omitempty"`
     EntityPublicKey   json.RawMessage          `json:"entityPublicKey,omitempty"`
     Issuance          *IssuanceState           `json:"issuance,omitempty"`
+    // RejectedCreation is diagnostic evidence, never an identity binding.
+    RejectedCreation *dnsid.CreateAgentResponse `json:"rejectedCreation,omitempty"`
     // contains filtered or unexported fields
 }
 ```
 
 <a name="ParseRecoveryDocument"></a>
-### func [ParseRecoveryDocument](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L77>)
+### func [ParseRecoveryDocument](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L79>)
 
 ```go
 func ParseRecoveryDocument(data []byte) (*RecoveryDocument, error)
@@ -424,7 +426,7 @@ func ParseRecoveryDocument(data []byte) (*RecoveryDocument, error)
 ParseRecoveryDocument rejects corrupt, duplicate, invalid\-Unicode, and unsupported recovery documents. Unknown members are retained on export.
 
 <a name="RecoveryDocument.Export"></a>
-### func \(\*RecoveryDocument\) [Export](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L157>)
+### func \(\*RecoveryDocument\) [Export](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L148>)
 
 ```go
 func (d *RecoveryDocument) Export() ([]byte, error)

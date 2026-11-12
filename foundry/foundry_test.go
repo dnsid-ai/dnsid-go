@@ -237,6 +237,8 @@ type fakeRegistry struct {
 	status            string
 	statuses          []string
 	responseDomain    string
+	responseID        string
+	detailHook        func(*dnsid.AgentDetail) error
 	oidcIssuerURL     string
 	name              string
 	requestID         string
@@ -274,7 +276,11 @@ func (r *fakeRegistry) CreateLiveAgent(_ context.Context, input *dnsid.LiveAgent
 		r.createErr = nil
 		return nil, err
 	}
-	response := &dnsid.CreateAgentResponse{ID: "agent-id", Status: r.status, Domain: r.responseDomain, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}, OIDCIssuerURL: r.oidcIssuerURL}
+	id := r.responseID
+	if id == "" {
+		id = "agent-id"
+	}
+	response := &dnsid.CreateAgentResponse{ID: id, Status: r.status, Domain: r.responseDomain, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}, OIDCIssuerURL: r.oidcIssuerURL}
 	return response, r.createResponseErr
 }
 
@@ -283,7 +289,11 @@ func (r *fakeRegistry) GetAgentStatus(context.Context, string) (*dnsid.AgentDeta
 		r.status = r.statuses[0]
 		r.statuses = r.statuses[1:]
 	}
-	return &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, OIDCIssuerURL: r.oidcIssuerURL, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}, nil
+	detail := &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, OIDCIssuerURL: r.oidcIssuerURL, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}
+	if r.detailHook != nil {
+		return detail, r.detailHook(detail)
+	}
+	return detail, nil
 }
 
 func (r *fakeRegistry) PrepareKeyRotation(context.Context, string, *dnsid.KeyRotationPreparationRequest, string) (*dnsid.PreparedRegistryEvent, error) {
