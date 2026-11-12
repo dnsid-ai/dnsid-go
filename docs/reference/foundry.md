@@ -46,7 +46,6 @@ Package foundry implements Known Foundry named caller\-key Live creation. Import
 - [type FoundryStore](<#FoundryStore>)
 - [type IssuanceState](<#IssuanceState>)
 - [type OperationKey](<#OperationKey>)
-- [type ProofState](<#ProofState>)
 - [type RecoveryDocument](<#RecoveryDocument>)
   - [func ParseRecoveryDocument\(data \[\]byte\) \(\*RecoveryDocument, error\)](<#ParseRecoveryDocument>)
   - [func \(d \*RecoveryDocument\) Export\(\) \(\[\]byte, error\)](<#RecoveryDocument.Export>)
@@ -86,7 +85,7 @@ func ValidateName(name string) error
 ValidateName checks exact Unicode names without trimming or normalization.
 
 <a name="Client"></a>
-## type [Client](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L53-L56>)
+## type [Client](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L51-L54>)
 
 Client composes the same workflow used by the configured Create facade.
 
@@ -97,7 +96,7 @@ type Client struct {
 ```
 
 <a name="New"></a>
-### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L60>)
+### func [New](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L58>)
 
 ```go
 func New(loaded config.Loaded, deps Dependencies) (*Client, error)
@@ -106,7 +105,7 @@ func New(loaded config.Loaded, deps Dependencies) (*Client, error)
 New validates configuration without discovery, provisioning, or registration. LoadDeploymentFile and Merge can supply file and code configuration explicitly.
 
 <a name="Client.Create"></a>
-### func \(\*Client\) [Create](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L219>)
+### func \(\*Client\) [Create](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L217>)
 
 ```go
 func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIdentity, err error)
@@ -115,7 +114,7 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 Create stops after the identity ID and domain are saved; it does not wait for public ACTIVE.
 
 <a name="CreationInput"></a>
-## type [CreationInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L56-L63>)
+## type [CreationInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L57-L64>)
 
 CreationInput freezes the complete non\-secret Live wire request.
 
@@ -131,7 +130,7 @@ type CreationInput struct {
 ```
 
 <a name="Dependencies"></a>
-## type [Dependencies](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L42-L50>)
+## type [Dependencies](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L40-L48>)
 
 Dependencies supplies explicit runtime dependencies. Injected providers, registry clients, and log registries take precedence over loaded selection. Credential is used only by the authenticated registry client and is never saved.
 
@@ -259,7 +258,7 @@ func (s *FileFoundryStore) Lock(ctx context.Context, key OperationKey) (FoundryL
 Lock waits for the cross\-process lock until ctx expires. OS locks are also exclusive between independently opened file descriptors in the same process.
 
 <a name="FoundryIdentity"></a>
-## type [FoundryIdentity](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L164-L175>)
+## type [FoundryIdentity](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L162-L173>)
 
 FoundryIdentity is a durable identity handle. Observation accessors are safe during Sign and Active. Domain never changes after Create returns the handle.
 
@@ -270,7 +269,7 @@ type FoundryIdentity struct {
 ```
 
 <a name="Create"></a>
-### func [Create](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L145>)
+### func [Create](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L143>)
 
 ```go
 func Create(ctx context.Context, name string) (*FoundryIdentity, error)
@@ -279,7 +278,7 @@ func Create(ctx context.Context, name string) (*FoundryIdentity, error)
 Create loads environment configuration and the separate DNSID\_API\_KEY secret. Applications with file configuration or injected dependencies use New\(...\).Create.
 
 <a name="FoundryIdentity.Active"></a>
-### func \(\*FoundryIdentity\) [Active](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L626>)
+### func \(\*FoundryIdentity\) [Active](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L654>)
 
 ```go
 func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity, err error)
@@ -288,7 +287,7 @@ func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity
 Active completes durable setup and makes a new, isolated public observation on every call. Cancellation preserves progress and does not cancel the identity.
 
 <a name="FoundryIdentity.Domain"></a>
-### func \(\*FoundryIdentity\) [Domain](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L178>)
+### func \(\*FoundryIdentity\) [Domain](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L176>)
 
 ```go
 func (i *FoundryIdentity) Domain() string
@@ -297,7 +296,7 @@ func (i *FoundryIdentity) Domain() string
 Domain returns the immutable registry\-assigned domain.
 
 <a name="FoundryIdentity.IdentityManager"></a>
-### func \(\*FoundryIdentity\) [IdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L197>)
+### func \(\*FoundryIdentity\) [IdentityManager](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L195>)
 
 ```go
 func (i *FoundryIdentity) IdentityManager() (*dnsid.IdentityManager, error)
@@ -306,7 +305,7 @@ func (i *FoundryIdentity) IdentityManager() (*dnsid.IdentityManager, error)
 IdentityManager returns the manager sharing this handle's signing controller. It returns SigningPaused until the publication configuration is saved. All subsequent successful calls return the same instance.
 
 <a name="FoundryIdentity.RegistryStatus"></a>
-### func \(\*FoundryIdentity\) [RegistryStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L188>)
+### func \(\*FoundryIdentity\) [RegistryStatus](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L186>)
 
 ```go
 func (i *FoundryIdentity) RegistryStatus() string
@@ -315,7 +314,7 @@ func (i *FoundryIdentity) RegistryStatus() string
 RegistryStatus returns the last control\-plane observation, not protocol state.
 
 <a name="FoundryIdentity.Sign"></a>
-### func \(\*FoundryIdentity\) [Sign](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L210>)
+### func \(\*FoundryIdentity\) [Sign](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L208>)
 
 ```go
 func (i *FoundryIdentity) Sign(data []byte) ([]byte, error)
@@ -324,7 +323,7 @@ func (i *FoundryIdentity) Sign(data []byte) ([]byte, error)
 Sign signs raw bytes without adding a JOSE or other application format.
 
 <a name="FoundryIdentity.State"></a>
-### func \(\*FoundryIdentity\) [State](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L181>)
+### func \(\*FoundryIdentity\) [State](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L179>)
 
 ```go
 func (i *FoundryIdentity) State() dnsid.AgentState
@@ -357,7 +356,7 @@ type FoundryStore interface {
 ```
 
 <a name="IssuanceState"></a>
-## type [IssuanceState](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L76-L82>)
+## type [IssuanceState](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L69-L75>)
 
 IssuanceState retains local coordinator state separately from a verified accepted entry recovered from another replica. Its receipt never acknowledges the local entry bytes.
 
@@ -380,22 +379,8 @@ OperationKey scopes an exact name to its registry and authenticated account.
 type OperationKey struct{ RegistryURL, OrganizationID, Name string }
 ```
 
-<a name="ProofState"></a>
-## type [ProofState](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L66-L71>)
-
-ProofState retains the exact server challenge and completed request.
-
-```go
-type ProofState struct {
-    Challenge        string `json:"challenge"`
-    ChallengeMessage string `json:"challengeMessage"`
-    Signature        string `json:"signature,omitempty"`
-    Outcome          string `json:"outcome,omitempty"`
-}
-```
-
 <a name="RecoveryDocument"></a>
-## type [RecoveryDocument](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L27-L53>)
+## type [RecoveryDocument](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L26-L54>)
 
 RecoveryDocument is the non\-secret, portable recovery state for an exact name. Use ParseRecoveryDocument and Export to validate imported and exported state.
 
@@ -415,22 +400,24 @@ type RecoveryDocument struct {
     CreationInput     CreationInput            `json:"creationInput"`
     IdentityID        string                   `json:"identityId,omitempty"`
     Domain            string                   `json:"domain,omitempty"`
-    RequestID         string                   `json:"requestId,omitempty"`
+    RegistrationKey   string                   `json:"registrationKey"`
+    IssuanceKey       string                   `json:"issuanceKey"`
     RegistryStatus    string                   `json:"registryStatus,omitempty"`
     RegistryError     *dnsid.AgentError        `json:"registryError,omitempty"`
     ProtocolState     string                   `json:"protocolState,omitempty"`
     SigningPaused     bool                     `json:"signingPaused,omitempty"`
-    Proof             *ProofState              `json:"proof,omitempty"`
     PublicationConfig *dnsid.PublicationConfig `json:"publicationConfig,omitempty"`
     OIDCIssuerURL     string                   `json:"oidcIssuerUrl,omitempty"`
     EntityPublicKey   json.RawMessage          `json:"entityPublicKey,omitempty"`
     Issuance          *IssuanceState           `json:"issuance,omitempty"`
+    // RejectedCreation is diagnostic evidence, never an identity binding.
+    RejectedCreation *dnsid.CreateAgentResponse `json:"rejectedCreation,omitempty"`
     // contains filtered or unexported fields
 }
 ```
 
 <a name="ParseRecoveryDocument"></a>
-### func [ParseRecoveryDocument](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L86>)
+### func [ParseRecoveryDocument](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L79>)
 
 ```go
 func ParseRecoveryDocument(data []byte) (*RecoveryDocument, error)
@@ -439,7 +426,7 @@ func ParseRecoveryDocument(data []byte) (*RecoveryDocument, error)
 ParseRecoveryDocument rejects corrupt, duplicate, invalid\-Unicode, and unsupported recovery documents. Unknown members are retained on export.
 
 <a name="RecoveryDocument.Export"></a>
-### func \(\*RecoveryDocument\) [Export](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L155>)
+### func \(\*RecoveryDocument\) [Export](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/document.go#L148>)
 
 ```go
 func (d *RecoveryDocument) Export() ([]byte, error)
@@ -448,17 +435,15 @@ func (d *RecoveryDocument) Export() ([]byte, error)
 Export returns UTF\-8 RFC 8785 JSON without private keys or credentials.
 
 <a name="RegistryClient"></a>
-## type [RegistryClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L30-L37>)
+## type [RegistryClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/foundry.go#L30-L35>)
 
 RegistryClient is the existing low\-level registry surface used by Foundry.
 
 ```go
 type RegistryClient interface {
-    CreateLiveAgent(context.Context, *dnsid.LiveAgentRegistrationInput, string) (*dnsid.LiveProvisioningResponse, error)
+    CreateLiveAgent(context.Context, *dnsid.LiveAgentRegistrationInput, string) (*dnsid.CreateAgentResponse, error)
     GetOrganizationOnboarding(context.Context) (*dnsid.OrganizationOnboardingResponse, error)
     GetAgentStatus(context.Context, string) (*dnsid.AgentDetail, error)
-    SubmitLiveProof(context.Context, string, *dnsid.LiveProofRequest) (*dnsid.LiveProofResponse, error)
-    ReissueLiveProof(context.Context, string, *dnsid.LiveProofReissueRequest) (*dnsid.LiveProofReissueResponse, error)
     dnsid.RegistryPreparedEventClient
 }
 ```
@@ -490,7 +475,7 @@ Error describes why application signing is paused.
 <a name="UnsupportedRegistry"></a>
 ## type [UnsupportedRegistry](<https://github.com/dnsid-ai/dnsid-go/blob/main/foundry/errors.go#L60>)
 
-UnsupportedRegistry means onboarding did not provide the required contract.
+UnsupportedRegistry means onboarding or management detail lacks the required contract.
 
 ```go
 type UnsupportedRegistry struct{ Detail *Error }

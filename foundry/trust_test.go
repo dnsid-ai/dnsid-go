@@ -60,7 +60,7 @@ func TestLazyLogTrustConstructionDoesNotFetchPolicy(t *testing.T) {
 }
 
 func TestNoStateReplicaAfterRotationRecoversCurrentKey(t *testing.T) {
-	for _, scenario := range []string{"verified rotation", "replayed proof", "rejected preparation", "unrelated key", "wrong signed ku"} {
+	for _, scenario := range []string{"verified rotation", "rejected preparation", "unrelated key", "wrong signed ku"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newFixture(t)
 			id, err := f.client.Create(context.Background(), "rotated-replica")
@@ -89,11 +89,10 @@ func TestNoStateReplicaAfterRotationRecoversCurrentKey(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			f.registry.challenge = scenario == "replayed proof"
-			f.registry.status = "provider_deferred"
+			f.registry.status = "PROVISIONING"
 			f.registry.statuses = []string{"READY"}
 			if scenario == "rejected preparation" {
-				f.registry.statuses = []string{"VERIFIED"}
+				f.registry.statuses = []string{"PROVISIONING", "PROVISIONING", "READY"}
 			}
 			store, err := NewFileFoundryStore(filepath.Join(t.TempDir(), "replica"))
 			if err != nil {
@@ -118,11 +117,8 @@ func TestNoStateReplicaAfterRotationRecoversCurrentKey(t *testing.T) {
 					t.Fatal(err)
 				}
 				saved := f.document("rotated-replica")
-				if !sameJSON(saved.InitialPublicKey, original.InitialPublicKey) || !sameJSON(saved.CurrentPublicKey, saved.CreationInput.PublicKey) || !sameJSON(saved.CurrentPublicKey, f.registry.initial) || saved.RequestID == original.RequestID || !saved.Issuance.Recovered {
+				if !sameJSON(saved.InitialPublicKey, original.InitialPublicKey) || !sameJSON(saved.CurrentPublicKey, saved.CreationInput.PublicKey) || !sameJSON(saved.CurrentPublicKey, f.registry.initial) || saved.RegistrationKey == original.RegistrationKey || !saved.Issuance.Recovered {
 					t.Fatal("recovery lost initial, current, or creation key bindings")
-				}
-				if scenario == "replayed proof" && (saved.Proof == nil || saved.Proof.Outcome != "accepted" || f.registry.proofCalls != 1) {
-					t.Fatal("recovery lost the creation-key proof")
 				}
 				if _, err := replica.Sign([]byte("data")); err != nil {
 					t.Fatal(err)

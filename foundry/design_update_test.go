@@ -3,8 +3,11 @@
 package foundry
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,14 +82,113 @@ func TestActiveRejectsChangedOIDCIssuer(t *testing.T) {
 	}
 }
 
-func TestCreatePreservesFactsFromInvalidResponse(t *testing.T) {
-	f := newFixture(t)
-	f.registry.createResponseErr = dnsid.NewValidationError("invalid replay domain", nil)
-	_, err := f.client.Create(context.Background(), "invalid-response")
-	outcome := requireKind(t, err, Integrity)
-	saved := f.document("invalid-response")
-	if outcome.IdentityID != "agent-id" || saved.IdentityID != "agent-id" || saved.RequestID != f.registry.requestID || saved.Domain != "" {
-		t.Fatalf("validation failure lost creation facts or accepted invalid domain: %+v", saved)
+func TestCreatePreservesRejectedResponseWithoutBindingReplay(t *testing.T) {
+	for _, test := range []struct {
+		name, domain, status string
+		responseErr          error
+	}{
+		{"rejected header", "other.example", "REVOKED", dnsid.NewValidationError("response Idempotency-Key mismatch", nil)},
+		{"invalid domain", "Other.Example.", "PROVISIONING", nil},
+		{"missing status", "other.example", "", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.registry.createResponseErr = test.responseErr
+			f.registry.responseID = "another-id"
+			f.registry.responseDomain = test.domain
+			f.registry.status = test.status
+			_, err := f.client.Create(context.Background(), "invalid-response")
+			outcome := requireKind(t, err, Integrity)
+			saved := f.document("invalid-response")
+			if outcome.IdentityID != "" || saved.IdentityID != "" || saved.Domain != "" || saved.RegistryStatus != "" || saved.Phase != "creation-pending" {
+				t.Fatalf("rejected response became an identity binding: %+v", saved)
+			}
+			if saved.RejectedCreation == nil || saved.RejectedCreation.ID != "another-id" || saved.RejectedCreation.Domain != test.domain || saved.RejectedCreation.Status != test.status {
+				t.Fatalf("validation failure lost response evidence: %+v", saved)
+			}
+			key, issuanceKey, input := saved.RegistrationKey, saved.IssuanceKey, saved.CreationInput
+			initial := bytes.Clone(saved.InitialPublicKey)
+			f.registry.createResponseErr = nil
+			f.registry.responseID = ""
+			f.registry.responseDomain = testDomain
+			f.registry.status = "PROVISIONING"
+			f.client = f.newClient(f.operational, f.store)
+			if _, err := f.client.Create(context.Background(), "invalid-response"); err != nil {
+				t.Fatal(err)
+			}
+			saved = f.document("invalid-response")
+			if f.registry.createCalls != 2 || saved.IdentityID != "agent-id" || saved.Domain != testDomain || saved.Phase != "identity-known" {
+				t.Fatalf("valid replay did not recover: %+v", saved)
+			}
+			if saved.RegistrationKey != key || saved.IssuanceKey != issuanceKey || f.registry.requestID != key || !sameJSON(input, saved.CreationInput) || !bytes.Equal(initial, saved.InitialPublicKey) || saved.RejectedCreation == nil {
+				t.Fatal("replay changed frozen intent, keys, or rejected response evidence")
+			}
+		})
+	}
+}
+
+func TestActiveWaitsForAuthenticatedPublication(t *testing.T) {
+	for _, unpublishedRead := range []int{1, 2} {
+		t.Run(fmt.Sprintf("unpublished-read-%d", unpublishedRead), func(t *testing.T) {
+			f := newFixture(t)
+			id, err := f.client.Create(context.Background(), "publication")
+			if err != nil {
+				t.Fatal(err)
+			}
+			reads := 0
+			published := true
+			f.registry.detailHook = func(detail *dnsid.AgentDetail) error {
+				reads++
+				if (!published || reads <= unpublishedRead) && (f.registry.prepareCalls != 0 || len(f.registry.submissions) != 0) {
+					t.Fatal("ISSUANCE preceded authenticated publication")
+				}
+				published = reads != unpublishedRead
+				detail.DNSPublished = published
+				return nil
+			}
+			if _, err := id.Active(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if reads <= unpublishedRead || f.registry.prepareCalls != 1 || len(f.registry.submissions) != 1 {
+				t.Fatal("publication did not release exactly one ISSUANCE")
+			}
+		})
+	}
+}
+
+func TestActiveRejectsUnsupportedPublication(t *testing.T) {
+	for _, field := range []string{`"extension":true`, `"dns_published":null`, `"dns_published":"true"`, `"dns_published":1`} {
+		t.Run(field, func(t *testing.T) {
+			for _, typed := range []bool{false, true} {
+				f := newFixture(t)
+				id, err := f.client.Create(context.Background(), "unsupported-publication")
+				if err != nil {
+					t.Fatal(err)
+				}
+				var publication dnsid.AgentDetail
+				if err := json.Unmarshal([]byte("{"+field+"}"), &publication); err != nil {
+					t.Fatal(err)
+				}
+				reads := 0
+				f.registry.detailHook = func(detail *dnsid.AgentDetail) error {
+					reads++
+					detail.MissingDNSPublished = publication.MissingDNSPublished
+					if typed {
+						return &dnsid.UnsupportedRegistryResponse{Detail: detail}
+					}
+					return nil
+				}
+				_, err = id.Active(context.Background())
+				var unsupported *UnsupportedRegistry
+				var response *dnsid.UnsupportedRegistryResponse
+				if !errors.As(err, &unsupported) || !errors.As(err, &response) || unsupported.Detail.Resumable || response.Detail.ID != "agent-id" || unsupported.Detail.Domain != testDomain {
+					t.Fatalf("unsupported detail lost classification or facts: %v", err)
+				}
+				if reads != 1 || f.registry.prepareCalls != 0 || len(f.registry.submissions) != 0 || f.registry.createCalls != 1 {
+					t.Fatal("unsupported detail was retried, prepared, or replaced")
+				}
+			}
+		})
 	}
 }
 

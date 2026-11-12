@@ -5,7 +5,10 @@ generic DNSid registration. It remains gated until the server's named-Live
 requirements are released. There is no sandbox fallback, replacement flow, or
 extra capability probe.
 
-Contract source: `dnsid-sdk-compliance` commit `56d0e77`.
+The server contract requires HTTP 201 Live creation and replay with a matching
+Idempotency-Key, boolean `dns_published` on authenticated managed detail, and
+bilateral ISSUANCE before readiness. See [compatibility](../COMPATIBILITY.md#registration-without-nonce-proof)
+and the [design contract](https://github.com/dnsid-ai/dnsid-sdk-compliance/blob/9f7a71fb24596a37712152f7bf5500f125a44b3b/docs/sdk-design/13-known-foundry.md).
 
 The package is excluded from default builds until those requirements are released.
 Developers and the CLI must explicitly opt in with `-tags dnsid_foundry`:
@@ -35,19 +38,26 @@ A CLI directory key source requires a root `private.jwk`; Foundry cannot use a
 per-domain subdirectory before the registry assigns the domain. Use `keyRef` to
 open an existing key at another path.
 
-Create stops after the identity ID and domain are saved, without waiting for
-public readiness.
-`Active(ctx)` completes proof and issuance, then freshly verifies DNS, signed
+Create accepts HTTP 201 for creation and replay and checks the response
+Idempotency-Key. It saves the identity ID, domain, publication configuration,
+OIDC issuer, and registry status before any authenticated detail read.
+It does not wait for public readiness.
+`Active(ctx)` waits for authenticated `dns_published: true` while PROVISIONING, completes bilateral
+ISSUANCE, and waits for registry READY. It then freshly verifies DNS, signed
 HTTPS resources, the current provider key, protocol ACTIVE, and lifecycle-log
 evidence. Registry READY alone is insufficient. Each call uses the caller's
 deadline, or a default of 30 seconds for Create and 10 minutes for Active.
 Polling starts at one second and doubles to a maximum of 15 seconds. Non-cancellable provider
 calls are checked before and after; the provider's own timeout bounds those calls.
 Cancellation preserves progress and does not cancel the server identity.
-After an unknown proof outcome expires, request a reissue if the registry still
-waits for proof. HTTP 409 means the challenge was used; wait for registry status
-without resubmitting it. A successful reissue clears the old signature and outcome
-before signing the replacement challenge.
+The operational ISSUANCE signature proves key possession. No registration nonce
+is requested, signed, submitted, or reissued. VERIFICATION and VERIFIED remain
+readable management values but do not authorize setup or establish completion.
+Every polling cycle reads authenticated management state; workflow failures,
+terminal outcomes, and permanent read errors stop the call without replacing the
+identity. A false publication value uses bounded polling; an absent, null, or
+non-boolean value returns `UnsupportedRegistry` without preparing ISSUANCE.
+Live has no server-side ISSUANCE deadline; each SDK call remains bounded.
 A refresh deadline preserves the previous signing state; it does not create a
 terminal or integrity pause. Saving a confirmed terminal or binding-mismatch pause
 uses a separate five-second cleanup budget, detached from caller cancellation.
@@ -95,9 +105,14 @@ Back up recovery state and the provider's own key state separately. Recovery JSO
 contains only public keys and non-secret provider references, never private keys
 or registry credentials. `RecoveryDocument.Export` produces canonical UTF-8 JSON;
 `ParseRecoveryDocument` and store `Import` reject invalid Unicode, duplicates,
-unknown phases or versions, and inconsistent bindings. Unknown extension members
-survive rewriting. Reopen the same provider key or a verified successor at the
-destination. Checkpoint-store initialization and recovery remain application-owned.
+unknown phases or versions, and inconsistent bindings. Recovery uses schema
+version 2 and saves registration and issuance idempotency keys explicitly.
+Version 1 and proof-pending documents are rejected without modification or
+replacement; no automatic migration is performed. Retain old backups and
+reconcile them before upgrading. Rejected creation responses remain diagnostic
+evidence and do not bind the identity used for replay.
+Unknown extension members survive rewriting. Reopen the same provider key or a
+verified successor at the destination. Checkpoint-store initialization and recovery remain application-owned.
 
 CLI integration, hosted cross-SDK scenarios, key-provisioning internals, rotation
 orchestration, and retire/revoke operations are outside this subpackage's create

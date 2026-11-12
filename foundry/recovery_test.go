@@ -50,7 +50,6 @@ func TestRecoveryAfterEachDurableWrite(t *testing.T) {
 	for boundary := 1; boundary <= 15; boundary++ {
 		t.Run(strings.Repeat("x", boundary), func(t *testing.T) {
 			f := newFixture(t)
-			f.registry.challenge = true
 			faults := &failingStore{FoundryStore: f.store, remaining: boundary}
 			f.client.deps.Store = faults
 			id, err := f.client.Create(context.Background(), "recover")

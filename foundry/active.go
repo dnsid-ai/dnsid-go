@@ -164,23 +164,6 @@ func (i *FoundryIdentity) fetchEntity(ctx context.Context, rawURL string) (json.
 }
 
 func (i *FoundryIdentity) issue(ctx context.Context, lease FoundryLease, doc *RecoveryDocument) error {
-	if doc.RegistryStatus == "READY" && doc.Issuance == nil {
-		recovered, err := i.recoverIssuance(ctx, lease, doc)
-		if err != nil {
-			var workflow *Error
-			if errors.As(err, &workflow) {
-				return withFacts(err, doc)
-			}
-			if !retryable(ctx, err) {
-				return failure(Integrity, doc, err)
-			}
-			return i.client.wrap(doc, err)
-		}
-		if !recovered {
-			return failure(Unresolved, doc, fmt.Errorf("READY identity has no ISSUANCE in verified history yet"))
-		}
-		return nil
-	}
 	client, err := c2sptlog.New(doc.PublicationConfig.LogRef)
 	if err != nil {
 		return failure(UnsupportedContract, doc, err)
@@ -213,8 +196,38 @@ func (i *FoundryIdentity) issue(ctx context.Context, lease FoundryLease, doc *Re
 		return i.verifySavedAcceptance(ctx, doc)
 	}
 	for {
-		if err := ctx.Err(); err != nil {
-			return i.client.wrap(doc, err)
+		detail, err := i.client.readDetail(ctx, lease, doc)
+		if err != nil {
+			if !retryable(ctx, err) {
+				return err
+			}
+			if err := backoff.wait(ctx); err != nil {
+				return i.client.wrap(doc, err)
+			}
+			continue
+		}
+		if (doc.RegistryStatus != "PROVISIONING" && doc.RegistryStatus != "READY") || !detail.DNSPublished {
+			if err := backoff.wait(ctx); err != nil {
+				return i.client.wrap(doc, err)
+			}
+			continue
+		}
+		if doc.RegistryStatus == "READY" && doc.Issuance == nil {
+			recovered, err := i.recoverIssuance(ctx, lease, doc)
+			if err != nil {
+				var workflow *Error
+				if errors.As(err, &workflow) {
+					return withFacts(err, doc)
+				}
+				if !retryable(ctx, err) {
+					return failure(Integrity, doc, err)
+				}
+				return i.client.wrap(doc, err)
+			}
+			if !recovered {
+				return failure(Unresolved, doc, fmt.Errorf("READY identity has no ISSUANCE in verified history yet"))
+			}
+			return nil
 		}
 		var state *c2sptlog.ManagedIssuanceState
 		if doc.Issuance != nil {
@@ -222,7 +235,7 @@ func (i *FoundryIdentity) issue(ctx context.Context, lease FoundryLease, doc *Re
 		}
 		provider := deadlineProvider{KeyProvider: i.signer.KeyProvider, ctx: ctx}
 		if state == nil {
-			_, err = c2sptlog.BeginManagedIssuance(ctx, c2sptlog.ManagedIssuanceOptions{Domain: doc.Domain, GovernanceID: doc.GovernanceID, Client: client, EntityPublicKey: entity, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: IssuanceKey(doc.RequestID), Store: store, ActivationControl: activation})
+			_, err = c2sptlog.BeginManagedIssuance(ctx, c2sptlog.ManagedIssuanceOptions{Domain: doc.Domain, GovernanceID: doc.GovernanceID, Client: client, EntityPublicKey: entity, KeyProvider: provider, RegistryClient: registry, IdempotencyKey: doc.IssuanceKey, Store: store, ActivationControl: activation})
 		} else {
 			_, err = c2sptlog.ResumeManagedIssuance(ctx, c2sptlog.ResumeManagedIssuanceOptions{Domain: doc.Domain, Client: client, EntityPublicKey: entity, KeyProvider: provider, RegistryClient: registry, Store: store, ActivationControl: activation})
 		}
@@ -568,6 +581,21 @@ func (i *FoundryIdentity) observe(ctx context.Context, lease FoundryLease, doc *
 	i.mu.RUnlock()
 	var backoff pollBackoff
 	for {
+		if _, err := i.client.readDetail(ctx, lease, doc); err != nil {
+			if !retryable(ctx, err) {
+				return err
+			}
+			if err := backoff.wait(ctx); err != nil {
+				return i.client.wrap(doc, err)
+			}
+			continue
+		}
+		if doc.RegistryStatus != "READY" {
+			if err := backoff.wait(ctx); err != nil {
+				return i.client.wrap(doc, err)
+			}
+			continue
+		}
 		vd, err := manager.VerifyLocalPublication(ctx)
 		if ctx.Err() != nil {
 			return i.client.wrap(doc, ctx.Err())

@@ -114,9 +114,21 @@ func TestRecoveryDocumentRejectsCorruption(t *testing.T) {
 		name   string
 		change func([]byte) []byte
 	}{
-		{"duplicate", func(b []byte) []byte { return append([]byte(`{"schemaVersion":1,`), b[1:]...) }},
+		{"duplicate", func(b []byte) []byte { return append([]byte(`{"schemaVersion":2,`), b[1:]...) }},
+		{"old version", func(b []byte) []byte {
+			return bytes.Replace(b, []byte(`"schemaVersion":2`), []byte(`"schemaVersion":1`), 1)
+		}},
 		{"unknown version", func(b []byte) []byte {
-			return bytes.Replace(b, []byte(`"schemaVersion":1`), []byte(`"schemaVersion":2`), 1)
+			return bytes.Replace(b, []byte(`"schemaVersion":2`), []byte(`"schemaVersion":3`), 1)
+		}},
+		{"old phase", func(b []byte) []byte {
+			return bytes.Replace(b, []byte(`"identity-known"`), []byte(`"proof-pending"`), 1)
+		}},
+		{"missing registration key", func(b []byte) []byte {
+			return bytes.Replace(b, []byte(`"registrationKey":`), []byte(`"requestId":`), 1)
+		}},
+		{"missing issuance key", func(b []byte) []byte {
+			return bytes.Replace(b, []byte(`"issuanceKey":`), []byte(`"oldIssuanceKey":`), 1)
 		}},
 		{"unknown phase", func(b []byte) []byte { return bytes.Replace(b, []byte(`"identity-known"`), []byte(`"future"`), 1) }},
 		{"unpaired high surrogate", func(b []byte) []byte { return bytes.Replace(b, []byte(`"state"`), []byte(`"\ud800"`), 1) }},
@@ -236,20 +248,49 @@ func TestFileFoundryStore_DefaultDirectory(t *testing.T) {
 	}
 }
 
-func TestFileFoundryStore_RejectsCorruptStateBeforeCreation(t *testing.T) {
-	f := newFixture(t)
-	id, err := f.client.Create(context.Background(), "corrupt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(f.store.directory, id.key.digest()+".json")
-	if err := os.WriteFile(path, []byte(`{"schemaVersion":1,"phase":"unknown"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	_, err = f.client.Create(context.Background(), "corrupt")
-	requireKind(t, err, Integrity)
-	if f.registry.createCalls != 1 {
-		t.Fatal("corrupt state caused recreation")
+func TestFileFoundryStore_RejectsUnsupportedStateWithoutMutation(t *testing.T) {
+	for _, replacement := range []struct{ old, next string }{
+		{`"schemaVersion":2`, `"schemaVersion":1`},
+		{`"schemaVersion":2`, `"schemaVersion":3`},
+		{`"identity-known"`, `"proof-pending"`},
+		{`"identity-known"`, `"future"`},
+	} {
+		t.Run(replacement.next, func(t *testing.T) {
+			f := newFixture(t)
+			id, err := f.client.Create(context.Background(), "unsupported")
+			if err != nil {
+				t.Fatal(err)
+			}
+			good, err := f.document("unsupported").Export()
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicBefore, err := json.Marshal(f.operational.JWK())
+			if err != nil {
+				t.Fatal(err)
+			}
+			rejected := bytes.Replace(good, []byte(replacement.old), []byte(replacement.next), 1)
+			path := filepath.Join(f.store.directory, id.key.digest()+".json")
+			if err := os.WriteFile(path, rejected, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, operation := range []func() error{
+				func() error { _, err := f.client.Create(context.Background(), "unsupported"); return err },
+				func() error { return f.store.Import(context.Background(), good) },
+				func() error { return f.store.Import(context.Background(), rejected) },
+			} {
+				if err := operation(); err == nil {
+					t.Fatal("unsupported state accepted")
+				}
+				after, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(after, rejected) {
+					t.Fatalf("unsupported state changed: %v", err)
+				}
+			}
+			if f.registry.createCalls != 1 || f.registry.prepareCalls != 0 || !sameJSON(json.RawMessage(publicBefore), f.operational.JWK()) {
+				t.Fatal("unsupported state caused registry or provider-key mutation")
+			}
+		})
 	}
 }
 

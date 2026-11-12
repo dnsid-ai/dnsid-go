@@ -65,7 +65,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	f.log = &fakeLog{NoopLogReader: dnsidlog.NoopLogReader{Method: "fake"}, f: f}
-	f.registry = &fakeRegistry{f: f, logClient: logClient, status: "VERIFIED", responseDomain: testDomain}
+	f.registry = &fakeRegistry{f: f, logClient: logClient, status: "PROVISIONING", responseDomain: testDomain}
 	var onboarding dnsid.OrganizationOnboardingResponse
 	if err := json.Unmarshal([]byte(`{"org_id":"`+testOrg+`","governance_domain":"Governance.Example.","gi":{"domain":"GOVERNANCE.EXAMPLE","state":"verified","gate_authorized":true},"ek":{"status":"verified"}}`), &onboarding); err != nil {
 		t.Fatal(err)
@@ -237,6 +237,8 @@ type fakeRegistry struct {
 	status            string
 	statuses          []string
 	responseDomain    string
+	responseID        string
+	detailHook        func(*dnsid.AgentDetail) error
 	oidcIssuerURL     string
 	name              string
 	requestID         string
@@ -244,17 +246,11 @@ type fakeRegistry struct {
 	createCalls       int
 	prepareCalls      int
 	prepareErr        error
-	proofCalls        int
-	reissueCalls      int
-	reissueErr        error
 	submissions       [][]byte
 	keys              []string
 	createErr         error
 	createResponseErr error
 	submitErr         error
-	challenge         bool
-	expired           bool
-	lostProof         bool
 	competing         bool
 	acceptedEntry     []byte
 	beforeSubmit      func()
@@ -263,7 +259,7 @@ type fakeRegistry struct {
 func (r *fakeRegistry) GetOrganizationOnboarding(context.Context) (*dnsid.OrganizationOnboardingResponse, error) {
 	return r.onboarding, r.onboardingErr
 }
-func (r *fakeRegistry) CreateLiveAgent(_ context.Context, input *dnsid.LiveAgentRegistrationInput, key string) (*dnsid.LiveProvisioningResponse, error) {
+func (r *fakeRegistry) CreateLiveAgent(_ context.Context, input *dnsid.LiveAgentRegistrationInput, key string) (*dnsid.CreateAgentResponse, error) {
 	r.createCalls++
 	saved := r.f.document(input.Name)
 	if saved == nil || saved.Phase != "creation-pending" {
@@ -280,57 +276,29 @@ func (r *fakeRegistry) CreateLiveAgent(_ context.Context, input *dnsid.LiveAgent
 		r.createErr = nil
 		return nil, err
 	}
-	response := &dnsid.LiveProvisioningResponse{RequestID: key, AgentID: "agent-id", Status: r.status, Domain: r.responseDomain}
-	if r.challenge {
-		r.challengeResponse(response, "first")
+	id := r.responseID
+	if id == "" {
+		id = "agent-id"
+	}
+	response := &dnsid.CreateAgentResponse{ID: id, Status: r.status, Domain: r.responseDomain, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}, OIDCIssuerURL: r.oidcIssuerURL}
+	if response.Domain == "" && r.createResponseErr == nil {
+		return response, dnsid.NewValidationError("registry returned no Live domain", nil)
 	}
 	return response, r.createResponseErr
 }
-func (r *fakeRegistry) challengeResponse(response *dnsid.LiveProvisioningResponse, nonce string) {
-	expires := time.Now().Add(time.Hour)
-	if r.expired {
-		expires = time.Now().Add(-time.Hour)
-	}
-	key, _ := parsePublicKey(r.initial)
-	thumb, _ := keyThumb(key)
-	transcript := dnsid.LiveChallengeTranscript{Protocol: "dnsid-live-provisioning-pop/v1", OrgID: testOrg, AgentID: "agent-id", FQDN: testDomain, KeyID: thumb, Nonce: nonce, ExpiresAt: expires.UTC().Truncate(time.Second)}
-	data, _ := json.Marshal(transcript)
-	response.Challenge = nonce
-	response.ChallengeMessage = base64.RawURLEncoding.EncodeToString(data)
-	response.Status = "challenge_pending"
-}
+
 func (r *fakeRegistry) GetAgentStatus(context.Context, string) (*dnsid.AgentDetail, error) {
 	if len(r.statuses) > 0 {
 		r.status = r.statuses[0]
 		r.statuses = r.statuses[1:]
 	}
-	return &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, OIDCIssuerURL: r.oidcIssuerURL, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}, nil
+	detail := &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, OIDCIssuerURL: r.oidcIssuerURL, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}
+	if r.detailHook != nil {
+		return detail, r.detailHook(detail)
+	}
+	return detail, nil
 }
-func (r *fakeRegistry) SubmitLiveProof(_ context.Context, _ string, request *dnsid.LiveProofRequest) (*dnsid.LiveProofResponse, error) {
-	r.proofCalls++
-	saved := r.f.document(r.name)
-	if saved.Proof == nil || saved.Proof.Signature != request.Signature || saved.Proof.Outcome != "submitting" {
-		r.f.t.Fatal("proof not persisted before submit")
-	}
-	if r.lostProof {
-		r.lostProof = false
-		return nil, &dnsid.RegistryAPIError{Cause: errors.New("lost proof response")}
-	}
-	return &dnsid.LiveProofResponse{RequestID: r.requestID, AgentID: "agent-id", Status: "accepted"}, nil
-}
-func (r *fakeRegistry) ReissueLiveProof(_ context.Context, domain string, request *dnsid.LiveProofReissueRequest) (*dnsid.LiveProofReissueResponse, error) {
-	r.reissueCalls++
-	if domain != testDomain || request.RequestID != r.requestID || !sameJSON(request.PublicKey, r.initial) {
-		r.f.t.Fatal("reissue changed operation or initial key")
-	}
-	if r.reissueErr != nil {
-		return nil, r.reissueErr
-	}
-	r.expired = false
-	response := &dnsid.LiveProvisioningResponse{}
-	r.challengeResponse(response, "replacement")
-	return &dnsid.LiveProofReissueResponse{RequestID: r.requestID, AgentID: "agent-id", Status: response.Status, Domain: testDomain, Challenge: response.Challenge, ChallengeMessage: response.ChallengeMessage}, nil
-}
+
 func (r *fakeRegistry) PrepareKeyRotation(context.Context, string, *dnsid.KeyRotationPreparationRequest, string) (*dnsid.PreparedRegistryEvent, error) {
 	return nil, errors.New("unexpected rotation")
 }
@@ -419,9 +387,11 @@ func (r *fakeRegistry) SubmitPreparedEvent(ctx context.Context, domain string, d
 			return nil, err
 		}
 		r.f.log.events = []dnsidlog.LogEvent{event}
+		r.status = "READY"
 		return nil, &dnsid.RegistryAPIError{StatusCode: 422, Code: "IDEMPOTENCY_MISMATCH"}
 	}
 	r.f.log.events = []dnsidlog.LogEvent{event}
+	r.status = "READY"
 	sum := sha256.Sum256(data)
 	index := uint64(0)
 	ref, _ := c2sptlog.ParseReference(testLR)
@@ -519,14 +489,18 @@ func TestCreateActiveAndCompletedResume(t *testing.T) {
 	}
 	_, err = id.Sign([]byte("data"))
 	requirePaused(t, err)
-	_, err = id.IdentityManager()
+	manager, err := id.IdentityManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.KeyProvider().Sign([]byte("data"))
 	requirePaused(t, err)
 	if _, err := id.Active(ctx); err != nil {
 		t.Fatal(err)
 	}
-	manager, err := id.IdentityManager()
-	if err != nil {
-		t.Fatal(err)
+	activeManager, err := id.IdentityManager()
+	if err != nil || activeManager != manager {
+		t.Fatalf("manager changed after activation: %v", err)
 	}
 	if id.State() != dnsid.AgentStateActive {
 		t.Fatal(id.State())
@@ -632,33 +606,36 @@ func TestCreateEmptyProvider(t *testing.T) {
 	}
 }
 
-func TestReplayWithoutDomainAndLostCreate(t *testing.T) {
+func TestReplayRejectedDomainAndLostCreate(t *testing.T) {
 	f := newFixture(t)
 	f.registry.responseDomain = ""
 	_, err := f.client.Create(context.Background(), "same")
-	e := requireKind(t, err, Unresolved)
-	if e.IdentityID != "agent-id" || !e.Resumable {
+	e := requireKind(t, err, Integrity)
+	if e.IdentityID != "" || e.Resumable {
 		t.Fatal(err)
 	}
 	saved := f.document("same")
-	if saved.IdentityID != "agent-id" || saved.Domain != "" {
-		t.Fatal("lost creation facts")
+	if saved.IdentityID != "" || saved.Domain != "" || saved.Phase != "creation-pending" || saved.RejectedCreation == nil || saved.RejectedCreation.ID != "agent-id" || saved.RejectedCreation.Domain != "" {
+		t.Fatal("lost rejected creation evidence or promoted it to a binding")
 	}
-	key := saved.RequestID
+	key, issuanceKey, input := saved.RegistrationKey, saved.IssuanceKey, saved.CreationInput
+	initial := bytes.Clone(saved.InitialPublicKey)
 	f.registry.responseDomain = testDomain
+	f.client = f.newClient(f.operational, f.store)
 	id, err := f.client.Create(context.Background(), "same")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.Domain() != testDomain || f.registry.requestID != key {
-		t.Fatal("replay changed request")
+	saved = f.document("same")
+	if id.Domain() != testDomain || f.registry.createCalls != 2 || f.registry.requestID != key || saved.RegistrationKey != key || saved.IssuanceKey != issuanceKey || !sameJSON(input, saved.CreationInput) || !bytes.Equal(initial, saved.InitialPublicKey) {
+		t.Fatal("replay changed frozen request, keys, or identity")
 	}
 	// A lost HTTP response reuses exactly the frozen request and idempotency key.
 	f = newFixture(t)
 	f.registry.createErr = &dnsid.RegistryAPIError{Cause: errors.New("lost")}
 	_, err = f.client.Create(context.Background(), "lost")
 	requireKind(t, err, Unresolved)
-	key = f.document("lost").RequestID
+	key = f.document("lost").RegistrationKey
 	if _, err := f.client.Create(context.Background(), "lost"); err != nil {
 		t.Fatal(err)
 	}
@@ -667,31 +644,8 @@ func TestReplayWithoutDomainAndLostCreate(t *testing.T) {
 	}
 }
 
-func TestProofExpiryAndLostResponse(t *testing.T) {
-	f := newFixture(t)
-	f.registry.challenge = true
-	f.registry.expired = true
-	f.registry.lostProof = true
-	id, err := f.client.Create(context.Background(), "proof")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = id.Active(context.Background())
-	requireKind(t, err, Unresolved)
-	saved := f.document("proof")
-	if saved.Proof.Signature == "" || saved.Proof.Challenge != "replacement" {
-		t.Fatal("lost proof progress")
-	}
-	if _, err := id.Active(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if f.registry.reissueCalls != 1 || f.registry.proofCalls != 1 {
-		t.Fatal("repeated accepted proof or reissue")
-	}
-}
-
 func TestRegistryStates(t *testing.T) {
-	for _, state := range []string{"ERROR", "REJECTED", "CANCELLED", "REVOKED", "RETIRED", "UNKNOWN"} {
+	for _, state := range []string{"ERROR", "REJECTED", "CANCELLED", "REVOKED", "RETIRED", "VERIFICATION", "VERIFIED", "UNKNOWN"} {
 		t.Run(state, func(t *testing.T) {
 			f := newFixture(t)
 			id, err := f.client.Create(context.Background(), "state")
@@ -700,7 +654,7 @@ func TestRegistryStates(t *testing.T) {
 			}
 			f.registry.status = state
 			timeout := 2 * time.Second
-			if state == "UNKNOWN" {
+			if state == "UNKNOWN" || state == "VERIFICATION" || state == "VERIFIED" {
 				timeout = 300 * time.Millisecond
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -710,15 +664,15 @@ func TestRegistryStates(t *testing.T) {
 			if state == "REVOKED" || state == "RETIRED" {
 				kind = Terminal
 			}
-			if state == "UNKNOWN" {
+			if state == "UNKNOWN" || state == "VERIFICATION" || state == "VERIFIED" {
 				kind = Deadline
 			}
 			requireKind(t, err, kind)
 			if id.State() != "" || id.RegistryStatus() != state {
 				t.Fatal("registry status was mapped to public state")
 			}
-			if f.registry.createCalls != 1 {
-				t.Fatal("state triggered replacement")
+			if f.registry.createCalls != 1 || f.registry.prepareCalls != 0 {
+				t.Fatal("state triggered replacement or issuance preparation")
 			}
 		})
 	}
@@ -777,8 +731,8 @@ func TestReplicasAndKeyMismatch(t *testing.T) {
 	if _, err := other.Active(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if f.registry.prepareCalls != 2 || len(f.registry.submissions) != 1 {
-		t.Fatal("replica did not recover after the preparation rejection")
+	if f.registry.prepareCalls != 1 || len(f.registry.submissions) != 1 {
+		t.Fatal("READY replica prepared or submitted another issuance")
 	}
 	client = f.newClient(dnsid.GenerateEd25519KeyProvider(), f.store)
 	_, err = client.Create(context.Background(), "replica")

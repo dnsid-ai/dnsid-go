@@ -5,6 +5,18 @@ import (
 	"encoding/json"
 )
 
+// UnsupportedRegistryResponse reports missing or invalid dns_published on
+// authenticated registry-managed detail. Detail retains known facts for recovery;
+// this is an SDK-local contract failure, not a server error code.
+type UnsupportedRegistryResponse struct {
+	Detail *AgentDetail
+}
+
+// Error describes the unsupported management response.
+func (e *UnsupportedRegistryResponse) Error() string {
+	return "dnsid: unsupported registry: dns_published must be a boolean"
+}
+
 // RegistrationError retains recovery data after a creation attempt. Failure
 // does not prove that no identity exists. Cause preserves registry errors.
 type RegistrationError struct {

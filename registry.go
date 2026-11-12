@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -178,31 +177,6 @@ type LiveAgentRegistrationInput struct {
 	CapabilitiesURL string `json:"capabilities_url,omitempty"`
 }
 
-// LiveChallengeTranscript is the validated proof-of-possession transcript
-// decoded from a Live challenge message.
-type LiveChallengeTranscript struct {
-	Protocol  string    `json:"protocol"`
-	OrgID     string    `json:"org_id"`
-	AgentID   string    `json:"agent_id"`
-	FQDN      string    `json:"fqdn"`
-	KeyID     string    `json:"key_id"`
-	Nonce     string    `json:"nonce"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
-
-// LiveProvisioningResponse is the HTTP 202 response for a managed Live
-// registration. ChallengeTranscript is derived while Status is challenge_pending.
-// Domain comes from that transcript or the optional replay domain member.
-type LiveProvisioningResponse struct {
-	RequestID           string                   `json:"request_id"`
-	AgentID             string                   `json:"agent_id"`
-	Status              string                   `json:"status"`
-	Challenge           string                   `json:"challenge"`
-	ChallengeMessage    string                   `json:"challenge_message"`
-	Domain              string                   `json:"domain,omitempty"`
-	ChallengeTranscript *LiveChallengeTranscript `json:"-"`
-}
-
 // PublicationConfig is the authoritative set of profile-known values the
 // registry uses to construct an agent's unsigned identity record.
 type PublicationConfig struct {
@@ -243,6 +217,9 @@ type AgentError struct {
 
 // AgentDetail matches the OpenAPI AgentDetail schema.
 type AgentDetail struct {
+	// MissingDNSPublished reports an absent, null, or non-boolean dns_published.
+	// Registry-managed publication cannot proceed without an explicit boolean.
+	MissingDNSPublished     bool              `json:"-"`
 	ID                      string            `json:"id"`
 	Domain                  string            `json:"domain"`
 	DomainDisplay           string            `json:"domain_display"`
@@ -255,8 +232,6 @@ type AgentDetail struct {
 	ServerStatus            string            `json:"serverStatus,omitempty"`
 	DNSPublished            bool              `json:"dns_published"`
 	DNSPublishedAt          *time.Time        `json:"dns_published_at,omitempty"`
-	Challenge               string            `json:"challenge,omitempty"`
-	ChallengeExpiresAt      *time.Time        `json:"challenge_expires_at,omitempty"`
 	ChainRecordStatus       string            `json:"chain_record_status,omitempty"`
 	TransactionID           string            `json:"transaction_id,omitempty"`
 	RevocationReason        string            `json:"revocation_reason,omitempty"`
@@ -268,6 +243,28 @@ type AgentDetail struct {
 	OIDCIssuerURL           string            `json:"oidc_issuer_url,omitempty"`
 	CreatedAt               time.Time         `json:"created_at"`
 	UpdatedAt               time.Time         `json:"updated_at"`
+}
+
+// UnmarshalJSON preserves publication-status validity without treating a missing
+// or unsupported value as false. Other unknown server fields are ignored.
+func (r *AgentDetail) UnmarshalJSON(data []byte) error {
+	type detail AgentDetail
+	var value detail
+	wire := struct {
+		*detail
+		DNSPublished json.RawMessage `json:"dns_published"`
+	}{detail: &value}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*r = AgentDetail(value)
+	var published *bool
+	if err := json.Unmarshal(wire.DNSPublished, &published); err != nil || published == nil {
+		r.MissingDNSPublished = true
+	} else {
+		r.DNSPublished = *published
+	}
+	return nil
 }
 
 // IdentityRecordRequest matches the OpenAPI IdentityRecordRequest schema.
@@ -305,50 +302,6 @@ type SignatureResponse struct {
 	Message  string      `json:"message,omitempty"`
 	Records  []DNSRecord `json:"records"`
 	ZoneFile string      `json:"zoneFile,omitempty"`
-}
-
-// ChallengeRequest matches the OpenAPI ChallengeRequest schema.
-type ChallengeRequest struct {
-	Nonce     string `json:"nonce"`
-	Signature string `json:"signature"`
-}
-
-// LiveProofRequest proves possession of the key supplied for Live registration.
-type LiveProofRequest struct {
-	RequestID string `json:"request_id"`
-	// Challenge must come from the latest registration or reissue response.
-	Challenge string `json:"challenge"`
-	PublicKey any    `json:"public_key"`
-	// Signature is unpadded base64url Ed25519 over the exact bytes obtained by
-	// base64url-decoding that response's ChallengeMessage. Do not reserialize
-	// ChallengeTranscript before signing.
-	Signature string `json:"signature"`
-}
-
-// LiveProofResponse reports the durable Live proof handoff status.
-type LiveProofResponse struct {
-	RequestID string `json:"request_id"`
-	AgentID   string `json:"agent_id"`
-	Status    string `json:"status"`
-}
-
-// LiveProofReissueRequest requests a fresh challenge after an expired proof.
-type LiveProofReissueRequest struct {
-	RequestID string `json:"request_id"`
-	// PublicKey is the original Live registration key and is not sent on the wire.
-	PublicKey any `json:"-"`
-}
-
-// LiveProofReissueResponse contains the replacement Live proof challenge.
-// Domain and ChallengeTranscript are derived from the validated latest message.
-type LiveProofReissueResponse struct {
-	RequestID           string                   `json:"request_id"`
-	AgentID             string                   `json:"agent_id"`
-	Status              string                   `json:"status"`
-	Challenge           string                   `json:"challenge"`
-	ChallengeMessage    string                   `json:"challenge_message"`
-	Domain              string                   `json:"-"`
-	ChallengeTranscript *LiveChallengeTranscript `json:"-"`
 }
 
 // RegistryRevocationReason is an owner-authorized registry revocation reason.
@@ -486,16 +439,13 @@ type RegistryClient interface {
 
 	// Agent CRUD
 	CreateAgent(ctx context.Context, req *CreateAgentRequest) (*CreateAgentResponse, error)
-	CreateLiveAgent(ctx context.Context, req *LiveAgentRegistrationInput, idempotencyKey string) (*LiveProvisioningResponse, error)
+	CreateLiveAgent(ctx context.Context, req *LiveAgentRegistrationInput, idempotencyKey string) (*CreateAgentResponse, error)
 	UnregisterAgent(ctx context.Context, fqdn string) error
 	ListAgents(ctx context.Context, opts *ListAgentsOptions) (*AgentListResponse, error)
 	GetAgentStatus(ctx context.Context, fqdn string) (*AgentDetail, error)
 	GetAgentEvents(ctx context.Context, fqdn string, opts *EventListOptions) (*EventListResponse, error)
 
 	// Agent lifecycle
-	SubmitChallenge(ctx context.Context, fqdn string, req *ChallengeRequest) error
-	SubmitLiveProof(ctx context.Context, fqdn string, req *LiveProofRequest) (*LiveProofResponse, error)
-	ReissueLiveProof(ctx context.Context, fqdn string, req *LiveProofReissueRequest) (*LiveProofReissueResponse, error)
 	RevokeAgent(ctx context.Context, fqdn string, req *RevokeAgentRequest) (*LifecycleResponse, error)
 	RetireAgent(ctx context.Context, fqdn string, req *RetireAgentRequest) (*LifecycleResponse, error)
 	CancelAgent(ctx context.Context, fqdn string) (*LifecycleResponse, error)
@@ -777,11 +727,11 @@ func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, 
 	return &response, nil
 }
 
-// CreateLiveAgent starts the separate managed Live HTTP 202 flow. It sends
-// tier="live", managed=true, and environment="production". The idempotency key
-// is required and must be reused for retries. Response validation failures return
-// the decoded response together with an error; callers must check the error.
-func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgentRegistrationInput, idempotencyKey string) (*LiveProvisioningResponse, error) {
+// CreateLiveAgent creates or replays a managed Live HTTP 201 registration.
+// It sends tier="live", managed=true, and environment="production". Reuse the
+// required idempotency key and identical request for recovery. Decoded creation
+// facts are returned even when response validation fails; always check the error.
+func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgentRegistrationInput, idempotencyKey string) (*CreateAgentResponse, error) {
 	if req == nil || req.PublicKey == nil {
 		return nil, NewArgumentError("dnsid: Live create agent request and public key are required", nil)
 	}
@@ -791,8 +741,7 @@ func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgent
 	if err := validateRegistryIdempotencyKey(idempotencyKey); err != nil {
 		return nil, err
 	}
-	keyID, err := validateLivePublicJWK(req.PublicKey)
-	if err != nil {
+	if err := validateLivePublicJWK(req.PublicKey); err != nil {
 		return nil, err
 	}
 	normalized := *req
@@ -802,26 +751,34 @@ func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgent
 		Tier    string `json:"tier"`
 		Managed bool   `json:"managed"`
 	}{LiveAgentRegistrationInput: &normalized, Tier: "live", Managed: true}
-	response, err := registryJSONStatus[LiveProvisioningResponse](c, ctx, http.MethodPost, "/api/v1/agent", &body, http.StatusAccepted, map[string]string{"Idempotency-Key": idempotencyKey})
+	request, err := json.Marshal(body)
 	if err != nil {
-		return nil, err
+		return nil, NewArgumentError("dnsid: encoding Live registration request", err)
 	}
-	if err := validateLiveResponse(idempotencyKey, response.RequestID, response.AgentID, response.Status); err != nil {
-		return response, err
+	data, headers, status, callErr := c.doRequest(ctx, http.MethodPost, "/api/v1/agent", bytes.NewReader(request), map[string]string{"Content-Type": "application/json", "Idempotency-Key": idempotencyKey})
+	if callErr != nil {
+		return nil, &RegistrationError{Request: request, IdempotencyKey: idempotencyKey, Cause: callErr}
 	}
-	domain, transcript, err := parseLiveChallenge(response.Status, response.AgentID, response.Challenge, response.ChallengeMessage, keyID, "")
-	if err != nil {
-		return response, err
+	var response CreateAgentResponse
+	if err := json.Unmarshal(data, &response); err != nil {
+		callErr = NewParseError("dnsid: parsing Live registration response", err)
 	}
-	if response.Domain != "" {
-		wireDomain, err := NormalizeFQDN(response.Domain)
-		if err != nil || (domain != "" && wireDomain != domain) {
-			return response, NewValidationError("dnsid: Live response domain is invalid or conflicts with challenge", err)
-		}
-		domain = wireDomain
+	if callErr == nil && status != http.StatusCreated {
+		callErr = NewValidationError(fmt.Sprintf("dnsid: registry returned HTTP %d, want HTTP 201", status), nil)
 	}
-	response.Domain, response.ChallengeTranscript = domain, transcript
-	return response, nil
+	if callErr == nil && headers.Get("Idempotency-Key") != idempotencyKey {
+		callErr = NewValidationError("dnsid: Live response Idempotency-Key does not match the request", nil)
+	}
+	if callErr == nil && response.Status == "" {
+		callErr = NewValidationError("dnsid: Live response has no registry status", nil)
+	}
+	if callErr == nil {
+		callErr = validateRegistrationCreation(&CreateAgentRequest{}, &response)
+	}
+	if callErr != nil {
+		return &response, &RegistrationError{Request: request, IdempotencyKey: idempotencyKey, Creation: &response, Cause: callErr}
+	}
+	return &response, nil
 }
 
 // UnregisterAgent removes the agent at fqdn. It is best-effort for registry
@@ -857,8 +814,13 @@ func (c *HTTPRegistryClient) ListAgents(ctx context.Context, opts *ListAgentsOpt
 
 // GetAgentStatus returns the registry's detailed view of the agent at fqdn,
 // including workflow status, DNS publication state, and any workflow error.
+// UnsupportedRegistryResponse retains detail when managed publication is unsupported.
 func (c *HTTPRegistryClient) GetAgentStatus(ctx context.Context, fqdn string) (*AgentDetail, error) {
-	return registryJSON[AgentDetail](c, ctx, http.MethodGet, "/api/v1/agent/"+url.PathEscape(fqdn)+"/status", nil)
+	detail, err := registryJSON[AgentDetail](c, ctx, http.MethodGet, "/api/v1/agent/"+url.PathEscape(fqdn)+"/status", nil)
+	if err == nil && detail.Managed == "dnsid" && detail.MissingDNSPublished {
+		return detail, &UnsupportedRegistryResponse{Detail: detail}
+	}
+	return detail, err
 }
 
 // OrganizationOnboardingResponse contains authenticated account bindings and
@@ -914,7 +876,7 @@ func (c *HTTPRegistryClient) GetOrganizationOnboarding(ctx context.Context) (*Or
 // GetRegistration returns normalized registry workflow state for fqdn,
 // mapping the registry's managed mode ("self" or "dnsid") to a
 // PublicationAuthority. It returns a *ValidationError for unknown managed
-// modes.
+// modes, or *UnsupportedRegistryResponse for missing or invalid managed publication state.
 func (c *HTTPRegistryClient) GetRegistration(ctx context.Context, fqdn string) (*AgentRegistration, error) {
 	detail, err := c.GetAgentStatus(ctx, fqdn)
 	if err != nil {
@@ -967,66 +929,6 @@ func (c *HTTPRegistryClient) GetAgentEvents(ctx context.Context, fqdn string, op
 	return registryJSON[EventListResponse](c, ctx, http.MethodGet, path, nil)
 }
 
-// SubmitChallenge submits a signed domain-control challenge response for the
-// agent at fqdn. A nil error means the registry accepted the submission.
-func (c *HTTPRegistryClient) SubmitChallenge(ctx context.Context, fqdn string, req *ChallengeRequest) error {
-	// The server returns 202 Accepted with no body on success.
-	return c.doJSON(ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/challenge", req, nil)
-}
-
-// SubmitLiveProof submits proof of possession for a managed Live registration.
-// RequestID is also sent as the required Idempotency-Key header.
-func (c *HTTPRegistryClient) SubmitLiveProof(ctx context.Context, fqdn string, req *LiveProofRequest) (*LiveProofResponse, error) {
-	if req == nil || req.Challenge == "" || req.PublicKey == nil || req.Signature == "" {
-		return nil, NewArgumentError("dnsid: request ID, challenge, public key, and signature are required", nil)
-	}
-	if err := validateRegistryIdempotencyKey(req.RequestID); err != nil {
-		return nil, err
-	}
-	if _, err := validateLivePublicJWK(req.PublicKey); err != nil {
-		return nil, err
-	}
-	response, err := registryJSONStatus[LiveProofResponse](c, ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/proof", req, http.StatusAccepted, map[string]string{"Idempotency-Key": req.RequestID})
-	if err != nil {
-		return nil, err
-	}
-	if err := validateLiveResponse(req.RequestID, response.RequestID, response.AgentID, response.Status); err != nil {
-		return nil, err
-	}
-	return response, nil
-}
-
-// ReissueLiveProof requests a replacement challenge for an expired Live proof.
-// RequestID is also sent as the required Idempotency-Key header.
-func (c *HTTPRegistryClient) ReissueLiveProof(ctx context.Context, fqdn string, req *LiveProofReissueRequest) (*LiveProofReissueResponse, error) {
-	if req == nil || req.PublicKey == nil {
-		return nil, NewArgumentError("dnsid: request ID and original public key are required", nil)
-	}
-	if err := validateRegistryIdempotencyKey(req.RequestID); err != nil {
-		return nil, err
-	}
-	keyID, err := validateLivePublicJWK(req.PublicKey)
-	if err != nil {
-		return nil, err
-	}
-	response, err := registryJSONStatus[LiveProofReissueResponse](c, ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/proof/reissue", req, http.StatusAccepted, map[string]string{"Idempotency-Key": req.RequestID})
-	if err != nil {
-		return nil, err
-	}
-	if err := validateLiveResponse(req.RequestID, response.RequestID, response.AgentID, response.Status); err != nil {
-		return nil, err
-	}
-	if response.Challenge == "" || response.ChallengeMessage == "" {
-		return nil, NewValidationError("dnsid: incomplete Live challenge response", nil)
-	}
-	domain, transcript, err := parseLiveChallenge(response.Status, response.AgentID, response.Challenge, response.ChallengeMessage, keyID, fqdn)
-	if err != nil {
-		return nil, err
-	}
-	response.Domain, response.ChallengeTranscript = domain, transcript
-	return response, nil
-}
-
 // RevokeAgent revokes the immutable agent identity at fqdn with the supplied
 // reason. Revocation is a terminal lifecycle transition whose persistence and
 // transparency-log append are owned by the registry.
@@ -1058,14 +960,16 @@ func (c *HTTPRegistryClient) RejectAgent(ctx context.Context, fqdn string) (*Lif
 	return registryJSON[LifecycleResponse](c, ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/reject", nil)
 }
 
-// VerifyAgent asks the registry to run its verification step for fqdn and
-// advance the registration workflow.
+// VerifyAgent explicitly requests self-managed verification, including a retry
+// from ERROR regardless of error code. Ordinary self-managed registration needs
+// one call after the record, JWKS, and TLS are served; otherwise it stays
+// PROVISIONING until it times out. Live returns HTTP 409 INVALID_TRANSITION.
+// The request does not establish readiness; Create and polling never call it.
 func (c *HTTPRegistryClient) VerifyAgent(ctx context.Context, fqdn string) (*LifecycleResponse, error) {
 	return registryJSON[LifecycleResponse](c, ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/verify", nil)
 }
 
-// ConfirmReady confirms the agent at fqdn is ready to go live. It is an
-// alias for VerifyAgent.
+// ConfirmReady is an alias for VerifyAgent. It does not establish readiness.
 func (c *HTTPRegistryClient) ConfirmReady(ctx context.Context, fqdn string) (*LifecycleResponse, error) {
 	return c.VerifyAgent(ctx, fqdn)
 }
@@ -1107,88 +1011,41 @@ func rejectPrivateJWKJSON(data []byte) error {
 	return nil
 }
 
-func validateLivePublicJWK(value any) (string, error) {
+func validateLivePublicJWK(value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return "", NewArgumentError("dnsid: invalid Live public key JWK", err)
+		return NewArgumentError("dnsid: invalid Live public key JWK", err)
 	}
 	if err := rejectPrivateJWKJSON(data); err != nil {
-		return "", err
+		return err
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return "", NewArgumentError("dnsid: invalid Live public key JWK", err)
+		return NewArgumentError("dnsid: invalid Live public key JWK", err)
 	}
 	if _, ok := fields["keys"]; ok {
-		return "", NewArgumentError("dnsid: Live public key must be a bare JWK", nil)
+		return NewArgumentError("dnsid: Live public key must be a bare JWK", nil)
 	}
 	key, err := jwk.ParseKey(data)
 	if err != nil {
-		return "", NewArgumentError("dnsid: invalid Live public key JWK", err)
+		return NewArgumentError("dnsid: invalid Live public key JWK", err)
 	}
 	alg, hasAlg := jwkAlg(key)
 	if inferred, ok := algForJWK(key); !ok || inferred != JoseAlgEdDSA || !hasAlg || alg != JoseAlgEdDSA || !signingKeyEligible(key) {
-		return "", NewArgumentError("dnsid: Live public key must be an Ed25519 signing JWK with alg=EdDSA", nil)
+		return NewArgumentError("dnsid: Live public key must be an Ed25519 signing JWK with alg=EdDSA", nil)
 	}
 	var publicKey ed25519.PublicKey
 	if err := jwk.Export(key, &publicKey); err != nil || !validEd25519PublicKey(publicKey) {
-		return "", NewArgumentError("dnsid: invalid Live Ed25519 public key", err)
+		return NewArgumentError("dnsid: invalid Live Ed25519 public key", err)
 	}
 	thumbprint, err := (&JWK{key: key}).Thumbprint()
 	if err != nil {
-		return "", NewArgumentError("dnsid: computing Live public key thumbprint", err)
+		return NewArgumentError("dnsid: computing Live public key thumbprint", err)
 	}
 	if kid, ok := key.KeyID(); ok && kid != "" && kid != thumbprint {
-		return "", NewArgumentError("dnsid: Live public key kid does not match its RFC 7638 thumbprint", nil)
-	}
-	return thumbprint, nil
-}
-
-const liveChallengeProtocol = "dnsid-live-provisioning-pop/v1"
-
-func validateLiveResponse(requestID, responseRequestID, agentID, status string) error {
-	if responseRequestID == "" || agentID == "" || status == "" {
-		return NewValidationError("dnsid: incomplete Live registry response", nil)
-	}
-	if responseRequestID != requestID {
-		return NewValidationError("dnsid: Live registry response request ID does not match the request", nil)
+		return NewArgumentError("dnsid: Live public key kid does not match its RFC 7638 thumbprint", nil)
 	}
 	return nil
-}
-
-func parseLiveChallenge(status, agentID, challenge, encoded, expectedKeyID, expectedDomain string) (string, *LiveChallengeTranscript, error) {
-	if challenge == "" && encoded == "" && status != "challenge_pending" {
-		return "", nil, nil
-	}
-	if challenge == "" || encoded == "" {
-		return "", nil, NewValidationError("dnsid: incomplete Live challenge response", nil)
-	}
-	message, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil || base64.RawURLEncoding.EncodeToString(message) != encoded || !utf8.Valid(message) {
-		return "", nil, NewValidationError("dnsid: invalid Live challenge message encoding", err)
-	}
-	var transcript LiveChallengeTranscript
-	if err := json.Unmarshal(message, &transcript); err != nil {
-		return "", nil, NewValidationError("dnsid: invalid Live challenge transcript", err)
-	}
-	if transcript.Protocol != liveChallengeProtocol || transcript.OrgID == "" || transcript.AgentID == "" || transcript.FQDN == "" || transcript.KeyID == "" || transcript.Nonce == "" || transcript.ExpiresAt.IsZero() {
-		return "", nil, NewValidationError("dnsid: incomplete Live challenge transcript", nil)
-	}
-	if transcript.AgentID != agentID || transcript.Nonce != challenge || (expectedKeyID != "" && transcript.KeyID != expectedKeyID) {
-		return "", nil, NewValidationError("dnsid: Live challenge transcript does not match the response or public key", nil)
-	}
-	domain, err := NormalizeFQDN(transcript.FQDN)
-	if err != nil {
-		return "", nil, NewValidationError("dnsid: invalid Live challenge transcript domain", err)
-	}
-	if expectedDomain != "" {
-		expected, err := NormalizeFQDN(expectedDomain)
-		if err != nil || domain != expected {
-			return "", nil, NewValidationError("dnsid: Live challenge transcript domain does not match the proof route", err)
-		}
-	}
-	transcript.FQDN = domain
-	return domain, &transcript, nil
 }
 
 func validateRegistryIdempotencyKey(key string) error {
@@ -1458,7 +1315,7 @@ func (e *RegistryAPIError) RetrySameEntry() bool {
 		return true
 	}
 	switch e.Code {
-	case "TLOG_SUBMISSION_BUSY", "TLOG_SUBMISSION_INDETERMINATE":
+	case "TLOG_SUBMISSION_BUSY", "TLOG_SUBMISSION_INDETERMINATE", "TLOG_PUBLICATION_REQUIRED":
 		return true
 	case "IDEMPOTENCY_MISMATCH", "TLOG_IDEMPOTENCY_MISMATCH", "TLOG_PREPARATION_MISMATCH", "TLOG_INVALID_ENTRY":
 		return false
@@ -1478,7 +1335,8 @@ func (e *RegistryAPIError) SubmissionState() SubmissionState {
 	switch e.Code {
 	case "TLOG_SUBMISSION_INDETERMINATE":
 		return SubmissionStateIndeterminate
-	case "TLOG_SUBMISSION_BUSY":
+	// Publication lag on owner-produced ISSUANCE: retry the same bytes once the record is live.
+	case "TLOG_SUBMISSION_BUSY", "TLOG_PUBLICATION_REQUIRED":
 		return SubmissionStatePending
 	case "IDEMPOTENCY_MISMATCH", "TLOG_IDEMPOTENCY_MISMATCH", "TLOG_PREPARATION_MISMATCH", "TLOG_INVALID_ENTRY":
 		return SubmissionStateRejected
@@ -1500,18 +1358,6 @@ func registryJSON[T any](c *HTTPRegistryClient, ctx context.Context, method, pat
 	var out T
 	if err := c.doJSON(ctx, method, path, in, &out, headers...); err != nil {
 		return nil, err
-	}
-	return &out, nil
-}
-
-func registryJSONStatus[T any](c *HTTPRegistryClient, ctx context.Context, method, path string, in any, expectedStatus int, headers ...map[string]string) (*T, error) {
-	var out T
-	status, err := c.doJSONStatus(ctx, method, path, in, &out, headers...)
-	if err != nil {
-		return nil, err
-	}
-	if status != expectedStatus {
-		return nil, NewValidationError(fmt.Sprintf("dnsid: registry returned HTTP %d, want HTTP %d", status, expectedStatus), nil)
 	}
 	return &out, nil
 }

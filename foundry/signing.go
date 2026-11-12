@@ -16,7 +16,7 @@ import (
 )
 
 // signingController gates the provider exposed by IdentityManager. Workflow
-// proof and issuance signatures use the underlying provider while paused.
+// issuance signatures use the underlying provider while paused.
 type signingController struct {
 	dnsid.KeyProvider
 	mu     sync.Mutex
