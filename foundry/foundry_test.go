@@ -281,6 +281,9 @@ func (r *fakeRegistry) CreateLiveAgent(_ context.Context, input *dnsid.LiveAgent
 		id = "agent-id"
 	}
 	response := &dnsid.CreateAgentResponse{ID: id, Status: r.status, Domain: r.responseDomain, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}, OIDCIssuerURL: r.oidcIssuerURL}
+	if response.Domain == "" && r.createResponseErr == nil {
+		return response, dnsid.NewValidationError("registry returned no Live domain", nil)
+	}
 	return response, r.createResponseErr
 }
 
@@ -603,26 +606,29 @@ func TestCreateEmptyProvider(t *testing.T) {
 	}
 }
 
-func TestReplayWithoutDomainAndLostCreate(t *testing.T) {
+func TestReplayRejectedDomainAndLostCreate(t *testing.T) {
 	f := newFixture(t)
 	f.registry.responseDomain = ""
 	_, err := f.client.Create(context.Background(), "same")
-	e := requireKind(t, err, Unresolved)
-	if e.IdentityID != "agent-id" || !e.Resumable {
+	e := requireKind(t, err, Integrity)
+	if e.IdentityID != "" || e.Resumable {
 		t.Fatal(err)
 	}
 	saved := f.document("same")
-	if saved.IdentityID != "agent-id" || saved.Domain != "" {
-		t.Fatal("lost creation facts")
+	if saved.IdentityID != "" || saved.Domain != "" || saved.Phase != "creation-pending" || saved.RejectedCreation == nil || saved.RejectedCreation.ID != "agent-id" || saved.RejectedCreation.Domain != "" {
+		t.Fatal("lost rejected creation evidence or promoted it to a binding")
 	}
-	key := saved.RegistrationKey
+	key, issuanceKey, input := saved.RegistrationKey, saved.IssuanceKey, saved.CreationInput
+	initial := bytes.Clone(saved.InitialPublicKey)
 	f.registry.responseDomain = testDomain
+	f.client = f.newClient(f.operational, f.store)
 	id, err := f.client.Create(context.Background(), "same")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.Domain() != testDomain || f.registry.requestID != key {
-		t.Fatal("replay changed request")
+	saved = f.document("same")
+	if id.Domain() != testDomain || f.registry.createCalls != 2 || f.registry.requestID != key || saved.RegistrationKey != key || saved.IssuanceKey != issuanceKey || !sameJSON(input, saved.CreationInput) || !bytes.Equal(initial, saved.InitialPublicKey) {
+		t.Fatal("replay changed frozen request, keys, or identity")
 	}
 	// A lost HTTP response reuses exactly the frozen request and idempotency key.
 	f = newFixture(t)

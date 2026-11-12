@@ -330,7 +330,7 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 			candidate := *doc
 			if callErr == nil {
 				switch {
-				case response.ID == "" || response.Status == "":
+				case response.ID == "" || response.Status == "" || response.Domain == "":
 					callErr = dnsid.NewValidationError("foundry: incomplete Live creation facts", nil)
 				case doc.IdentityID != "" && doc.IdentityID != response.ID:
 					callErr = dnsid.NewValidationError("foundry: replay changed identity ID", nil)
@@ -339,7 +339,7 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 					candidate.RegistryStatus = response.Status
 				}
 			}
-			if callErr == nil && response.Domain != "" {
+			if callErr == nil {
 				domain, err := dnsid.NormalizeFQDN(response.Domain)
 				if err != nil || domain != response.Domain || (doc.Domain != "" && doc.Domain != domain) {
 					callErr = dnsid.NewValidationError("foundry: invalid or changed Live domain", err)
@@ -372,9 +372,6 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 		}
 		if err := registryOutcome(doc); err != nil {
 			return nil, err
-		}
-		if doc.Domain == "" {
-			return nil, failure(Unresolved, doc, fmt.Errorf("registry accepted creation without an assigned domain; retry Create"))
 		}
 	} else if doc.Phase != "complete" {
 		if _, err := c.readDetail(ctx, lease, doc); err != nil {
