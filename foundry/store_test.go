@@ -64,6 +64,17 @@ func TestFileFoundryStore_PortableRoundTripAndUnknownMembers(t *testing.T) {
 	if !bytes.Equal(doc.Issuance.Operation.EntryBytes, parsed.Issuance.Operation.EntryBytes) {
 		t.Fatal("exact bytes changed across portable encoding")
 	}
+	obj["requestId"] = obj["registrationKey"]
+	delete(obj, "registrationKey")
+	delete(obj, "issuanceKey")
+	legacy, err := json.Marshal(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := ParseRecoveryDocument(legacy)
+	if err != nil || migrated.RegistrationKey != doc.RegistrationKey || migrated.IssuanceKey != doc.IssuanceKey || !bytes.Equal(migrated.Issuance.Operation.EntryBytes, doc.Issuance.Operation.EntryBytes) {
+		t.Fatalf("legacy recovery changed operation keys or exact issuance bytes: %v", err)
+	}
 	destination, err := NewFileFoundryStore(filepath.Join(t.TempDir(), "imported"))
 	if err != nil {
 		t.Fatal(err)

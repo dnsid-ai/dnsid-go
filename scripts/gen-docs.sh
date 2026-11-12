@@ -89,16 +89,9 @@ AgentListResponse dnsid-registry
 AgentRegistration dnsid-registry
 AgentRegistrationInput dnsid-registry
 CanonicalRecordContentResponse dnsid-registry
-ChallengeRequest dnsid-registry
 CreateAgentRequest dnsid-registry
 CreateAgentResponse dnsid-registry
 LiveAgentRegistrationInput dnsid-registry
-LiveChallengeTranscript dnsid-registry
-LiveProvisioningResponse dnsid-registry
-LiveProofRequest dnsid-registry
-LiveProofResponse dnsid-registry
-LiveProofReissueRequest dnsid-registry
-LiveProofReissueResponse dnsid-registry
 PublicationConfig dnsid-registry
 EventListOptions dnsid-registry
 EventListResponse dnsid-registry

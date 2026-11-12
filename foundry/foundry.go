@@ -28,11 +28,9 @@ import (
 
 // RegistryClient is the existing low-level registry surface used by Foundry.
 type RegistryClient interface {
-	CreateLiveAgent(context.Context, *dnsid.LiveAgentRegistrationInput, string) (*dnsid.LiveProvisioningResponse, error)
+	CreateLiveAgent(context.Context, *dnsid.LiveAgentRegistrationInput, string) (*dnsid.CreateAgentResponse, error)
 	GetOrganizationOnboarding(context.Context) (*dnsid.OrganizationOnboardingResponse, error)
 	GetAgentStatus(context.Context, string) (*dnsid.AgentDetail, error)
-	SubmitLiveProof(context.Context, string, *dnsid.LiveProofRequest) (*dnsid.LiveProofResponse, error)
-	ReissueLiveProof(context.Context, string, *dnsid.LiveProofReissueRequest) (*dnsid.LiveProofReissueResponse, error)
 	dnsid.RegistryPreparedEventClient
 }
 
@@ -318,7 +316,7 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 		}
 		source := c.loaded.KeySource
 		source.EntityKeyPath = ""
-		doc = &RecoveryDocument{SchemaVersion: 1, Phase: "creation-pending", RegistryURL: key.RegistryURL, OrganizationID: key.OrganizationID, Name: name, GovernanceID: onboarding.GovernanceDomain, LogTrust: trust, KeySource: source, InitialPublicKey: initial, RequestID: requestID, CreationInput: CreationInput{Name: name, PublicKey: initial, Environment: "production", Tier: "live", Managed: true}}
+		doc = &RecoveryDocument{SchemaVersion: 1, Phase: "creation-pending", RegistryURL: key.RegistryURL, OrganizationID: key.OrganizationID, Name: name, GovernanceID: onboarding.GovernanceDomain, LogTrust: trust, KeySource: source, InitialPublicKey: initial, RegistrationKey: requestID, IssuanceKey: IssuanceKey(requestID), CreationInput: CreationInput{Name: name, PublicKey: initial, Environment: "production", Tier: "live", Managed: true}}
 		if err := lease.Save(ctx, doc); err != nil {
 			return nil, c.wrap(doc, err)
 		}
@@ -327,19 +325,36 @@ func (c *Client) Create(ctx context.Context, name string) (identity *FoundryIden
 	}
 	if doc.IdentityID == "" || doc.Domain == "" {
 		input := &dnsid.LiveAgentRegistrationInput{Name: doc.CreationInput.Name, PublicKey: doc.CreationInput.PublicKey, Environment: doc.CreationInput.Environment, CapabilitiesURL: doc.CreationInput.CapabilitiesURL}
-		response, callErr := c.deps.RegistryClient.CreateLiveAgent(ctx, input, doc.RequestID)
+		response, callErr := c.deps.RegistryClient.CreateLiveAgent(ctx, input, doc.RegistrationKey)
 		if response != nil {
-			if response.RequestID != doc.RequestID || response.AgentID == "" || response.Status == "" {
-				return nil, failure(Integrity, doc, fmt.Errorf("invalid Live creation facts"))
+			if response.ID != "" {
+				if doc.IdentityID != "" && doc.IdentityID != response.ID {
+					return nil, failure(Integrity, doc, fmt.Errorf("replay changed identity ID"))
+				}
+				doc.IdentityID = response.ID
 			}
-			if doc.IdentityID != "" && doc.IdentityID != response.AgentID {
-				return nil, failure(Integrity, doc, fmt.Errorf("replay changed identity ID"))
+			if response.Status != "" {
+				doc.RegistryStatus = response.Status
 			}
-			doc.IdentityID = response.AgentID
-			doc.RegistryStatus = response.Status
-			if callErr == nil {
-				if err := recordChallenge(doc, response); err != nil {
-					return nil, err
+			if response.ID == "" || response.Status == "" {
+				callErr = errors.Join(callErr, dnsid.NewValidationError("foundry: incomplete Live creation facts", nil))
+			}
+			if response.Domain != "" && doc.IdentityID != "" {
+				domain, err := dnsid.NormalizeFQDN(response.Domain)
+				if err != nil || domain != response.Domain || (doc.Domain != "" && doc.Domain != domain) {
+					callErr = errors.Join(callErr, dnsid.NewValidationError("foundry: invalid or changed Live domain", err))
+				} else {
+					doc.Domain = domain
+					doc.Phase = "identity-known"
+				}
+			}
+			if callErr == nil && doc.Domain != "" {
+				cfg := publicationIdentity(doc.Domain, &response.PublicationConfig)
+				if err := cfg.Validate(); err != nil {
+					callErr = dnsid.NewValidationError("foundry: invalid Live publication configuration", err)
+				} else {
+					doc.PublicationConfig = &response.PublicationConfig
+					doc.OIDCIssuerURL = response.OIDCIssuerURL
 				}
 			}
 			if err := lease.Save(ctx, doc); err != nil {
@@ -602,17 +617,20 @@ func (c *Client) readDetail(ctx context.Context, lease FoundryLease, doc *Recove
 	if err := registryOutcome(doc); err != nil {
 		return nil, err
 	}
+	if detail.Managed != "dnsid" || detail.MissingDNSPublished {
+		return nil, &UnsupportedRegistry{Detail: failure(UnsupportedContract, doc, fmt.Errorf("registry-managed detail requires managed=dnsid and boolean dns_published"))}
+	}
 	return detail, nil
 }
 
-func (c *Client) waitForRegistryReady(ctx context.Context, lease FoundryLease, doc *RecoveryDocument) (*dnsid.AgentDetail, error) {
+func (c *Client) waitForPublication(ctx context.Context, lease FoundryLease, doc *RecoveryDocument) (*dnsid.AgentDetail, error) {
 	var backoff pollBackoff
 	for {
 		detail, err := c.readDetail(ctx, lease, doc)
-		if err != nil {
+		if err != nil && !retryable(ctx, err) {
 			return nil, err
 		}
-		if doc.RegistryStatus == "VERIFIED" || doc.RegistryStatus == "READY" {
+		if err == nil && (doc.RegistryStatus == "PROVISIONING" || doc.RegistryStatus == "READY") && detail.DNSPublished {
 			return detail, nil
 		}
 		if err := backoff.wait(ctx); err != nil {
@@ -700,12 +718,7 @@ func (i *FoundryIdentity) Active(ctx context.Context) (identity *FoundryIdentity
 	if err := registryOutcome(doc); err != nil {
 		return nil, err
 	}
-	if doc.Proof != nil && doc.Proof.Outcome != "accepted" {
-		if err := i.prove(ctx, lease, doc); err != nil {
-			return nil, err
-		}
-	}
-	detail, err := i.client.waitForRegistryReady(ctx, lease, doc)
+	detail, err := i.client.waitForPublication(ctx, lease, doc)
 	if err != nil {
 		return nil, err
 	}

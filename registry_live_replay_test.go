@@ -2,50 +2,40 @@ package dnsid
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func TestHTTPRegistryClient_LiveReplayDomain(t *testing.T) {
-	provider := GenerateEd25519KeyProvider()
-	key := provider.JWK()
-	thumb, err := (&JWK{key: key}).Thumbprint()
-	if err != nil {
-		t.Fatal(err)
-	}
+	key := GenerateEd25519KeyProvider().JWK()
 	for _, test := range []struct {
-		name, wireDomain, challengeDomain string
-		want                              string
-		invalid                           bool
-		includeDomain                     bool
+		name, wireDomain       string
+		invalid, includeDomain bool
 	}{
-		{name: "absent"},
-		{name: "null", includeDomain: true},
-		{name: "empty", includeDomain: true, wireDomain: ""},
-		{name: "replay", wireDomain: "Agent.Example.", want: "agent.example"},
+		{name: "absent", invalid: true},
+		{name: "null", includeDomain: true, invalid: true},
+		{name: "empty", includeDomain: true, invalid: true},
+		{name: "replay", wireDomain: "agent.example"},
+		{name: "noncanonical", wireDomain: "Agent.Example.", invalid: true},
 		{name: "invalid", wireDomain: "invalid domain", invalid: true},
-		{name: "matching transcript", wireDomain: "Agent.Example.", challengeDomain: "agent.example", want: "agent.example"},
-		{name: "conflicting transcript", wireDomain: "other.example", challengeDomain: "agent.example", invalid: true},
+		{name: "legacy nonce ignored", wireDomain: "agent.example"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				response := map[string]any{"request_id": "replay-key", "agent_id": "agent-id", "status": "provisioning", "challenge": "", "challenge_message": ""}
+				response := map[string]any{"id": "agent-id", "status": "PROVISIONING", "publication_config": registrationTestConfig()}
 				if test.name == "null" {
 					response["domain"] = nil
 				} else if test.includeDomain || test.wireDomain != "" {
 					response["domain"] = test.wireDomain
 				}
-				if test.challengeDomain != "" {
-					message, _ := json.Marshal(LiveChallengeTranscript{Protocol: liveChallengeProtocol, OrgID: "org", AgentID: "agent-id", FQDN: test.challengeDomain, KeyID: thumb, Nonce: "nonce", ExpiresAt: time.Now().Add(time.Hour).UTC()})
-					response["status"] = "challenge_pending"
-					response["challenge"] = "nonce"
-					response["challenge_message"] = base64.RawURLEncoding.EncodeToString(message)
+				if test.name == "legacy nonce ignored" {
+					response["challenge"] = "obsolete"
+					response["challenge_message"] = "not a valid transcript"
 				}
-				w.WriteHeader(http.StatusAccepted)
+				w.Header().Set("Idempotency-Key", "replay-key")
+				w.WriteHeader(http.StatusCreated)
 				_ = json.NewEncoder(w).Encode(response)
 			}))
 			defer server.Close()
@@ -58,12 +48,12 @@ func TestHTTPRegistryClient_LiveReplayDomain(t *testing.T) {
 				if err == nil {
 					t.Fatal("accepted invalid domain")
 				}
-				if response == nil || response.RequestID != "replay-key" || response.AgentID != "agent-id" {
+				if response == nil || response.ID != "agent-id" {
 					t.Fatalf("validation discarded creation facts: %+v", response)
 				}
 				return
 			}
-			if err != nil || response.Domain != test.want {
+			if err != nil || response.Domain != test.wireDomain {
 				t.Fatalf("response=%+v err=%v", response, err)
 			}
 		})

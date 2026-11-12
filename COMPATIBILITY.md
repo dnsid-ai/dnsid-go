@@ -59,7 +59,27 @@ also read publication authority with an organization credential. Retain the
 returned immutable ID, publication configuration, and OIDC issuer. Recover
 failed attempts from `RegistrationError` with the same request and key; a failure
 does not establish that no agent exists. Publication configuration is not trust
-policy. Managed Live remains the separate HTTP 202 operation.
+policy.
+
+### Registration without nonce proof
+
+Managed Live create and replay now accept only HTTP 201 and require a matching
+response Idempotency-Key. `CreateLiveAgent` returns `CreateAgentResponse`, including
+the assigned ID, domain, publication configuration, status, and OIDC issuer.
+`LiveProvisioningResponse`, registration challenge/proof types, `SubmitChallenge`,
+`SubmitLiveProof`, `ReissueLiveProof`, and challenge fields on `AgentDetail` are
+removed. Callers and injected registry clients must use the updated interface;
+old HTTP 202 Live servers are not compatible.
+
+Foundry prepares bilateral ISSUANCE after authenticated publication progress
+during PROVISIONING, not after VERIFIED or READY. Authenticated registry-managed
+detail must include boolean `dns_published`: false means wait; absent, null, or
+non-boolean means unsupported. The operational ISSUANCE
+signature proves possession. Completion still requires registry convergence and
+fresh public ACTIVE and lifecycle-log evidence. Recovery documents now save
+`registrationKey` and `issuanceKey`; old `requestId` and `proof-pending` state is
+read without resuming a nonce exchange. Existing exact issuance bytes and keys
+are retained.
 
 ### Since v0.36.0: breaking C2SP logical-identity correction
 

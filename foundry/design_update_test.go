@@ -85,8 +85,8 @@ func TestCreatePreservesFactsFromInvalidResponse(t *testing.T) {
 	_, err := f.client.Create(context.Background(), "invalid-response")
 	outcome := requireKind(t, err, Integrity)
 	saved := f.document("invalid-response")
-	if outcome.IdentityID != "agent-id" || saved.IdentityID != "agent-id" || saved.RequestID != f.registry.requestID || saved.Domain != "" {
-		t.Fatalf("validation failure lost creation facts or accepted invalid domain: %+v", saved)
+	if outcome.IdentityID != "agent-id" || saved.IdentityID != "agent-id" || saved.RegistrationKey != f.registry.requestID || saved.Domain != testDomain {
+		t.Fatalf("validation failure lost known creation facts: %+v", saved)
 	}
 }
 

@@ -16,7 +16,6 @@ import (
 
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/dnsid-ai/dnsid-go/config"
-	"github.com/dnsid-ai/dnsid-go/internal/joseutil"
 	dnsidlog "github.com/dnsid-ai/dnsid-go/log"
 	"github.com/dnsid-ai/dnsid-go/log/c2sptlog"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -39,12 +38,12 @@ type RecoveryDocument struct {
 	CreationInput     CreationInput            `json:"creationInput"`
 	IdentityID        string                   `json:"identityId,omitempty"`
 	Domain            string                   `json:"domain,omitempty"`
-	RequestID         string                   `json:"requestId,omitempty"`
+	RegistrationKey   string                   `json:"registrationKey"`
+	IssuanceKey       string                   `json:"issuanceKey"`
 	RegistryStatus    string                   `json:"registryStatus,omitempty"`
 	RegistryError     *dnsid.AgentError        `json:"registryError,omitempty"`
 	ProtocolState     string                   `json:"protocolState,omitempty"`
 	SigningPaused     bool                     `json:"signingPaused,omitempty"`
-	Proof             *ProofState              `json:"proof,omitempty"`
 	PublicationConfig *dnsid.PublicationConfig `json:"publicationConfig,omitempty"`
 	OIDCIssuerURL     string                   `json:"oidcIssuerUrl,omitempty"`
 	EntityPublicKey   json.RawMessage          `json:"entityPublicKey,omitempty"`
@@ -60,14 +59,6 @@ type CreationInput struct {
 	CapabilitiesURL string          `json:"capabilities_url,omitempty"`
 	Tier            string          `json:"tier"`
 	Managed         bool            `json:"managed"`
-}
-
-// ProofState retains the exact server challenge and completed request.
-type ProofState struct {
-	Challenge        string `json:"challenge"`
-	ChallengeMessage string `json:"challengeMessage"`
-	Signature        string `json:"signature,omitempty"`
-	Outcome          string `json:"outcome,omitempty"`
 }
 
 // IssuanceState retains local coordinator state separately from a verified
@@ -144,6 +135,17 @@ func ParseRecoveryDocument(data []byte) (*RecoveryDocument, error) {
 	if err := noSecrets(obj); err != nil {
 		return nil, err
 	}
+	// Old nonce metadata is inert; resume the same identity through ISSUANCE.
+	if doc.RegistrationKey == "" {
+		doc.RegistrationKey, _ = obj["requestId"].(string)
+	}
+	if doc.IssuanceKey == "" {
+		doc.IssuanceKey = IssuanceKey(doc.RegistrationKey)
+	}
+	if doc.Phase == "proof-pending" {
+		doc.Phase = "identity-known"
+	}
+	delete(obj, "requestId")
 	doc.original = obj
 	if err := doc.validate(); err != nil {
 		return nil, err
@@ -212,7 +214,7 @@ func (d *RecoveryDocument) validate() error {
 		return fmt.Errorf("foundry: unsupported recovery schema")
 	}
 	switch d.Phase {
-	case "creation-pending", "identity-known", "proof-pending", "issuance-accepted", "complete":
+	case "creation-pending", "identity-known", "issuance-accepted", "complete":
 	default:
 		return fmt.Errorf("foundry: unknown recovery phase %q", d.Phase)
 	}
@@ -246,8 +248,8 @@ func (d *RecoveryDocument) validate() error {
 	if err != nil {
 		return err
 	}
-	if d.RequestID != requestID || d.CreationInput.Name != d.Name {
-		return fmt.Errorf("foundry: creation input or request ID conflicts with bindings")
+	if d.RegistrationKey != requestID || d.IssuanceKey != IssuanceKey(requestID) || d.CreationInput.Name != d.Name {
+		return fmt.Errorf("foundry: creation input or operation keys conflict with bindings")
 	}
 	if creationThumb != thumb && (d.Issuance == nil || !d.Issuance.Recovered) {
 		return fmt.Errorf("foundry: creation key differs from initial key without recovered issuance")
@@ -272,17 +274,8 @@ func (d *RecoveryDocument) validate() error {
 	if d.Phase != "creation-pending" && (d.Domain == "" || d.IdentityID == "") {
 		return fmt.Errorf("foundry: recovery phase requires identity and domain")
 	}
-	if d.Phase == "proof-pending" && d.Proof != nil && d.Proof.Outcome == "accepted" {
-		return fmt.Errorf("foundry: settled proof must advance to identity-known")
-	}
-	if d.Proof != nil && d.Proof.Outcome != "accepted" && d.Phase != "proof-pending" {
-		return fmt.Errorf("foundry: unsettled proof requires proof-pending")
-	}
-	if d.Issuance != nil && (d.Phase == "proof-pending" || d.Phase == "creation-pending") {
+	if d.Issuance != nil && d.Phase == "creation-pending" {
 		return fmt.Errorf("foundry: issuance requires identity-known or a later phase")
-	}
-	if d.Phase == "proof-pending" && d.Proof == nil {
-		return fmt.Errorf("foundry: proof phase requires challenge")
 	}
 	if d.PublicationConfig != nil {
 		p := d.PublicationConfig
@@ -312,32 +305,6 @@ func (d *RecoveryDocument) validate() error {
 		}
 		if d.Issuance.Recovered && d.Issuance.AcceptedReference != d.PublicationConfig.LogRef {
 			return fmt.Errorf("foundry: recovered issuance lacks inclusion reference")
-		}
-	}
-	if d.Proof != nil {
-		if _, err := challengeTranscript(d, d.Proof.Challenge, d.Proof.ChallengeMessage); err != nil {
-			return err
-		}
-		if d.Proof.Outcome == "submitting" && d.Proof.Signature == "" {
-			return fmt.Errorf("foundry: submitted proof lacks exact signature")
-		}
-		if d.Proof.Signature != "" {
-			signature, err := base64.RawURLEncoding.Strict().DecodeString(d.Proof.Signature)
-			if err != nil {
-				return err
-			}
-			message, err := base64.RawURLEncoding.Strict().DecodeString(d.Proof.ChallengeMessage)
-			if err != nil {
-				return err
-			}
-			if !joseutil.VerifySignature(joseutil.ProtectedHeader{Alg: dnsid.JoseAlgEdDSA}, joseutil.SignatureParts{SigningInput: message, Signature: signature}, []jwk.Key{creation}) {
-				return fmt.Errorf("foundry: persisted proof signature does not match creation key")
-			}
-		}
-		switch d.Proof.Outcome {
-		case "", "submitting", "accepted":
-		default:
-			return fmt.Errorf("foundry: unknown proof outcome")
 		}
 	}
 	if d.Issuance != nil && d.Issuance.PreparedBytes != "" {
@@ -399,7 +366,7 @@ func (d *RecoveryDocument) validate() error {
 				}
 			}
 		}
-		if op.Domain != d.Domain || op.GovernanceID != d.GovernanceID || op.IdempotencyKey != IssuanceKey(d.RequestID) || op.OperationalThumbprint != creationThumb || d.PublicationConfig == nil || op.LogReference != d.PublicationConfig.LogRef {
+		if op.Domain != d.Domain || op.GovernanceID != d.GovernanceID || op.IdempotencyKey != d.IssuanceKey || op.OperationalThumbprint != creationThumb || d.PublicationConfig == nil || op.LogReference != d.PublicationConfig.LogRef {
 			return fmt.Errorf("foundry: issuance metadata conflicts with saved bindings")
 		}
 		if len(op.EntryBytes) > 0 {

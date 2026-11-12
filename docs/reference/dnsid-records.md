@@ -27,7 +27,7 @@ func ParseLogRef(lr string) (method, entryRef string, err error)
 ParseLogRef splits an lr= log reference of the form "method:entryRef" into its method and entry\-reference parts. It returns a \*ParseError for malformed references or invalid method names.
 
 <a name="RegistrantDomain"></a>
-## type [DNSRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L293-L298>)
+## type [DNSRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L290-L295>)
 
 DNSRecord matches the OpenAPI DNSRecord schema.
 

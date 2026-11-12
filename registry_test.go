@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
+
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -61,8 +61,8 @@ func (c *fakeRegistryClient) CreateAgent(_ context.Context, _ *CreateAgentReques
 	return &CreateAgentResponse{ID: "test-id", Domain: "agent.example.com", DomainDisplay: "agent.example.com", Status: "PENDING"}, nil
 }
 
-func (c *fakeRegistryClient) CreateLiveAgent(_ context.Context, _ *LiveAgentRegistrationInput, requestID string) (*LiveProvisioningResponse, error) {
-	return &LiveProvisioningResponse{RequestID: requestID, AgentID: "test-id", Status: "challenge_pending"}, nil
+func (c *fakeRegistryClient) CreateLiveAgent(_ context.Context, _ *LiveAgentRegistrationInput, _ string) (*CreateAgentResponse, error) {
+	return &CreateAgentResponse{ID: "test-id", Domain: "agent.example.com", Status: "PROVISIONING"}, nil
 }
 
 func (c *fakeRegistryClient) UnregisterAgent(_ context.Context, _ string) error { return nil }
@@ -77,18 +77,6 @@ func (c *fakeRegistryClient) GetAgentStatus(_ context.Context, _ string) (*Agent
 
 func (c *fakeRegistryClient) GetAgentEvents(_ context.Context, _ string, _ *EventListOptions) (*EventListResponse, error) {
 	return &EventListResponse{Events: []AgentEvent{}}, nil
-}
-
-func (c *fakeRegistryClient) SubmitChallenge(_ context.Context, _ string, _ *ChallengeRequest) error {
-	return nil
-}
-
-func (c *fakeRegistryClient) SubmitLiveProof(_ context.Context, _ string, req *LiveProofRequest) (*LiveProofResponse, error) {
-	return &LiveProofResponse{RequestID: req.RequestID, AgentID: "test-id", Status: "provider_deferred"}, nil
-}
-
-func (c *fakeRegistryClient) ReissueLiveProof(_ context.Context, _ string, req *LiveProofReissueRequest) (*LiveProofReissueResponse, error) {
-	return &LiveProofReissueResponse{RequestID: req.RequestID, AgentID: "test-id", Status: "challenge_pending"}, nil
 }
 
 func (c *fakeRegistryClient) RevokeAgent(_ context.Context, _ string, req *RevokeAgentRequest) (*LifecycleResponse, error) {
@@ -592,8 +580,18 @@ func TestHTTPRegistryClient_GetAgentStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgentStatus: %v", err)
 	}
-	if resp.Status != "READY" || resp.Managed != "dnsid" || resp.PublicationConfig.LogRef != "log.example:1" {
+	if resp.Status != "READY" || resp.Managed != "dnsid" || resp.PublicationConfig.LogRef != "log.example:1" || resp.MissingDNSPublished || !resp.DNSPublished {
 		t.Fatalf("unexpected: %+v", resp)
+	}
+	for _, field := range []string{`"dns_published":true`, `"dns_published":false`, `"dns_published":null`, `"dns_published":"true"`, `"dns_published":1`, `"extension":true`} {
+		var detail AgentDetail
+		if err := json.Unmarshal([]byte(`{"id":"id-1",`+field+`}`), &detail); err != nil {
+			t.Fatal(err)
+		}
+		valid := field == `"dns_published":true` || field == `"dns_published":false`
+		if detail.MissingDNSPublished == valid || detail.DNSPublished != (field == `"dns_published":true`) || detail.ID != "id-1" {
+			t.Fatalf("publication field %s: %+v", field, detail)
+		}
 	}
 }
 
@@ -663,57 +661,9 @@ func TestHTTPRegistryClient_GetAgentEvents(t *testing.T) {
 	}
 }
 
-func TestHTTPRegistryClient_SubmitChallenge(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/agent/agent.example.com/challenge" {
-			t.Errorf("unexpected: %s %s", r.Method, r.URL.Path)
-		}
-		var req ChallengeRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.Nonce == "" || req.Signature == "" {
-			t.Error("missing nonce/signature")
-		}
-		// Server returns 202 Accepted with no body.
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer srv.Close()
-
-	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client(), token: "tok", allowInsecure: true}
-	err := client.SubmitChallenge(context.Background(), "agent.example.com", &ChallengeRequest{Nonce: "abc", Signature: "sig123"})
-	if err != nil {
-		t.Fatalf("SubmitChallenge: %v", err)
-	}
-}
-
-func liveChallengeMessage(t *testing.T, agentID, domain, keyID, nonce string) string {
-	t.Helper()
-	message, err := json.Marshal(LiveChallengeTranscript{
-		Protocol: liveChallengeProtocol, OrgID: "org-1", AgentID: agentID,
-		FQDN: domain, KeyID: keyID, Nonce: nonce, ExpiresAt: time.Now().Add(time.Hour).UTC(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return base64.RawURLEncoding.EncodeToString(message)
-}
-
-func TestParseLiveChallenge_RejectsInvalidAndAllowsEmptyReplay(t *testing.T) {
-	if domain, transcript, err := parseLiveChallenge("provider_deferred", "agent-1", "", "", "", ""); err != nil || domain != "" || transcript != nil {
-		t.Fatalf("empty replay challenge = %q, %#v, %v", domain, transcript, err)
-	}
-	if _, _, err := parseLiveChallenge("challenge_pending", "agent-1", "challenge", "not-base64!", "key-1", ""); err == nil {
-		t.Fatal("invalid challenge transcript accepted")
-	}
-	message := liveChallengeMessage(t, "agent-1", "live.example.com", "key-1", "challenge")
-	if _, _, err := parseLiveChallenge("challenge_pending", "agent-1", "challenge", message, "other-key", ""); err == nil {
-		t.Fatal("challenge transcript for another key accepted")
-	}
-}
-
 func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 	publicKey := GenerateEd25519KeyProvider().JWK()
-	keyID, _ := (&JWK{key: publicKey}).Thumbprint()
-	challengeMessage := liveChallengeMessage(t, "agent-1", "live.example.com", keyID, "challenge")
+
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -734,18 +684,16 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 		if _, ok := body["domain"]; ok {
 			t.Errorf("Live request includes domain: %+v", body)
 		}
+		w.Header().Set("Idempotency-Key", requestID)
 		if requestID == "live-wrong-status" {
-			w.WriteHeader(http.StatusCreated)
-		} else {
 			w.WriteHeader(http.StatusAccepted)
+		} else {
+			w.WriteHeader(http.StatusCreated)
+
 		}
-		if requestID == "live-replay" {
-			json.NewEncoder(w).Encode(LiveProvisioningResponse{RequestID: requestID, AgentID: "agent-1", Status: "provider_deferred"})
-			return
-		}
-		json.NewEncoder(w).Encode(LiveProvisioningResponse{
-			RequestID: "live-1", AgentID: "agent-1", Status: "challenge_pending",
-			Challenge: "challenge", ChallengeMessage: challengeMessage,
+		json.NewEncoder(w).Encode(CreateAgentResponse{
+			ID: "agent-1", Domain: "live.example.com", Status: "PROVISIONING",
+			PublicationConfig: registrationTestConfig(),
 		})
 	}))
 	defer srv.Close()
@@ -755,17 +703,17 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateLiveAgent: %v", err)
 	}
-	if resp.RequestID != "live-1" || resp.AgentID != "agent-1" || resp.Domain != "live.example.com" || resp.ChallengeTranscript == nil || resp.ChallengeTranscript.KeyID != keyID {
+	if resp.ID != "agent-1" || resp.Domain != "live.example.com" || resp.PublicationConfig.EntityKeyURL == "" {
 		t.Fatalf("Live response = %+v", resp)
 	}
 	if _, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, ""); err == nil || calls != 1 {
 		t.Fatalf("missing idempotency key: calls=%d err=%v", calls, err)
 	}
 	if _, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "live-wrong-status"); err == nil || calls != 2 {
-		t.Fatalf("CreateLiveAgent accepted HTTP 201: calls=%d err=%v", calls, err)
+		t.Fatalf("CreateLiveAgent accepted HTTP 202: calls=%d err=%v", calls, err)
 	}
 	replay, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "live-replay")
-	if err != nil || replay.Status != "provider_deferred" || replay.ChallengeTranscript != nil {
+	if err != nil || replay.Status != "PROVISIONING" || replay.ID != resp.ID {
 		t.Fatalf("CreateLiveAgent replay = %+v, %v", replay, err)
 	}
 	for _, invalid := range []any{
@@ -782,145 +730,30 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 	}
 }
 
-func TestHTTPRegistryClient_LiveProofOperations(t *testing.T) {
-	publicKey := GenerateEd25519KeyProvider().JWK()
-	keyID, _ := (&JWK{key: publicKey}).Thumbprint()
-	reissueMessage := liveChallengeMessage(t, "agent-1", "agent.example.com", keyID, "new")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.Header.Get("Idempotency-Key") != "live-1" {
-			t.Errorf("unexpected request: %s %s", r.Method, r.Header.Get("Idempotency-Key"))
-		}
-		switch r.URL.Path {
-		case "/api/v1/agent/agent.example.com/proof":
-			var req LiveProofRequest
-			json.NewDecoder(r.Body).Decode(&req)
-			if req.RequestID != "live-1" || req.Challenge != "challenge" || req.Signature != "signature" {
-				t.Errorf("proof request = %+v", req)
-			}
-			w.WriteHeader(http.StatusAccepted)
-			json.NewEncoder(w).Encode(LiveProofResponse{RequestID: "live-1", AgentID: "agent-1", Status: "provider_deferred"})
-		case "/api/v1/agent/agent.example.com/proof/reissue":
-			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
-			if body["request_id"] != "live-1" || len(body) != 1 {
-				t.Errorf("reissue request = %+v", body)
-			}
-			w.WriteHeader(http.StatusAccepted)
-			json.NewEncoder(w).Encode(LiveProofReissueResponse{RequestID: "live-1", AgentID: "agent-1", Status: "challenge_pending", Challenge: "new", ChallengeMessage: reissueMessage})
-		default:
-			t.Errorf("unexpected path %q", r.URL.Path)
-		}
-	}))
-	defer srv.Close()
-
-	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client()}
-	proof, err := client.SubmitLiveProof(context.Background(), "agent.example.com", &LiveProofRequest{
-		RequestID: "live-1", Challenge: "challenge", PublicKey: publicKey, Signature: "signature",
-	})
-	if err != nil || proof.Status != "provider_deferred" {
-		t.Fatalf("SubmitLiveProof = %+v, %v", proof, err)
-	}
-	reissue, err := client.ReissueLiveProof(context.Background(), "agent.example.com", &LiveProofReissueRequest{RequestID: "live-1", PublicKey: publicKey})
-	if err != nil || reissue.Challenge != "new" || reissue.Domain != "agent.example.com" || reissue.ChallengeTranscript == nil || reissue.ChallengeTranscript.Nonce != "new" {
-		t.Fatalf("ReissueLiveProof = %+v, %v", reissue, err)
-	}
-}
-
-func TestHTTPRegistryClient_ReissueLiveProofRejectsUnboundOrInvalidKey(t *testing.T) {
-	publicKey := GenerateEd25519KeyProvider().JWK()
-	otherKeyID, _ := (&JWK{key: GenerateEd25519KeyProvider().JWK()}).Thumbprint()
-	otherKeyMessage := liveChallengeMessage(t, "agent-1", "agent.example.com", otherKeyID, "new")
-	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		requestID := r.Header.Get("Idempotency-Key")
-		response := LiveProofReissueResponse{RequestID: requestID, AgentID: "agent-1", Status: "challenge_pending"}
-		if requestID == "wrong-key" {
-			response.Challenge = "new"
-			response.ChallengeMessage = otherKeyMessage
-		} else {
-			response.Status = "unexpected"
-		}
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer srv.Close()
-
-	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client()}
-	if _, err := client.ReissueLiveProof(context.Background(), "agent.example.com", &LiveProofReissueRequest{RequestID: "wrong-key", PublicKey: publicKey}); err == nil {
-		t.Fatal("ReissueLiveProof accepted a challenge for another key")
-	}
-	if _, err := client.ReissueLiveProof(context.Background(), "agent.example.com", &LiveProofReissueRequest{RequestID: "status-bypass", PublicKey: publicKey}); err == nil {
-		t.Fatal("ReissueLiveProof accepted a response without a replacement challenge")
-	}
-	for _, invalid := range []any{
-		nil,
-		GenerateES256KeyProvider().JWK(),
-		map[string]any{"kty": "OKP", "crv": "Ed25519", "alg": "EdDSA", "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "d": "private"},
-	} {
-		if _, err := client.ReissueLiveProof(context.Background(), "agent.example.com", &LiveProofReissueRequest{RequestID: "invalid-key", PublicKey: invalid}); err == nil {
-			t.Fatalf("ReissueLiveProof accepted invalid original key: %#v", invalid)
-		}
-	}
-	if calls != 2 {
-		t.Fatalf("ReissueLiveProof dispatched an invalid key: calls=%d", calls)
-	}
-}
-
 func TestHTTPRegistryClient_RejectsInvalidLiveResponseFields(t *testing.T) {
 	publicKey := GenerateEd25519KeyProvider().JWK()
-	keyID, _ := (&JWK{key: publicKey}).Thumbprint()
-	challengeMessage := liveChallengeMessage(t, "agent-1", "agent.example.com", keyID, "challenge")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := r.Header.Get("Idempotency-Key")
-		body := map[string]any{
-			"request_id":        requestID,
-			"agent_id":          "agent-1",
-			"status":            "challenge_pending",
-			"challenge":         "challenge",
-			"challenge_message": challengeMessage,
-		}
-		switch {
-		case strings.HasSuffix(requestID, "-missing-request-id"):
-			delete(body, "request_id")
-		case strings.HasSuffix(requestID, "-missing-agent-id"):
-			delete(body, "agent_id")
-		case strings.HasSuffix(requestID, "-missing-status"):
-			delete(body, "status")
-		case strings.HasSuffix(requestID, "-mismatched-request-id"):
-			body["request_id"] = "other-request"
-		}
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(body)
-	}))
-	defer srv.Close()
-
-	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client()}
-	operations := []struct {
-		name string
-		call func(string) error
-	}{
-		{"registration", func(requestID string) error {
-			_, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, requestID)
-			return err
-		}},
-		{"proof", func(requestID string) error {
-			_, err := client.SubmitLiveProof(context.Background(), "agent.example.com", &LiveProofRequest{RequestID: requestID, Challenge: "challenge", PublicKey: publicKey, Signature: "signature"})
-			return err
-		}},
-		{"reissue", func(requestID string) error {
-			_, err := client.ReissueLiveProof(context.Background(), "agent.example.com", &LiveProofReissueRequest{RequestID: requestID, PublicKey: publicKey})
-			return err
-		}},
-	}
-	for _, operation := range operations {
-		for _, response := range []string{"missing-request-id", "missing-agent-id", "missing-status", "mismatched-request-id"} {
-			t.Run(operation.name+"/"+response, func(t *testing.T) {
-				if err := operation.call(operation.name + "-" + response); err == nil {
-					t.Fatal("invalid Live response accepted")
+	for _, field := range []string{"id", "domain", "status", "publication_config", "missing-header", "mismatched-header"} {
+		t.Run(field, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body := map[string]any{"id": "agent-1", "domain": "agent.example.com", "status": "PROVISIONING", "publication_config": registrationTestConfig()}
+				delete(body, field)
+				if field != "missing-header" {
+					w.Header().Set("Idempotency-Key", r.Header.Get("Idempotency-Key"))
 				}
-			})
-		}
+				if field == "mismatched-header" {
+					w.Header().Set("Idempotency-Key", "other")
+				}
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(body)
+			}))
+			defer srv.Close()
+			client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client()}
+			response, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "registration-key")
+			var recovery *RegistrationError
+			if !errors.As(err, &recovery) || response == nil || recovery.IdempotencyKey != "registration-key" || len(recovery.Request) == 0 {
+				t.Fatalf("invalid Live response lost recovery facts: response=%+v err=%v", response, err)
+			}
+		})
 	}
 }
 

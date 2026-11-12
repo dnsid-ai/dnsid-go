@@ -56,7 +56,7 @@ func (e *Error) Error() string {
 // Unwrap retains cancellation, transport, and registry error classification.
 func (e *Error) Unwrap() error { return e.Cause }
 
-// UnsupportedRegistry means onboarding did not provide the required contract.
+// UnsupportedRegistry means onboarding or management detail lacks the required contract.
 type UnsupportedRegistry struct{ Detail *Error }
 
 // Error describes the unsupported registry contract.
