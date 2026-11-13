@@ -981,7 +981,7 @@ RegistryRevocationReason is an owner\-authorized registry revocation reason. It 
 type RegistryRevocationReason string
 ```
 
-<a name="RegistryRevocationReasonOwnerRequest"></a>Owner\-authorized registry revocation reasons. The registry publishes them as the protocol reasons cessationOfOperation, keyCompromise and policyViolation. policy\_violation permanently blocks re\-registration of the domain and needs an org admin \(Identity\-Digital/known\-foundry\#72\).
+<a name="RegistryRevocationReasonOwnerRequest"></a>Owner\-authorized registry revocation reasons. The registry publishes them as the protocol reasons cessationOfOperation, keyCompromise and policyViolation. policy\_violation permanently blocks re\-registration of the domain and needs an org admin.
 
 ```go
 const (
