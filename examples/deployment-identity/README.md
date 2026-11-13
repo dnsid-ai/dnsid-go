@@ -32,8 +32,10 @@ a KMS-backed identity must already have that KMS key published.
 
 The supplied files use `logTrust.managed: true` **only for an identity on a
 supported DNSid-managed log**. This SDK catalog covers public
-`https://log.dnsid.ai` and `https://log.dev.dnsid.ai`. It is an explicit trust
-choice, not automatic trust in the log named by DNS.
+`https://log.dnsid.ai`, `https://log.dev.dnsid.ai`, `https://log.stg.dnsid.ai`,
+`https://log.partners.dnsid.ai`, `https://log.knownsystems.ai`,
+`https://log.dev.knownsystems.ai`, and `https://log.stg.knownsystems.ai`. It is an
+explicit trust choice, not automatic trust in the log named by DNS.
 
 For another log, replace the entire `logTrust` section with either
 `{"profile": <independently trusted C2SP trust-profile object>}` or
