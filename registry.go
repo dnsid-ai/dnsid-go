@@ -355,15 +355,20 @@ type LiveProofReissueResponse struct {
 // It is distinct from the protocol REVOCATION reason vocabulary.
 type RegistryRevocationReason string
 
-// Owner-authorized registry revocation reasons.
+// Owner-authorized registry revocation reasons. The registry publishes them
+// as the protocol reasons cessationOfOperation, keyCompromise and
+// policyViolation. policy_violation permanently blocks re-registration of the
+// domain and needs an org admin.
 const (
-	RegistryRevocationReasonOwnerRequest  RegistryRevocationReason = "owner_request"
-	RegistryRevocationReasonKeyCompromise RegistryRevocationReason = "key_compromise"
+	RegistryRevocationReasonOwnerRequest    RegistryRevocationReason = "owner_request"
+	RegistryRevocationReasonKeyCompromise   RegistryRevocationReason = "key_compromise"
+	RegistryRevocationReasonPolicyViolation RegistryRevocationReason = "policy_violation"
 )
 
 func validRegistryRevocationReason(reason RegistryRevocationReason) bool {
 	switch reason {
-	case RegistryRevocationReasonOwnerRequest, RegistryRevocationReasonKeyCompromise:
+	case RegistryRevocationReasonOwnerRequest, RegistryRevocationReasonKeyCompromise,
+		RegistryRevocationReasonPolicyViolation:
 		return true
 	default:
 		return false

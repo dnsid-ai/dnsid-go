@@ -951,6 +951,23 @@ func TestHTTPRegistryClient_RevokeAgent(t *testing.T) {
 	}
 }
 
+func TestHTTPRegistryClient_RevokeAgentPolicyViolation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]string
+		json.NewDecoder(r.Body).Decode(&req)
+		if req["reason"] != "policy_violation" {
+			t.Errorf("reason = %q, want policy_violation", req["reason"])
+		}
+		json.NewEncoder(w).Encode(LifecycleResponse{ID: "ag_123", Status: "REVOKED"})
+	}))
+	defer srv.Close()
+
+	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client(), token: "tok", allowInsecure: true}
+	if _, err := client.RevokeAgent(context.Background(), "agent.example.com", &RevokeAgentRequest{AgentID: "ag_123", Reason: RegistryRevocationReasonPolicyViolation}); err != nil {
+		t.Fatalf("RevokeAgent: %v", err)
+	}
+}
+
 func TestHTTPRegistryClient_RetireAgent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/agent/agent.example.com/retire" {
