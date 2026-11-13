@@ -358,7 +358,7 @@ type RegistryRevocationReason string
 // Owner-authorized registry revocation reasons. The registry publishes them
 // as the protocol reasons cessationOfOperation, keyCompromise and
 // policyViolation. policy_violation permanently blocks re-registration of the
-// domain and needs an org admin (Identity-Digital/known-foundry#72).
+// domain and needs an org admin.
 const (
 	RegistryRevocationReasonOwnerRequest    RegistryRevocationReason = "owner_request"
 	RegistryRevocationReasonKeyCompromise   RegistryRevocationReason = "key_compromise"
