@@ -174,7 +174,7 @@ var Version = resolveVersion()
 ```
 
 <a name="CreateDnsidHTTPClient"></a>
-## func [CreateDnsidHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L655>)
+## func [CreateDnsidHTTPClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L660>)
 
 ```go
 func CreateDnsidHTTPClient(transportConfig TransportConfig) (*http.Client, error)
@@ -493,7 +493,7 @@ func NewVerifier(opts ...IdentityManagerOption) (*IdentityManager, error)
 NewVerifier constructs an IdentityManager for verification without local identity configuration or key material. It is shorthand for NewIdentityManager with a zero Config and nil KeyProvider; pass a Config with nil Identity to NewIdentityManager to set verification or transport settings.
 
 <a name="IdentityManager.AwaitRegistryManagedPublication"></a>
-### func \(\*IdentityManager\) [AwaitRegistryManagedPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1727>)
+### func \(\*IdentityManager\) [AwaitRegistryManagedPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1732>)
 
 ```go
 func (m *IdentityManager) AwaitRegistryManagedPublication(ctx context.Context, client RegistryRegistrationReader, opts *WaitForStatusOptions) (*PublishedRecord, error)
@@ -610,7 +610,7 @@ func (m *IdentityManager) OperationalKeyURL() string
 OperationalKeyURL returns the HTTPS URL where the operational \(ku\) JWKS should be served. This is the ku= value that CreateTXTRecord would produce. Draft 01 defines no default path, so an unset KeyURL returns an empty string.
 
 <a name="IdentityManager.PublishClientControlledRecord"></a>
-### func \(\*IdentityManager\) [PublishClientControlledRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1600>)
+### func \(\*IdentityManager\) [PublishClientControlledRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1605>)
 
 ```go
 func (m *IdentityManager) PublishClientControlledRecord(ctx context.Context, client RegistryClientControlledPublisher) (*PublishedRecord, error)
