@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0] - 2026-11-13
+
+### Features
+
+- feat(registry): add policy_violation revocation reason ([#143](https://github.com/dnsid-ai/dnsid-go/pull/143))
+- feat: add the Known logs to the managed verification catalog ([#142](https://github.com/dnsid-ai/dnsid-go/pull/142))
+
 ## [0.48.0] - 2026-11-11
 
 ### Features
