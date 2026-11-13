@@ -4,8 +4,8 @@ go 1.26.10
 
 require (
 	github.com/aws/aws-sdk-go-v2/service/kms v1.61.1
-	github.com/dnsid-ai/dnsid-go v0.48.0
-	github.com/dnsid-ai/dnsid-go/key/aws v0.48.0
+	github.com/dnsid-ai/dnsid-go v0.49.0
+	github.com/dnsid-ai/dnsid-go/key/aws v0.49.0
 	github.com/lestrrat-go/jwx/v3 v3.2.0
 )
 
