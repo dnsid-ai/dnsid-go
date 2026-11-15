@@ -96,6 +96,204 @@ The OIDC profile includes the token-exchange helper needed by demo and productio
 - After a durability error, stop the workflow and resolve the storage problem. Inspect the current keys (reload first if creation failed or the process restarted), then call `Activate` with the **currently active kid** to re-persist the entire store without changing key states. Require success before resuming. Merely loading the file is not a durability retry; blindly repeating `GenerateKey` creates a different pending key, and repeating a completed `Purge` reports an unknown key. Reconcile any pending rotation state before proceeding.
 - Keep access-controlled, encrypted backups of local private keys and test recovery. The platform database cannot reconstruct locally generated private keys. Sync is not a backup and does not protect against storage loss, deletion, or competing writers.
 
+## Single-cloud operational keys across regions
+
+Install/link the optional `key/aws` or `key/gcp` module and register its factory
+by importing `github.com/dnsid-ai/dnsid-go/key/aws` or
+`github.com/dnsid-ai/dnsid-go/key/gcp` (a blank import suffices for configuration).
+The fragments below select operational keys, not accountable-entity keys. They
+supplement existing identity configuration, not identity provisioning.
+
+### AWS Ed25519 multi-Region keys
+
+[AWS documents asymmetric multi-Region keys](https://docs.aws.amazon.com/kms/latest/developerguide/multi-region-keys-overview.html)
+and [Ed25519 signing](https://docs.aws.amazon.com/kms/latest/developerguide/asymmetric-key-specs.html).
+This is a vendor-documented setup pattern, not live-service verification or a
+promise that every account/region supports the combination. Check current service
+availability, CLI support and organization policies before provisioning; stop on
+an unsupported combination rather than substituting another algorithm.
+
+Provision outside application startup, using a separately authorized operator.
+For example, in one account and AWS partition (shell variables below are operator
+inputs/output, not SDK environment settings):
+
+```sh
+set -eu
+primary_region=us-east-1
+replica_region=us-west-2
+primary_arn=$(aws kms create-key --region "$primary_region" \
+  --multi-region --key-spec ECC_NIST_EDWARDS25519 --key-usage SIGN_VERIFY \
+  --query KeyMetadata.Arn --output text)
+replica_arn=$(aws kms replicate-key --region "$primary_region" \
+  --key-id "$primary_arn" --replica-region "$replica_region" \
+  --query ReplicaKeyMetadata.Arn --output text)
+aws kms describe-key --region "$primary_region" --key-id "$primary_arn"
+aws kms describe-key --region "$replica_region" --key-id "$replica_arn"
+```
+
+Save the exact returned ARNs. Confirm `MultiRegionConfiguration` links the two
+keys, `KeySpec` is `ECC_NIST_EDWARDS25519`, `KeyUsage` is `SIGN_VERIFY`, and both
+keys are enabled before use. Set a finite readiness deadline and RPC timeouts;
+if a key is still creating, recheck within that budget, not in an endless loop.
+Do not blindly repeat creation after a lost response. Runtime principals need
+`kms:GetPublicKey` and `kms:Sign` on each regional key; replication/provisioning
+permissions belong to the operator, not ordinary startup.
+
+For standalone cryptographic use, open two independent providers with
+**different immutable regional key ARNs and matching regions**, explicitly
+selecting `EdDSA`. The JSON below shows each regional key source, not a complete
+shared-identity deployment. Replace the illustrative account/key IDs with the
+returned ARNs:
+
+```json
+{"keySource":{"provider":"aws-kms","keyRef":"arn:aws:kms:us-east-1:123456789012:key/mrk-0123456789abcdef0123456789abcdef","settings":{"region":"us-east-1","algorithm":"EdDSA"}}}
+```
+
+```json
+{"keySource":{"provider":"aws-kms","keyRef":"arn:aws:kms:us-west-2:123456789012:key/mrk-0123456789abcdef0123456789abcdef","settings":{"region":"us-west-2","algorithm":"EdDSA"}}}
+```
+
+Use ambient AWS credentials. Do not send the primary ARN to the replica region
+and rely on redirection. Related MRKs share key material and a key ID, not one
+global ARN: policies, grants, aliases and enabled state are regional. An `mrk-`
+prefix alone proves neither relationship nor public-key equality.
+
+Opening configuration never generates or replicates keys and has no automatic
+regional failover or local-signer fallback. Explicit provider creation/rotation
+is not automatic MRK replication or fleet coordination. Preserve existing
+publication/signing-key binding checks; changing configuration does not authorize
+replacing an established signer.
+
+`EdDSA` uses `ED25519_SHA_512` with **RAW data, at most 4096 bytes**. Oversized
+payloads fail. Do not hash them and substitute Ed25519ph/DIGEST: that is not the
+same signature scheme. See [AWS Sign limits](https://docs.aws.amazon.com/kms/latest/APIReference/API_Sign.html).
+
+Go and TypeScript AWS providers retain canonical native KMS identifiers as
+JWK `kid` values. The two regional ARNs above therefore produce **different
+kids even when their public key material and RFC 7638 thumbprints are identical**.
+Python AWS instead uses public-key thumbprint kids while retaining native
+references separately; do not assume the same identity-binding behavior across SDKs.
+
+**Identity-bound configuration limitation:** `config.Construct` checks the
+configuration-selected signing key against the verified publication by **kid,
+algorithm and thumbprint**, not public material alone. A publication made with
+region A's ARN cannot be reused by configuration selecting region B's ARN:
+construction rejects the different kid. Each identity-bound setup needs a
+verified publication matching its selected regional kid; these fragments do not
+provide two regional signers for one unchanged published identity. Any change to
+an established signer must follow authorized publication/key-rotation procedures,
+not just a regional configuration switch.
+
+Standalone provider opens and raw signature cross-verification remain supported
+for the two regional references, independently of identity-manager construction.
+They demonstrate cryptographic key equality, not shared published-identity
+compatibility or automatic failover. Injecting a provider is not a documented
+workaround: the owning workflow still has identity-binding responsibilities, and
+signature `kid` values must match the published identity's expectations. This
+setup does not normalize regional kids or solve that shared-identity limitation.
+
+For cryptographic equality, require public JWK `kty=OKP`, `crv=Ed25519`,
+`alg=EdDSA`, equal `x`, and no private `d`. Independently compute RFC 7638 SHA-256
+thumbprints over canonical JSON containing only `crv`, `kty`, `x`; compare those,
+not entire serialized JWKs or native references. Sign the same bounded raw payload through
+each client and independently verify both signatures with the common public key
+(and the other client's public key). Reopen the exact saved references and repeat;
+signature-byte equality is not the acceptance criterion. Unrelated keys cannot
+satisfy this check; the SDK does not discover cross-region misconfiguration.
+
+Plan cleanup before allocation. For owned disposable fixtures,
+[schedule replica deletion before deleting the primary](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys.html#deleting-mrks)
+and verify each key's disposition. Scheduled deletion is delayed, not completed
+removal; retain an owner/follow-up for outstanding resources. Never delete shared
+keys as test cleanup.
+
+### Google software Ed25519 in a multi-region or global location
+
+[Google documents SOFTWARE keys in Cloud KMS locations](https://cloud.google.com/kms/docs/locations)
+and [software EC_SIGN_ED25519](https://cloud.google.com/kms/docs/algorithms).
+This is a vendor-documented setup pattern, not live-service verification or a
+universal availability promise. Check current location/algorithm support, CLI
+support, permissions and organization policies before provisioning. These providers
+target **SOFTWARE** Ed25519, not HSM or EXTERNAL custody.
+
+Prefer an approved existing version. If provisioning is authorized, an external
+operator can create a ring/key as follows. These shell variables are CLI inputs,
+not new SDK environment settings:
+
+```sh
+set -eu
+project=my-project
+location=us                 # Or global, as a separate approved location choice.
+ring=agents
+key=agent
+
+gcloud kms keyrings create "$ring" --project="$project" --location="$location"
+gcloud kms keys create "$key" --project="$project" --location="$location" \
+  --keyring="$ring" --purpose=asymmetric-signing \
+  --default-algorithm=ec-sign-ed25519 --protection-level=software
+gcloud kms keys versions list --project="$project" --location="$location" \
+  --keyring="$ring" --key="$key"
+```
+
+Select the actual enabled numeric version from the returned inventory; do not
+assume version `1` or use a mutable selector. Confirm its algorithm/protection
+and public key before deployment. Set finite RPC/readiness budgets, stop on
+failure, and reconcile any created resources rather than blindly creating again.
+Runtime clients need `cloudkms.cryptoKeyVersions.viewPublicKey` and
+`cloudkms.cryptoKeyVersions.useToSign`; creation/IAM administration stays with the
+separately authorized operator. Credentials use ambient Application Default
+Credentials, never deployment secrets.
+
+Both independently configured clients use **the identical full version name**
+within the selected location. For example, replace this illustrative version with
+the actual resource in a deployment JSON fragment:
+
+```json
+{"keySource":{"provider":"google-kms","keyRef":"projects/my-project/locations/us/keyRings/agents/cryptoKeys/agent/cryptoKeyVersions/7","settings":{"algorithm":"EdDSA"}}}
+```
+
+For a separate `global` deployment, use the actual resource containing
+`locations/global` in both clients, for example:
+
+```json
+{"keySource":{"provider":"google-kms","keyRef":"projects/my-project/locations/global/keyRings/agents/cryptoKeys/agent/cryptoKeyVersions/7","settings":{"algorithm":"EdDSA"}}}
+```
+
+Do not rewrite an existing `us` resource to
+`global`, or to a constituent regional name: those designate different resources,
+not replicas of the original version. A global service endpoint does not make a
+regional key global. Go also accepts optional `project` and
+`location` settings only when they match the reference; neither is needed here.
+
+A multi-region (including the special `global` location) is **one location
+resource/version**, not independently named regional replicas. Google manages
+material across datacenters in that location; callers cannot select a subset.
+Location is immutable. `global` is not a geographic residency guarantee, and
+metadata operations requiring consensus can have higher latency. Choose topology
+and residency before creation; do not promise region-pinned custody or automatic
+SDK failover from this pattern.
+
+Opening uses the existing version only: no automatic generation, replication,
+import, discovery or local-signer fallback. Explicit generation creates another
+version, not a regional replica, and does not authorize changing the established
+signer or publication. Preserve existing identity binding and application-owned
+rotation/recovery orchestration.
+
+Google public JWK `kid` values are RFC 7638 thumbprints, not cloud resource names.
+To verify same-key use, independently compare canonical public `crv`, `kty`, `x`
+thumbprints and require `OKP` / `Ed25519` / `EdDSA`, equal `x` and no private `d`.
+Sign the same raw payload independently, locally verify both signatures with the
+common/other client's public key, and reopen the exact version to repeat. Do not
+compare different `us` and `global` keys as if they were replicas. Signing sends
+raw data, not a digest, and retains the provider's version/integrity checks.
+
+Plan [version destruction](https://cloud.google.com/kms/docs/destroy-restore)
+with the resource owner: scheduling destruction is not immediate deletion.
+Key rings and CryptoKey containers cannot simply be deleted after the test;
+account for retained containers or an approved project lifecycle. Local provider
+supersession does not destroy cloud material. Prefer pre-existing approved
+fixtures when retained containers are unacceptable.
+
 ## Key rotation, JWT overlap, and revocation
 
 DNSid separates accountable-entity record-signing keys (`ek=`) from operational runtime keys (`ku=`). Verification rejects records where the two keys share the same RFC 7638 JWK thumbprint.

@@ -8,11 +8,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
+	"reflect"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	"github.com/aws/smithy-go"
 	dnsid "github.com/dnsid-ai/dnsid-go"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
@@ -337,5 +341,90 @@ func TestProviderSignsAndRotates(t *testing.T) {
 	}
 	if len(kms.deleted) != 1 || kms.deleted[0] != "old" {
 		t.Fatalf("deleted = %v", kms.deleted)
+	}
+}
+
+// existingKeyFaultKMS records attempts before errors, including forbidden mutations.
+// Only the four public Client operations are measured; this is not a global fallback spy.
+type existingKeyFaultKMS struct {
+	*fakeKMS
+	boundary  string
+	fault     error
+	calls     []string
+	forbidden int
+}
+
+func (f *existingKeyFaultKMS) GetPublicKey(ctx context.Context, in GetPublicKeyInput) (GetPublicKeyOutput, error) {
+	f.calls = append(f.calls, "read:"+in.KeyID)
+	if f.boundary == "open" {
+		return GetPublicKeyOutput{}, f.fault
+	}
+	return f.fakeKMS.GetPublicKey(ctx, in)
+}
+func (f *existingKeyFaultKMS) Sign(ctx context.Context, in SignInput) (SignOutput, error) {
+	f.calls = append(f.calls, "sign:"+in.KeyID)
+	return SignOutput{}, f.fault
+}
+func (f *existingKeyFaultKMS) CreateSigningKey(context.Context, CreateSigningKeyInput) (CreateSigningKeyOutput, error) {
+	f.forbidden++
+	return CreateSigningKeyOutput{}, fmt.Errorf("forbidden generation")
+}
+func (f *existingKeyFaultKMS) ScheduleKeyDeletion(context.Context, ScheduleKeyDeletionInput) error {
+	f.forbidden++
+	return fmt.Errorf("forbidden deletion")
+}
+
+// Mode: fake-only. Given an exact existing Ed25519 ARN, When read/sign fails,
+// Then no provider/signature, mutation, other reference or selected-key change escapes.
+func TestProvider_ExistingKeyFaultsFailClosed(t *testing.T) {
+	const ref = "arn:aws:kms:us-east-1:111122223333:key/11111111-1111-4111-8111-111111111111"
+	for _, tc := range []struct {
+		name  string
+		fault error
+	}{
+		{"denied", &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "denied selected existing key"}},
+		{"disabled", &types.DisabledException{}},
+		{"missing-key", &types.NotFoundException{}},
+		{"service-failure", &types.KMSInternalException{}},
+	} {
+		for _, boundary := range []string{"open", "sign"} {
+			t.Run(tc.name+"/"+boundary, func(t *testing.T) {
+				home := t.TempDir()
+				t.Setenv("HOME", home)
+				f := &existingKeyFaultKMS{fakeKMS: newFakeEd25519KMS(t, ref), boundary: boundary, fault: tc.fault}
+				p, err := Load(context.Background(), f, Config{State: State{ActiveKeyID: ref}, Algorithm: types.SigningAlgorithmSpecEd25519Sha512})
+				want := []string{"read:" + ref}
+				if boundary == "open" {
+					if err == nil || p != nil {
+						t.Fatalf("fault returned provider=%v error=%v", p, err)
+					}
+				} else {
+					if err != nil || p == nil {
+						t.Fatalf("healthy open failed: %v", err)
+					}
+					before, _ := json.Marshal(p.JWK())
+					ids := p.ListKeyIds()
+					if len(ids) != 1 || p.JWK() == nil {
+						t.Fatal("healthy public signer missing")
+					}
+					sig, err := p.Sign([]byte("must not sign"))
+					if err == nil || sig != nil {
+						t.Fatalf("fault returned signature=%v error=%v", sig, err)
+					}
+					after, _ := json.Marshal(p.JWK())
+					if string(before) != string(after) || !reflect.DeepEqual(ids, p.ListKeyIds()) {
+						t.Fatal("selected public signer changed")
+					}
+					want = append(want, "sign:"+ref)
+				}
+				if !reflect.DeepEqual(f.calls, want) || f.forbidden != 0 {
+					t.Fatalf("calls=%v want=%v forbidden=%d", f.calls, want, f.forbidden)
+				}
+				entries, err := os.ReadDir(home)
+				if err != nil || len(entries) != 0 {
+					t.Fatalf("local files=%v error=%v", entries, err)
+				}
+			})
+		}
 	}
 }
