@@ -1,18 +1,11 @@
 package awskms
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
-	"log"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
@@ -37,15 +30,6 @@ func TestConfigFactory_RegionalEd25519Binding(t *testing.T) {
 			t.Run(region+"/"+test.name, func(t *testing.T) {
 				// Mode: fake-only for AWS (official client, loopback GetPublicKey);
 				// real deployment loading and local entity key. No live KMS claim.
-				var warnings bytes.Buffer
-				previous := log.Writer()
-				log.SetOutput(&warnings)
-				defer log.SetOutput(previous)
-				defer func() {
-					if strings.Contains(strings.ToLower(warnings.String()), "unsuitable for production") {
-						t.Errorf("AWS selection emitted local-key warning:\n%s", warnings.String())
-					}
-				}()
 				seed, err := hex.DecodeString("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
 				if err != nil {
 					t.Fatal(err)
@@ -60,57 +44,7 @@ func TestConfigFactory_RegionalEd25519Binding(t *testing.T) {
 				if test.mismatch {
 					public.KeyID = reference + "-different"
 				}
-				var calls atomic.Int32
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					calls.Add(1)
-					var input struct {
-						KeyID string `json:"KeyId"`
-					}
-					if r.Header.Get("X-Amz-Target") != "TrentService.GetPublicKey" || json.NewDecoder(r.Body).Decode(&input) != nil || input.KeyID != reference {
-						t.Error("factory must only fetch the configured existing key")
-						w.WriteHeader(http.StatusBadRequest)
-						return
-					}
-					w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-					if err := json.NewEncoder(w).Encode(map[string]any{
-						"KeyId": public.KeyID, "PublicKey": public.PublicKey,
-						"KeySpec": public.KeySpec, "KeyUsage": public.KeyUsage,
-						"SigningAlgorithms": public.SigningAlgorithms,
-					}); err != nil {
-						t.Error(err)
-					}
-				}))
-				defer server.Close()
-				t.Setenv("AWS_ENDPOINT_URL_KMS", server.URL)
-				t.Setenv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "false")
-				t.Setenv("AWS_ACCESS_KEY_ID", "test")
-				t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
-				t.Setenv("AWS_SESSION_TOKEN", "")
-				t.Setenv("AWS_PROFILE", "")
-				t.Setenv("AWS_CONFIG_FILE", filepath.Join(t.TempDir(), "missing"))
-				t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "missing"))
 				source := config.KeySource{Provider: "aws-kms", KeyRef: reference, Settings: map[string]string{"region": region, "algorithm": "EdDSA"}}
-				// Given a deployment selecting AWS with independent local entity keys.
-				entityPath := filepath.Join(t.TempDir(), "entity.jwk")
-				if _, err := dnsid.LoadOrCreateLocalKeyProvider(entityPath, dnsid.JoseAlgES256); err != nil {
-					t.Fatal(err)
-				}
-				source.EntityKeyPath = entityPath
-				path := filepath.Join(t.TempDir(), "deployment.json")
-				document, err := json.Marshal(map[string]any{
-					"dnsid":     map[string]any{"identity": map[string]any{"domain": "agent.example", "governanceId": "account.example", "statusUrl": "https://agent.example/status", "keyUrl": "https://agent.example/keys", "entityKeyUrl": "https://account.example/ek", "logRef": "m:1"}},
-					"keySource": source,
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, document, 0600); err != nil {
-					t.Fatal(err)
-				}
-				loaded, err := config.LoadDeploymentFile(path)
-				if err != nil {
-					t.Fatal(err)
-				}
 				// Establish publication before configuration startup with the independent
 				// fixture provider. Startup itself still opens the official AWS client.
 				algorithm := types.SigningAlgorithmSpecEd25519Sha512
@@ -151,7 +85,7 @@ func TestConfigFactory_RegionalEd25519Binding(t *testing.T) {
 					}
 					fixtureProvider = published
 				}
-				deps := setupAWSPublication(t, loaded.Dnsid, fixtureProvider)
+				loaded, deps, calls := awsConfigFixture(t, source, public, fixtureProvider)
 				// The factory boundary has no publication input: a downstream binding
 				// failure cannot satisfy this immutable-reference rejection guard.
 				if test.mismatch {
