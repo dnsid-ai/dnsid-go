@@ -10,55 +10,56 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"testing"
+
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	dnsid "github.com/dnsid-ai/dnsid-go"
-	"testing"
 )
 
-func topology61() [][2]string {
+func regionalKeyReferences() [][2]string {
 	return [][2]string{{"arn:aws:kms:us-east-1:123456789012:key/mrk-0123456789abcdef0123456789abcdef", "arn:aws:kms:us-west-2:123456789012:key/mrk-0123456789abcdef0123456789abcdef"}}
 }
-func nativeKid61(ref, thumb string) string { return ref }
+func expectedNativeKeyID(ref, thumb string) string { return ref }
 
-type regional61 struct {
+type regionalFakeKMS struct {
 	t       *testing.T
 	ref     string
 	private ed25519.PrivateKey
 }
 
-func (f *regional61) CreateSigningKey(context.Context, CreateSigningKeyInput) (CreateSigningKeyOutput, error) {
+func (f *regionalFakeKMS) CreateSigningKey(context.Context, CreateSigningKeyInput) (CreateSigningKeyOutput, error) {
 	f.t.Fatal("open/sign must not provision")
 	return CreateSigningKeyOutput{}, nil
 }
-func (f *regional61) ScheduleKeyDeletion(context.Context, ScheduleKeyDeletionInput) error {
+func (f *regionalFakeKMS) ScheduleKeyDeletion(context.Context, ScheduleKeyDeletionInput) error {
 	f.t.Fatal("unexpected mutation")
 	return nil
 }
-func (f *regional61) GetPublicKey(_ context.Context, in GetPublicKeyInput) (GetPublicKeyOutput, error) {
+func (f *regionalFakeKMS) GetPublicKey(_ context.Context, in GetPublicKeyInput) (GetPublicKeyOutput, error) {
 	if in.KeyID != f.ref {
 		f.t.Fatal("regional request misbound")
 	}
 	der, err := x509.MarshalPKIXPublicKey(f.private.Public())
 	return GetPublicKeyOutput{KeyID: f.ref, PublicKey: der, KeySpec: types.KeySpecEccNistEdwards25519, KeyUsage: types.KeyUsageTypeSignVerify, SigningAlgorithms: []types.SigningAlgorithmSpec{types.SigningAlgorithmSpecEd25519Sha512}}, err
 }
-func (f *regional61) Sign(_ context.Context, in SignInput) (SignOutput, error) {
+func (f *regionalFakeKMS) Sign(_ context.Context, in SignInput) (SignOutput, error) {
 	if in.KeyID != f.ref || in.Digest || in.Algorithm != types.SigningAlgorithmSpecEd25519Sha512 {
 		f.t.Fatal("wrong regional RAW signing request")
 	}
 	return SignOutput{KeyID: f.ref, Signature: ed25519.Sign(f.private, in.Message), Algorithm: in.Algorithm}, nil
 }
-func open61(t *testing.T, ref string, private ed25519.PrivateKey) *Provider {
+func openRegionalProvider(t *testing.T, ref string, private ed25519.PrivateKey) *Provider {
 	t.Helper()
-	p, err := Load(context.Background(), &regional61{t, ref, private}, Config{State: State{ActiveKeyID: ref}, Algorithm: types.SigningAlgorithmSpecEd25519Sha512})
+	p, err := Load(context.Background(), &regionalFakeKMS{t, ref, private}, Config{State: State{ActiveKeyID: ref}, Algorithm: types.SigningAlgorithmSpecEd25519Sha512})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return p
 }
 
-// #61 unchanged-contract characterization. Mode: real-capable (cloud=fake).
+// Regional public-key binding and cross-signatures. Mode: real-capable (cloud=fake).
 // Synthetic topology is NOT proof of service replication or location support.
-func TestMultiRegionSameKey(t *testing.T) {
+func TestProvider_RegionalKeysPreservePublicBinding(t *testing.T) {
 	seed, _ := hex.DecodeString("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
 	private := ed25519.NewKeyFromSeed(seed)
 	raw, _ := hex.DecodeString("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
@@ -75,16 +76,16 @@ func TestMultiRegionSameKey(t *testing.T) {
 	if digest == wrongDigest {
 		t.Fatal("different-key SAME-KEY oracle did not discriminate")
 	}
-	for _, refs := range topology61() {
+	for _, refs := range regionalKeyReferences() {
 		t.Run(refs[0], func(t *testing.T) {
 			// Given two independent cloud clients with the same RFC public material.
 			var keys []ed25519.PublicKey
 			var signatures [][]byte
-			payload := []byte("#61 bounded RAW cross-region payload")
+			payload := []byte("bounded RAW cross-region payload")
 			for restart := 0; restart < 2; restart++ {
 				for _, ref := range refs {
 					// When opening the exact configured reference with a fresh client/provider.
-					p := open61(t, ref, private)
+					p := openRegionalProvider(t, ref, private)
 					key := p.JWK()
 					encoded, err := json.Marshal(key)
 					if err != nil {
@@ -107,7 +108,7 @@ func TestMultiRegionSameKey(t *testing.T) {
 					if base64.RawURLEncoding.EncodeToString(gotDigest[:]) != thumb {
 						t.Fatal("thumbprint mismatch")
 					}
-					wantKid := nativeKid61(ref, thumb)
+					wantKid := expectedNativeKeyID(ref, thumb)
 					if j["kid"] != wantKid {
 						t.Fatalf("native kid=%v want %s", j["kid"], wantKid)
 					}
@@ -155,29 +156,29 @@ func TestMultiRegionSameKey(t *testing.T) {
 	}
 }
 
-// F2 Mode: fake-only (AWS call accounting); packet/vendor RAW bound, not DIGEST.
-type rawBoundary61 struct {
-	*regional61
+// Mode: fake-only (AWS call accounting); inclusive RAW bound, not DIGEST.
+type rawLimitKMS struct {
+	*regionalFakeKMS
 	signs, creates int
 }
 
-func (f *rawBoundary61) Sign(ctx context.Context, in SignInput) (SignOutput, error) {
+func (f *rawLimitKMS) Sign(ctx context.Context, in SignInput) (SignOutput, error) {
 	f.signs++
-	return f.regional61.Sign(ctx, in)
+	return f.regionalFakeKMS.Sign(ctx, in)
 }
-func (f *rawBoundary61) CreateSigningKey(context.Context, CreateSigningKeyInput) (CreateSigningKeyOutput, error) {
+func (f *rawLimitKMS) CreateSigningKey(context.Context, CreateSigningKeyInput) (CreateSigningKeyOutput, error) {
 	f.creates++
 	return CreateSigningKeyOutput{}, fmt.Errorf("unexpected generation")
 }
 
-func TestAWSRawBoundary61(t *testing.T) {
+func TestProvider_SignEd25519RawLimit(t *testing.T) {
 	for _, size := range []int{4096, 4097} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			// Given a pre-existing Ed25519 key and a fake that can sign either size.
 			seed, _ := hex.DecodeString("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
 			public, _ := hex.DecodeString("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
-			ref := topology61()[0][0]
-			client := &rawBoundary61{regional61: &regional61{t, ref, ed25519.NewKeyFromSeed(seed)}}
+			ref := regionalKeyReferences()[0][0]
+			client := &rawLimitKMS{regionalFakeKMS: &regionalFakeKMS{t, ref, ed25519.NewKeyFromSeed(seed)}}
 			p, err := Load(context.Background(), client, Config{State: State{ActiveKeyID: ref}, Algorithm: types.SigningAlgorithmSpecEd25519Sha512})
 			if err != nil {
 				t.Fatal(err)

@@ -344,9 +344,9 @@ func TestProviderSignsAndRotates(t *testing.T) {
 	}
 }
 
-// f1FaultKMS records attempts before errors, including forbidden mutations.
+// existingKeyFaultKMS records attempts before errors, including forbidden mutations.
 // Only the four public Client operations are measured; this is not a global fallback spy.
-type f1FaultKMS struct {
+type existingKeyFaultKMS struct {
 	*fakeKMS
 	boundary  string
 	fault     error
@@ -354,29 +354,29 @@ type f1FaultKMS struct {
 	forbidden int
 }
 
-func (f *f1FaultKMS) GetPublicKey(ctx context.Context, in GetPublicKeyInput) (GetPublicKeyOutput, error) {
+func (f *existingKeyFaultKMS) GetPublicKey(ctx context.Context, in GetPublicKeyInput) (GetPublicKeyOutput, error) {
 	f.calls = append(f.calls, "read:"+in.KeyID)
 	if f.boundary == "open" {
 		return GetPublicKeyOutput{}, f.fault
 	}
 	return f.fakeKMS.GetPublicKey(ctx, in)
 }
-func (f *f1FaultKMS) Sign(ctx context.Context, in SignInput) (SignOutput, error) {
+func (f *existingKeyFaultKMS) Sign(ctx context.Context, in SignInput) (SignOutput, error) {
 	f.calls = append(f.calls, "sign:"+in.KeyID)
 	return SignOutput{}, f.fault
 }
-func (f *f1FaultKMS) CreateSigningKey(context.Context, CreateSigningKeyInput) (CreateSigningKeyOutput, error) {
+func (f *existingKeyFaultKMS) CreateSigningKey(context.Context, CreateSigningKeyInput) (CreateSigningKeyOutput, error) {
 	f.forbidden++
 	return CreateSigningKeyOutput{}, fmt.Errorf("forbidden generation")
 }
-func (f *f1FaultKMS) ScheduleKeyDeletion(context.Context, ScheduleKeyDeletionInput) error {
+func (f *existingKeyFaultKMS) ScheduleKeyDeletion(context.Context, ScheduleKeyDeletionInput) error {
 	f.forbidden++
 	return fmt.Errorf("forbidden deletion")
 }
 
 // Mode: fake-only. Given an exact existing Ed25519 ARN, When read/sign fails,
 // Then no provider/signature, mutation, other reference or selected-key change escapes.
-func TestExistingKeyFaultsFailClosed(t *testing.T) {
+func TestProvider_ExistingKeyFaultsFailClosed(t *testing.T) {
 	const ref = "arn:aws:kms:us-east-1:111122223333:key/11111111-1111-4111-8111-111111111111"
 	for _, tc := range []struct {
 		name  string
@@ -391,7 +391,7 @@ func TestExistingKeyFaultsFailClosed(t *testing.T) {
 			t.Run(tc.name+"/"+boundary, func(t *testing.T) {
 				home := t.TempDir()
 				t.Setenv("HOME", home)
-				f := &f1FaultKMS{fakeKMS: newFakeEd25519KMS(t, ref), boundary: boundary, fault: tc.fault}
+				f := &existingKeyFaultKMS{fakeKMS: newFakeEd25519KMS(t, ref), boundary: boundary, fault: tc.fault}
 				p, err := Load(context.Background(), f, Config{State: State{ActiveKeyID: ref}, Algorithm: types.SigningAlgorithmSpecEd25519Sha512})
 				want := []string{"read:" + ref}
 				if boundary == "open" {

@@ -1,7 +1,6 @@
 package gcpkms_test
 
 import (
-	"cloud.google.com/go/kms/apiv1/kmspb"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -10,12 +9,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"testing"
+
+	"cloud.google.com/go/kms/apiv1/kmspb"
 	gcpkms "github.com/dnsid-ai/dnsid-go/key/gcp"
 	"github.com/googleapis/gax-go/v2"
-	"testing"
 )
 
-func topology61() [][2]string {
+func regionalKeyReferences() [][2]string {
 	var out [][2]string
 	for _, loc := range []string{"us", "global"} {
 		ref := "projects/fixture/locations/" + loc + "/keyRings/agents/cryptoKeys/signer/cryptoKeyVersions/7"
@@ -23,15 +24,15 @@ func topology61() [][2]string {
 	}
 	return out
 }
-func nativeKid61(ref, thumb string) string { return thumb }
+func expectedNativeKeyID(ref, thumb string) string { return thumb }
 
-type regional61 struct {
+type regionalFakeKMS struct {
 	t       *testing.T
 	ref     string
 	private ed25519.PrivateKey
 }
 
-func (f *regional61) GetPublicKey(_ context.Context, in *kmspb.GetPublicKeyRequest, _ ...gax.CallOption) (*kmspb.PublicKey, error) {
+func (f *regionalFakeKMS) GetPublicKey(_ context.Context, in *kmspb.GetPublicKeyRequest, _ ...gax.CallOption) (*kmspb.PublicKey, error) {
 	if in.Name != f.ref {
 		f.t.Fatal("wrong version request")
 	}
@@ -42,25 +43,25 @@ func (f *regional61) GetPublicKey(_ context.Context, in *kmspb.GetPublicKeyReque
 	b := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
 	return &kmspb.PublicKey{Name: f.ref, Pem: string(b), PemCrc32C: checksum(b), Algorithm: kmspb.CryptoKeyVersion_EC_SIGN_ED25519, ProtectionLevel: kmspb.ProtectionLevel_SOFTWARE}, nil
 }
-func (f *regional61) AsymmetricSign(_ context.Context, in *kmspb.AsymmetricSignRequest, _ ...gax.CallOption) (*kmspb.AsymmetricSignResponse, error) {
+func (f *regionalFakeKMS) AsymmetricSign(_ context.Context, in *kmspb.AsymmetricSignRequest, _ ...gax.CallOption) (*kmspb.AsymmetricSignResponse, error) {
 	if in.Name != f.ref || in.Digest != nil || in.DataCrc32C == nil || in.DataCrc32C.Value != checksum(in.Data).Value {
 		f.t.Fatal("wrong version/RAW/integrity request")
 	}
 	sig := ed25519.Sign(f.private, in.Data)
 	return &kmspb.AsymmetricSignResponse{Name: f.ref, Signature: sig, SignatureCrc32C: checksum(sig), VerifiedDataCrc32C: true, ProtectionLevel: kmspb.ProtectionLevel_SOFTWARE}, nil
 }
-func open61(t *testing.T, ref string, private ed25519.PrivateKey) *gcpkms.Provider {
+func openRegionalProvider(t *testing.T, ref string, private ed25519.PrivateKey) *gcpkms.Provider {
 	t.Helper()
-	p, err := gcpkms.New(context.Background(), &regional61{t, ref, private}, gcpkms.Config{KeyVersionName: ref})
+	p, err := gcpkms.New(context.Background(), &regionalFakeKMS{t, ref, private}, gcpkms.Config{KeyVersionName: ref})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return p
 }
 
-// #61 unchanged-contract characterization. Mode: real-capable (cloud=fake).
+// Regional public-key binding and cross-signatures. Mode: real-capable (cloud=fake).
 // Synthetic topology is NOT proof of service replication or location support.
-func TestMultiRegionSameKey(t *testing.T) {
+func TestProvider_RegionalKeysPreservePublicBinding(t *testing.T) {
 	seed, _ := hex.DecodeString("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
 	private := ed25519.NewKeyFromSeed(seed)
 	raw, _ := hex.DecodeString("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
@@ -77,16 +78,16 @@ func TestMultiRegionSameKey(t *testing.T) {
 	if digest == wrongDigest {
 		t.Fatal("different-key SAME-KEY oracle did not discriminate")
 	}
-	for _, refs := range topology61() {
+	for _, refs := range regionalKeyReferences() {
 		t.Run(refs[0], func(t *testing.T) {
 			// Given two independent cloud clients with the same RFC public material.
 			var keys []ed25519.PublicKey
 			var signatures [][]byte
-			payload := []byte("#61 bounded RAW cross-region payload")
+			payload := []byte("bounded RAW cross-region payload")
 			for restart := 0; restart < 2; restart++ {
 				for _, ref := range refs {
 					// When opening the exact configured reference with a fresh client/provider.
-					p := open61(t, ref, private)
+					p := openRegionalProvider(t, ref, private)
 					key := p.JWK()
 					encoded, err := json.Marshal(key)
 					if err != nil {
@@ -109,7 +110,7 @@ func TestMultiRegionSameKey(t *testing.T) {
 					if base64.RawURLEncoding.EncodeToString(gotDigest[:]) != thumb {
 						t.Fatal("thumbprint mismatch")
 					}
-					wantKid := nativeKid61(ref, thumb)
+					wantKid := expectedNativeKeyID(ref, thumb)
 					if j["kid"] != wantKid {
 						t.Fatalf("native kid=%v want %s", j["kid"], wantKid)
 					}
