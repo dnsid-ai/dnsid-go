@@ -11,7 +11,7 @@ require (
 	github.com/transparency-dev/merkle v0.0.2
 	golang.org/x/mod v0.41.0
 	golang.org/x/net v0.62.0
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
