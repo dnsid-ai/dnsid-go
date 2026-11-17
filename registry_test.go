@@ -709,7 +709,7 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		requestID := r.Header.Get("Idempotency-Key")
-		if requestID != "live-1" && requestID != "live-wrong-status" && requestID != "live-replay" {
+		if requestID != "" && requestID != "live-1" && requestID != "live-wrong-status" && requestID != "live-replay" {
 			t.Errorf("Idempotency-Key = %q", requestID)
 		}
 		var body map[string]any
@@ -744,10 +744,10 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 	if resp.ID != "agent-1" || resp.Domain != "live.example.com" || resp.PublicationConfig.EntityKeyURL == "" {
 		t.Fatalf("Live response = %+v", resp)
 	}
-	if _, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, ""); err == nil || calls != 1 {
-		t.Fatalf("missing idempotency key: calls=%d err=%v", calls, err)
+	if _, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, ""); err != nil || calls != 2 {
+		t.Fatalf("optional idempotency key: calls=%d err=%v", calls, err)
 	}
-	if _, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "live-wrong-status"); err == nil || calls != 2 {
+	if _, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "live-wrong-status"); err == nil || calls != 3 {
 		t.Fatalf("CreateLiveAgent accepted HTTP 200: calls=%d err=%v", calls, err)
 	}
 	replay, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "live-replay")
@@ -763,7 +763,7 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 			t.Fatalf("CreateLiveAgent accepted invalid Live key: %#v", invalid)
 		}
 	}
-	if calls != 3 {
+	if calls != 4 {
 		t.Fatalf("CreateLiveAgent sent invalid Live key: calls=%d", calls)
 	}
 }

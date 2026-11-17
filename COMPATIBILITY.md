@@ -63,8 +63,11 @@ policy.
 
 ### Registration without nonce proof
 
-Managed Live create and replay accept HTTP 201 or 202 and require a matching
-response Idempotency-Key. `CreateLiveAgent` returns `CreateAgentResponse`, including
+Managed Live create accepts HTTP 201 or 202. An empty registration key omits
+Idempotency-Key; supplied keys require a matching response header. Modern
+headerless create returns 201, while keyed caller-key Live create retains 202.
+Preparation uses GET; the existing signing/submission key remains separate.
+`CreateLiveAgent` returns `CreateAgentResponse`, including
 the assigned ID, domain, publication configuration, status, and OIDC issuer.
 `LiveProvisioningResponse`, registration challenge/proof types, `SubmitChallenge`,
 `SubmitLiveProof`, `ReissueLiveProof`, and challenge fields on `AgentDetail` are

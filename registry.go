@@ -156,14 +156,16 @@ type CreateAgentRequest struct {
 
 // CreateAgentResponse matches the OpenAPI CreateAgentResponse schema.
 type CreateAgentResponse struct {
-	ID                string            `json:"id"`
-	Domain            string            `json:"domain"`
-	DomainDisplay     string            `json:"domain_display"`
-	Name              string            `json:"name,omitempty"`
-	Status            string            `json:"status"`
-	StatusURL         string            `json:"status_url"`
-	PublicationConfig PublicationConfig `json:"publication_config"`
-	OIDCIssuerURL     string            `json:"oidc_issuer_url,omitempty"`
+	ID                     string            `json:"id"`
+	Domain                 string            `json:"domain"`
+	DomainDisplay          string            `json:"domain_display"`
+	Name                   string            `json:"name,omitempty"`
+	Status                 string            `json:"status"`
+	StatusURL              string            `json:"status_url"`
+	PublicationConfig      PublicationConfig `json:"publication_config"`
+	OIDCIssuerURL          string            `json:"oidc_issuer_url,omitempty"`
+	IssuanceEntry          string            `json:"issuance_entry,omitempty"`
+	IssuanceIdempotencyKey string            `json:"issuance_idempotency_key,omitempty"`
 }
 
 // LiveAgentRegistrationInput is the caller-controlled input for managed Live
@@ -740,8 +742,10 @@ func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgent
 	if req.Environment != "" && req.Environment != "production" {
 		return nil, NewArgumentError("dnsid: Live agents require environment \"production\"", nil)
 	}
-	if err := validateRegistryIdempotencyKey(idempotencyKey); err != nil {
-		return nil, err
+	if idempotencyKey != "" {
+		if err := validateRegistryIdempotencyKey(idempotencyKey); err != nil {
+			return nil, err
+		}
 	}
 	if err := validateLivePublicJWK(req.PublicKey); err != nil {
 		return nil, err
@@ -757,7 +761,11 @@ func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgent
 	if err != nil {
 		return nil, NewArgumentError("dnsid: encoding Live registration request", err)
 	}
-	data, headers, status, callErr := c.doRequest(ctx, http.MethodPost, "/api/v1/agent", bytes.NewReader(request), map[string]string{"Content-Type": "application/json", "Idempotency-Key": idempotencyKey})
+	requestHeaders := map[string]string{"Content-Type": "application/json"}
+	if idempotencyKey != "" {
+		requestHeaders["Idempotency-Key"] = idempotencyKey
+	}
+	data, headers, status, callErr := c.doRequest(ctx, http.MethodPost, "/api/v1/agent", bytes.NewReader(request), requestHeaders)
 	if callErr != nil {
 		return nil, &RegistrationError{Request: request, IdempotencyKey: idempotencyKey, Cause: callErr}
 	}
@@ -768,7 +776,7 @@ func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgent
 	if callErr == nil && status != http.StatusCreated && status != http.StatusAccepted {
 		callErr = NewValidationError(fmt.Sprintf("dnsid: registry returned HTTP %d, want HTTP 201 or 202", status), nil)
 	}
-	if callErr == nil && headers.Get("Idempotency-Key") != idempotencyKey {
+	if callErr == nil && idempotencyKey != "" && headers.Get("Idempotency-Key") != idempotencyKey {
 		callErr = NewValidationError("dnsid: Live response Idempotency-Key does not match the request", nil)
 	}
 	if callErr == nil && response.Status == "" {
@@ -1066,7 +1074,7 @@ func (c *HTTPRegistryClient) PrepareIssuance(ctx context.Context, fqdn, idempote
 	if err := validateRegistryIdempotencyKey(idempotencyKey); err != nil {
 		return nil, err
 	}
-	response, _, _, err := c.doRequest(ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/tlog/issuance/prepare", nil, map[string]string{
+	response, _, _, err := c.doRequest(ctx, http.MethodGet, "/api/v1/agent/"+url.PathEscape(fqdn)+"/tlog/issuance/prepare", nil, map[string]string{
 		"Content-Type":    "application/json",
 		"Idempotency-Key": idempotencyKey,
 	})
