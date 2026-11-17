@@ -70,10 +70,20 @@ func (r *TXTRecord) validateWithSignatureRequirement(identityFQDN string, includ
 		}
 	}
 
-	// The operational key endpoint belongs to the identity domain.
+	// The operational key endpoint belongs to the identity domain. The host is
+	// compared in NormalizeFQDN form, the name the transport will resolve and
+	// present as TLS SNI, rather than through a case fold: strings.EqualFold
+	// and strings.ToLower apply Unicode simple case mappings that do not agree
+	// with the UTS 46 mapping net/http applies before dialing (U+0130 is the
+	// textbook case), so a folded comparison can accept a host that is dialed
+	// as a different DNS name. A host that has no canonical form is rejected.
 	ku, _ := url.Parse(r.KeyURI)
-	if !strings.EqualFold(ku.Hostname(), fqdn) {
-		return NewValidationError(fmt.Sprintf("dnsid: ku host %q must equal identity FQDN %q", ku.Hostname(), fqdn), nil)
+	kuHost, err := NormalizeFQDN(ku.Hostname())
+	if err != nil {
+		return NewValidationError(fmt.Sprintf("dnsid: ku host %+q is not a valid DNS name", ku.Hostname()), err)
+	}
+	if kuHost != fqdn {
+		return NewValidationError(fmt.Sprintf("dnsid: ku host %q must equal identity FQDN %q", kuHost, fqdn), nil)
 	}
 
 	if err := validateRecordHTTPSURL(r.EntityKeyURI, "ek"); err != nil {
@@ -90,8 +100,19 @@ func (r *TXTRecord) validateWithSignatureRequirement(identityFQDN string, includ
 	if gi != giDomain {
 		return NewValidationError(fmt.Sprintf("dnsid: gi %q must be lowercase ASCII in A-label form", gi), nil)
 	}
+	// The entity key endpoint must sit at or under the governance domain. This
+	// boundary is what binds the record-signing key to gi, so, as for ku, the
+	// host is compared in NormalizeFQDN form: the exact name that will be
+	// dialed. Under a strings.ToLower comparison the host "keys.b\u0130gcorp.com"
+	// (reachable from an all-ASCII record as keys.b%C4%B0gcorp.com) folded to a
+	// name under bigcorp.com while the JWKS was fetched from
+	// keys.xn--bigcorp-....com, a domain anyone can register.
 	ekURL, _ := url.Parse(r.EntityKeyURI)
-	if ekHost := strings.ToLower(ekURL.Hostname()); !isDomainOrSubdomain(ekHost, giDomain) {
+	ekHost, err := NormalizeFQDN(ekURL.Hostname())
+	if err != nil {
+		return NewValidationError(fmt.Sprintf("dnsid: ek host %+q is not a valid DNS name", ekURL.Hostname()), err)
+	}
+	if !isDomainOrSubdomain(ekHost, giDomain) {
 		return NewValidationError(fmt.Sprintf("dnsid: ek host %q must be at or under gi domain %q", ekHost, giDomain), nil)
 	}
 
@@ -108,6 +129,20 @@ func validateRecordHTTPSURL(raw, tag string) error {
 	}
 	if u.User != nil {
 		return NewValidationError(fmt.Sprintf("dnsid: %s must not include userinfo", tag), nil)
+	}
+	// TXT values are printable ASCII, so a record URL's host is ASCII as
+	// written. url.Parse percent-decodes the host component, which is the only
+	// way a non-ASCII byte (or a literal "%", from "%25") can appear in u.Host.
+	// Neither belongs in a DNS host name, and RFC 3986 section 3.2.2 directs
+	// producers to write internationalized hosts as A-labels rather than
+	// percent-encoding them. Rejecting them keeps the host that is compared and
+	// dialed identical to the host as published, so a "%" in a record can never
+	// act as a formatting character for the host. The path and query keep their
+	// percent-encoding untouched.
+	for i := 0; i < len(u.Host); i++ {
+		if c := u.Host[i]; c >= 0x80 || c == '%' {
+			return NewValidationError(fmt.Sprintf("dnsid: %s host must be an ASCII DNS name without percent-escapes", tag), nil)
+		}
 	}
 	return nil
 }

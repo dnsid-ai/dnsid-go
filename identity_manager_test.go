@@ -276,6 +276,34 @@ func TestFetchHostAllowed(t *testing.T) {
 		{"keys.example.com", "example.com", true, true},
 		{"keys.example.com", "example.com", false, false},
 		{"notexample.test", "example.com", true, false},
+		// Hosts are compared in NormalizeFQDN form: ASCII case and a trailing
+		// dot are canonicalized on either side, and a U-label equals its A-label.
+		{"KEYS.Example.COM", "example.com", true, true},
+		{"keys.example.com.", "example.com", true, true},
+		{"keys.example.com", "Example.COM.", true, true},
+		{"xn--mnchen-3ya.de", "m\u00fcnchen.de", false, true},
+		{"m\u00fcnchen.de", "xn--mnchen-3ya.de", false, true},
+		// U+0130 is the case strings.ToLower got wrong: it folds to ASCII "i",
+		// but the transport dials the punycode form, which is a different
+		// registrable domain. Neither equality nor the boundary may accept it.
+		{"keys.b\u0130gcorp.com", "bigcorp.com", true, false},
+		{"keys.b\u0130gcorp.com", "keys.bigcorp.com", false, false},
+		{"b\u0130gcorp.com", "bigcorp.com", false, false},
+		// A boundary match must sit on a label boundary, in canonical form too.
+		{"example.com.attacker.test", "example.com", true, false},
+		{"EXAMPLE.COM.attacker.test", "example.com", true, false},
+		// IP literals match only themselves, never a domain boundary.
+		{"192.0.2.1", "192.0.2.1", false, true},
+		{"192.0.2.1", "192.0.2.1", true, true},
+		{"2001:db8::1", "2001:DB8::1", false, true},
+		{"192.0.2.1", "192.0.2.2", true, false},
+		{"4.3.2.1", "3.2.1", true, false},
+		{"keys.example.com", "192.0.2.1", true, false},
+		// Hosts with no canonical form are never allowed.
+		{"", "example.com", true, false},
+		{"keys.example.com", "", true, false},
+		{"-keys.example.com", "example.com", true, false},
+		{strings.Repeat("a", 64) + ".example.com", "example.com", true, false},
 	} {
 		if got := fetchHostAllowed(tc.host, tc.allowed, tc.boundary); got != tc.want {
 			t.Errorf("fetchHostAllowed(%q, %q, %v) = %v, want %v", tc.host, tc.allowed, tc.boundary, got, tc.want)
