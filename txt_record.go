@@ -77,7 +77,15 @@ func (r *TXTRecord) validateWithSignatureRequirement(identityFQDN string, includ
 	// with the UTS 46 mapping net/http applies before dialing (U+0130 is the
 	// textbook case), so a folded comparison can accept a host that is dialed
 	// as a different DNS name. A host that has no canonical form is rejected.
+	//
+	// A trailing dot is rejected before normalization rather than canonicalized
+	// away. NormalizeFQDN accepts one on a bare domain, but the byte-wise host
+	// comparison this replaces never did, and the rule is kept so that the host
+	// as published is exactly the host that is compared and dialed.
 	ku, _ := url.Parse(r.KeyURI)
+	if host := ku.Hostname(); strings.HasSuffix(host, ".") {
+		return NewValidationError(fmt.Sprintf("dnsid: ku host %q must not end with a dot", host), nil)
+	}
 	kuHost, err := NormalizeFQDN(ku.Hostname())
 	if err != nil {
 		return NewValidationError(fmt.Sprintf("dnsid: ku host %+q is not a valid DNS name", ku.Hostname()), err)
@@ -106,8 +114,12 @@ func (r *TXTRecord) validateWithSignatureRequirement(identityFQDN string, includ
 	// dialed. Under a strings.ToLower comparison the host "keys.b\u0130gcorp.com"
 	// (reachable from an all-ASCII record as keys.b%C4%B0gcorp.com) folded to a
 	// name under bigcorp.com while the JWKS was fetched from
-	// keys.xn--bigcorp-....com, a domain anyone can register.
+	// keys.xn--bigcorp-....com, a domain anyone can register. As for ku, a
+	// trailing dot is rejected rather than canonicalized away.
 	ekURL, _ := url.Parse(r.EntityKeyURI)
+	if host := ekURL.Hostname(); strings.HasSuffix(host, ".") {
+		return NewValidationError(fmt.Sprintf("dnsid: ek host %q must not end with a dot", host), nil)
+	}
 	ekHost, err := NormalizeFQDN(ekURL.Hostname())
 	if err != nil {
 		return NewValidationError(fmt.Sprintf("dnsid: ek host %+q is not a valid DNS name", ekURL.Hostname()), err)

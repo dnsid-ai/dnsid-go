@@ -1731,12 +1731,22 @@ func validateManagerFetchURL(raw, allowedHost string, domainBoundary bool) error
 // Canonical comparison closes that gap for every source of a host name: a TXT
 // record, a redirect Location header, or configuration.
 //
+// A trailing dot is not canonicalized away: host and allowed must agree on
+// it, exactly as the byte-wise comparison this replaces required. In practice
+// allowed never carries one for a ku or ek fetch (the identity FQDN and gi are
+// canonical, and TXTRecord.Validate rejects a trailing dot in those hosts), so
+// a redirect to "keys.example.com." is refused, while a status URL whose
+// allowed host is its own host keeps matching itself as before.
+//
 // IP literals are compared as addresses, never on a domain boundary. A host
 // that is neither a valid DNS name nor an IP literal is never allowed.
 func fetchHostAllowed(host, allowed string, domainBoundary bool) bool {
 	if ip := net.ParseIP(host); ip != nil {
 		allowedIP := net.ParseIP(allowed)
 		return allowedIP != nil && ip.Equal(allowedIP)
+	}
+	if strings.HasSuffix(host, ".") != strings.HasSuffix(allowed, ".") {
+		return false
 	}
 	canonicalHost, err := NormalizeFQDN(host)
 	if err != nil {

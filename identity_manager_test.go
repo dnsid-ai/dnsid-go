@@ -276,13 +276,20 @@ func TestFetchHostAllowed(t *testing.T) {
 		{"keys.example.com", "example.com", true, true},
 		{"keys.example.com", "example.com", false, false},
 		{"notexample.test", "example.com", true, false},
-		// Hosts are compared in NormalizeFQDN form: ASCII case and a trailing
-		// dot are canonicalized on either side, and a U-label equals its A-label.
+		// Hosts are compared in NormalizeFQDN form: ASCII case is canonicalized
+		// on either side, and a U-label equals its A-label.
 		{"KEYS.Example.COM", "example.com", true, true},
-		{"keys.example.com.", "example.com", true, true},
-		{"keys.example.com", "Example.COM.", true, true},
+		{"keys.example.com", "Example.COM", true, true},
 		{"xn--mnchen-3ya.de", "m\u00fcnchen.de", false, true},
 		{"m\u00fcnchen.de", "xn--mnchen-3ya.de", false, true},
+		// A trailing dot is not canonicalized away: both sides must agree on it,
+		// as the byte-wise comparison this replaced required.
+		{"keys.example.com.", "example.com", true, false},
+		{"keys.example.com", "example.com.", true, false},
+		{"agent.example.com.", "agent.example.com", false, false},
+		{"agent.example.com", "agent.example.com.", false, false},
+		{"agent.example.com.", "agent.example.com.", false, true},
+		{"keys.example.com.", "example.com.", true, true},
 		// U+0130 is the case strings.ToLower got wrong: it folds to ASCII "i",
 		// but the transport dials the punycode form, which is a different
 		// registrable domain. Neither equality nor the boundary may accept it.

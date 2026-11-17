@@ -71,7 +71,7 @@ func TestTXTRecordValidate_KUHostComparedInCanonicalForm(t *testing.T) {
 		{"canonical", "https://agent.identity.example/ku.json", ""},
 		{"with port", "https://agent.identity.example:8443/ku.json", ""},
 		{"uppercase", "https://AGENT.Identity.EXAMPLE/ku.json", ""},
-		{"trailing dot", "https://agent.identity.example./ku.json", ""},
+		{"trailing dot", "https://agent.identity.example./ku.json", "must not end with a dot"},
 		{"other host", "https://other.identity.example/ku.json", "must equal identity FQDN"},
 		{"parent domain", "https://identity.example/ku.json", "must equal identity FQDN"},
 		{"identity as suffix", "https://agent.identity.example.attacker.example/ku.json", "must equal identity FQDN"},
@@ -97,7 +97,7 @@ func TestTXTRecordValidate_EKHostComparedInCanonicalForm(t *testing.T) {
 		{"under gi", "https://keys.identity.example/ek.json", ""},
 		{"deeper under gi", "https://a.b.keys.identity.example/ek.json", ""},
 		{"uppercase", "https://KEYS.Identity.EXAMPLE/ek.json", ""},
-		{"trailing dot", "https://keys.identity.example./ek.json", ""},
+		{"trailing dot", "https://keys.identity.example./ek.json", "must not end with a dot"},
 		{"sibling domain", "https://keys.other.example/ek.json", "must be at or under gi domain"},
 		{"gi as prefix", "https://identity.example.attacker.example/ek.json", "must be at or under gi domain"},
 		{"gi as label suffix", "https://notidentity.example/ek.json", "must be at or under gi domain"},
@@ -111,6 +111,38 @@ func TestTXTRecordValidate_EKHostComparedInCanonicalForm(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			err := hostBoundaryRecord(t, ku, tc.ek).Validate("agent.identity.example")
 			assertHostBoundaryResult(t, err, tc.wantErr)
+		})
+	}
+}
+
+// TestTXTRecordValidate_TrailingDotHostRejected pins that a trailing dot in a
+// ku= or ek= host is rejected before normalization. NormalizeFQDN would accept
+// and strip it, but the byte-wise comparisons that canonical comparison
+// replaced never admitted one, and that rule is deliberately kept: the host as
+// published is the host that is compared and dialed. The su= host is outside
+// the rule, as before, since no host comparison applies to it.
+func TestTXTRecordValidate_TrailingDotHostRejected(t *testing.T) {
+	const ku = "https://agent.identity.example/ku.json"
+	const ek = "https://keys.identity.example/ek.json"
+	for _, tc := range []struct {
+		name    string
+		ku, ek  string
+		su      string
+		wantErr string
+	}{
+		{"no trailing dots", ku, ek, "", ""},
+		{"ku trailing dot", "https://agent.identity.example./ku.json", ek, "", "ku host \"agent.identity.example.\" must not end with a dot"},
+		{"ku trailing dot with port", "https://agent.identity.example.:8443/ku.json", ek, "", "ku host \"agent.identity.example.\" must not end with a dot"},
+		{"ek trailing dot", ku, "https://keys.identity.example./ek.json", "", "ek host \"keys.identity.example.\" must not end with a dot"},
+		{"ek at gi with trailing dot", ku, "https://identity.example./ek.json", "", "ek host \"identity.example.\" must not end with a dot"},
+		{"su trailing dot is outside the rule", ku, ek, "https://agent.identity.example./status", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := hostBoundaryRecord(t, tc.ku, tc.ek)
+			if tc.su != "" {
+				record.StatusURI = tc.su
+			}
+			assertHostBoundaryResult(t, record.Validate("agent.identity.example"), tc.wantErr)
 		})
 	}
 }
@@ -185,7 +217,7 @@ func TestClientWithRedirectPolicy_SameHostComparesCanonicalForm(t *testing.T) {
 	}{
 		{"under gi", "https://keys.bigcorp.com/ek.json", true},
 		{"uppercase", "https://KEYS.BigCorp.COM/ek.json", true},
-		{"trailing dot", "https://keys.bigcorp.com./ek.json", true},
+		{"trailing dot", "https://keys.bigcorp.com./ek.json", false},
 		{"percent-encoded U+0130", "https://keys.b%C4%B0gcorp.com/ek.json", false},
 		{"raw U+0130", "https://keys.bİgcorp.com/ek.json", false},
 		{"gi as prefix", "https://bigcorp.com.attacker.example/ek.json", false},
