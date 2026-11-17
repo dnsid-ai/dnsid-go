@@ -33,9 +33,14 @@ func TestHTTPRegistryClient_LiveReplayDomain(t *testing.T) {
 				if test.name == "legacy nonce ignored" {
 					response["challenge"] = "obsolete"
 					response["challenge_message"] = "not a valid transcript"
+					response["status"] = "challenge_pending"
 				}
 				w.Header().Set("Idempotency-Key", "replay-key")
-				w.WriteHeader(http.StatusCreated)
+				if test.name == "legacy nonce ignored" {
+					w.WriteHeader(http.StatusAccepted)
+				} else {
+					w.WriteHeader(http.StatusCreated)
+				}
 				_ = json.NewEncoder(w).Encode(response)
 			}))
 			defer server.Close()

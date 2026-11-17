@@ -63,13 +63,14 @@ policy.
 
 ### Registration without nonce proof
 
-Managed Live create and replay now accept only HTTP 201 and require a matching
+Managed Live create and replay accept HTTP 201 or 202 and require a matching
 response Idempotency-Key. `CreateLiveAgent` returns `CreateAgentResponse`, including
 the assigned ID, domain, publication configuration, status, and OIDC issuer.
 `LiveProvisioningResponse`, registration challenge/proof types, `SubmitChallenge`,
 `SubmitLiveProof`, `ReissueLiveProof`, and challenge fields on `AgentDetail` are
 removed. Callers and injected registry clients must use the updated interface;
-old HTTP 202 Live servers are not compatible.
+compatibility HTTP 202 responses must still contain agent fields. Deprecated
+challenge metadata is ignored and no proof request is sent.
 
 Foundry prepares bilateral ISSUANCE after authenticated publication progress
 during PROVISIONING, not after VERIFIED or READY. Authenticated registry-managed

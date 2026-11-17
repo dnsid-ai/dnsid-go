@@ -724,7 +724,7 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 		}
 		w.Header().Set("Idempotency-Key", requestID)
 		if requestID == "live-wrong-status" {
-			w.WriteHeader(http.StatusAccepted)
+			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusCreated)
 
@@ -748,7 +748,7 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 		t.Fatalf("missing idempotency key: calls=%d err=%v", calls, err)
 	}
 	if _, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "live-wrong-status"); err == nil || calls != 2 {
-		t.Fatalf("CreateLiveAgent accepted HTTP 202: calls=%d err=%v", calls, err)
+		t.Fatalf("CreateLiveAgent accepted HTTP 200: calls=%d err=%v", calls, err)
 	}
 	replay, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "live-replay")
 	if err != nil || replay.Status != "PROVISIONING" || replay.ID != resp.ID {
@@ -770,28 +770,30 @@ func TestHTTPRegistryClient_CreateLiveAgent(t *testing.T) {
 
 func TestHTTPRegistryClient_RejectsInvalidLiveResponseFields(t *testing.T) {
 	publicKey := GenerateEd25519KeyProvider().JWK()
-	for _, field := range []string{"id", "domain", "status", "publication_config", "missing-header", "mismatched-header"} {
-		t.Run(field, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				body := map[string]any{"id": "agent-1", "domain": "agent.example.com", "status": "PROVISIONING", "publication_config": registrationTestConfig()}
-				delete(body, field)
-				if field != "missing-header" {
-					w.Header().Set("Idempotency-Key", r.Header.Get("Idempotency-Key"))
+	for _, status := range []int{http.StatusCreated, http.StatusAccepted} {
+		for _, field := range []string{"id", "domain", "status", "publication_config", "missing-header", "mismatched-header"} {
+			t.Run(fmt.Sprintf("%d/%s", status, field), func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body := map[string]any{"id": "agent-1", "domain": "agent.example.com", "status": "PROVISIONING", "publication_config": registrationTestConfig()}
+					delete(body, field)
+					if field != "missing-header" {
+						w.Header().Set("Idempotency-Key", r.Header.Get("Idempotency-Key"))
+					}
+					if field == "mismatched-header" {
+						w.Header().Set("Idempotency-Key", "other")
+					}
+					w.WriteHeader(status)
+					json.NewEncoder(w).Encode(body)
+				}))
+				defer srv.Close()
+				client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client()}
+				response, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "registration-key")
+				var recovery *RegistrationError
+				if !errors.As(err, &recovery) || response == nil || recovery.IdempotencyKey != "registration-key" || len(recovery.Request) == 0 {
+					t.Fatalf("invalid Live response lost recovery facts: response=%+v err=%v", response, err)
 				}
-				if field == "mismatched-header" {
-					w.Header().Set("Idempotency-Key", "other")
-				}
-				w.WriteHeader(http.StatusCreated)
-				json.NewEncoder(w).Encode(body)
-			}))
-			defer srv.Close()
-			client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client()}
-			response, err := client.CreateLiveAgent(context.Background(), &LiveAgentRegistrationInput{PublicKey: publicKey}, "registration-key")
-			var recovery *RegistrationError
-			if !errors.As(err, &recovery) || response == nil || recovery.IdempotencyKey != "registration-key" || len(recovery.Request) == 0 {
-				t.Fatalf("invalid Live response lost recovery facts: response=%+v err=%v", response, err)
-			}
-		})
+			})
+		}
 	}
 }
 

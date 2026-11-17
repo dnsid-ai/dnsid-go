@@ -727,7 +727,9 @@ func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, 
 	return &response, nil
 }
 
-// CreateLiveAgent creates or replays a managed Live HTTP 201 registration.
+// CreateLiveAgent creates or replays a managed Live HTTP 201 or 202 registration.
+// Both responses must contain agent fields. Deprecated challenge metadata is
+// ignored; no proof request is sent.
 // It sends tier="live", managed=true, and environment="production". Reuse the
 // required idempotency key and identical request for recovery. Decoded creation
 // facts are returned even when response validation fails; always check the error.
@@ -763,8 +765,8 @@ func (c *HTTPRegistryClient) CreateLiveAgent(ctx context.Context, req *LiveAgent
 	if err := json.Unmarshal(data, &response); err != nil {
 		callErr = NewParseError("dnsid: parsing Live registration response", err)
 	}
-	if callErr == nil && status != http.StatusCreated {
-		callErr = NewValidationError(fmt.Sprintf("dnsid: registry returned HTTP %d, want HTTP 201", status), nil)
+	if callErr == nil && status != http.StatusCreated && status != http.StatusAccepted {
+		callErr = NewValidationError(fmt.Sprintf("dnsid: registry returned HTTP %d, want HTTP 201 or 202", status), nil)
 	}
 	if callErr == nil && headers.Get("Idempotency-Key") != idempotencyKey {
 		callErr = NewValidationError("dnsid: Live response Idempotency-Key does not match the request", nil)

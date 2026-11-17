@@ -5,7 +5,7 @@ generic DNSid registration. It remains gated until the server's named-Live
 requirements are released. There is no sandbox fallback, replacement flow, or
 extra capability probe.
 
-The server contract requires HTTP 201 Live creation and replay with a matching
+The server contract accepts HTTP 201 or 202 Live creation and replay with a matching
 Idempotency-Key, boolean `dns_published` on authenticated managed detail, and
 bilateral ISSUANCE before readiness. See [compatibility](../COMPATIBILITY.md#registration-without-nonce-proof)
 and the [design contract](https://github.com/dnsid-ai/dnsid-sdk-compliance/blob/9f7a71fb24596a37712152f7bf5500f125a44b3b/docs/sdk-design/13-known-foundry.md).
@@ -38,8 +38,9 @@ A CLI directory key source requires a root `private.jwk`; Foundry cannot use a
 per-domain subdirectory before the registry assigns the domain. Use `keyRef` to
 open an existing key at another path.
 
-Create accepts HTTP 201 for creation and replay and checks the response
-Idempotency-Key. It saves the identity ID, domain, publication configuration,
+Create accepts HTTP 201 or 202 for creation and replay and checks the response
+Idempotency-Key. Both require agent fields; deprecated challenge metadata is ignored
+without sending a proof request. It saves the identity ID, domain, publication configuration,
 OIDC issuer, and registry status before any authenticated detail read.
 It does not wait for public readiness.
 `Active(ctx)` waits for authenticated `dns_published: true` while PROVISIONING, completes bilateral
