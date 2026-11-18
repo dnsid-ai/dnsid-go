@@ -128,7 +128,8 @@ func TestBootstrapSDK_CreateOrReuseWire(t *testing.T) {
 				t.Fatal(err)
 			}
 			var actions []string
-			aliasReads, canonicalReads := 0, 0
+			var publicKeyIDs []string
+			aliasReads := 0
 			client := sdkAdapter(func(r *http.Request) (*http.Response, error) {
 				action, body := sdkRequest(t, r)
 				actions = append(actions, action)
@@ -138,6 +139,7 @@ func TestBootstrapSDK_CreateOrReuseWire(t *testing.T) {
 				switch action {
 				case "GetPublicKey":
 					id, _ := body["KeyId"].(string)
+					publicKeyIDs = append(publicKeyIDs, id)
 					sdkEqual(t, body, map[string]any{"KeyId": id})
 					if id == sdkAlias {
 						aliasReads++
@@ -149,10 +151,6 @@ func TestBootstrapSDK_CreateOrReuseWire(t *testing.T) {
 						}
 					} else {
 						sdkEqual(t, id, sdkWinner)
-						canonicalReads++
-						if canonicalReads > 1 {
-							t.Fatal("extra immutable validation read")
-						}
 					}
 					return sdkResponse(200, map[string]any{"KeyId": sdkWinner, "PublicKey": der, "KeySpec": "ECC_NIST_EDWARDS25519", "KeyUsage": "SIGN_VERIFY", "SigningAlgorithms": []string{"ED25519_SHA_512"}})
 				case "CreateKey":
@@ -211,10 +209,18 @@ func TestBootstrapSDK_CreateOrReuseWire(t *testing.T) {
 			if branch != "existing" {
 				want = []string{"GetPublicKey", "CreateKey", "CreateAlias", "GetPublicKey"}
 			}
-			if canonicalReads == 1 {
-				want = append(want, "GetPublicKey")
+			wantIDs := []string{sdkAlias}
+			if branch != "existing" {
+				wantIDs = []string{sdkAlias, sdkAlias}
 			}
-			sdkEqual(t, actions, want)
+			optionalIDs := append(append([]string(nil), wantIDs...), sdkWinner)
+			if !reflect.DeepEqual(publicKeyIDs, wantIDs) && !reflect.DeepEqual(publicKeyIDs, optionalIDs) {
+				t.Fatalf("public-key request IDs = %#v; want %#v or %#v", publicKeyIDs, wantIDs, optionalIDs)
+			}
+			optionalActions := append(append([]string(nil), want...), "GetPublicKey")
+			if !reflect.DeepEqual(actions, want) && !reflect.DeepEqual(actions, optionalActions) {
+				t.Fatalf("actions = %#v; want %#v or %#v", actions, want, optionalActions)
+			}
 			expectedReads := 1
 			if branch != "existing" {
 				expectedReads = 2

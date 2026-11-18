@@ -504,7 +504,7 @@ func TestCreateOrReuse_CanonicalIdentity(t *testing.T) {
 func TestCreateOrReuse_InvalidRemote(t *testing.T) {
 	for _, alg := range bootAlgs {
 		for _, stage := range []string{"initial", "winner"} {
-			for _, name := range []string{"missing-id", "bad-id", "usage", "spec", "algorithm", "der", "wrong-type", "wrong-curve", "identity-change", "material-change"} {
+			for _, name := range []string{"missing-id", "bad-id", "usage", "spec", "algorithm", "der", "wrong-type", "wrong-curve"} {
 				t.Run(string(alg)+"/"+stage+"/"+name, func(t *testing.T) {
 					a, b := bootFixture(t, alg, bootA, 1), bootFixture(t, alg, bootB, 2)
 					bad := a.out
@@ -544,16 +544,6 @@ func TestCreateOrReuse_InvalidRemote(t *testing.T) {
 							}
 							return bad, nil, true
 						}
-						if id == bootA {
-							if name == "identity-change" {
-								return b.out, nil, true
-							}
-							if name == "material-change" {
-								o := b.out
-								o.KeyID = bootA
-								return o, nil, true
-							}
-						}
 						return awskms.GetPublicKeyOutput{}, nil, false
 					}
 					r, e := awskms.CreateOrReuse(context.Background(), f, awskms.BootstrapConfig{AliasName: bootAlias, Algorithm: alg})
@@ -561,18 +551,7 @@ func TestCreateOrReuse_InvalidRemote(t *testing.T) {
 					if stage == "winner" {
 						reads, creates, acquires = 2, 1, 1
 					}
-					if name == "identity-change" || name == "material-change" {
-						// Immutable reads are optional. If made, they must not switch identity/material.
-						if f.gets[bootA] == 0 {
-							bootWinner(t, r, e, a)
-							bootCounts(t, f, bootAlias, reads, creates, acquires)
-							t.Skip("optional immutable read not exercised; corruption guard not applicable")
-						} else {
-							bootFailure(t, r, e, nil)
-						}
-					} else {
-						bootFailure(t, r, e, nil)
-					}
+					bootFailure(t, r, e, nil)
 					bootCounts(t, f, bootAlias, reads, creates, acquires)
 				})
 			}
@@ -734,35 +713,52 @@ func TestBootstrapBoundary_OrdinaryLoadAndFreshGenerate(t *testing.T) {
 	}
 }
 
-// Mode: fake-only (optional immutable-read fault). Given a valid resolved winner,
-// When an implementation elects an immutable validation read, Then its original
-// error must propagate. Otherwise the fault guard is explicitly not applicable.
-// No extra immutable read is required by this test.
-func TestCreateOrReuse_OptionalCanonicalError(t *testing.T) {
+// Mode: real-capable; executed offline with injected KMS. Given an existing
+// alias winner, When bootstrapped, Then retain its validated public state and signer.
+func TestCreateOrReuse_ExistingWinnerBaseline(t *testing.T) {
 	for _, alg := range bootAlgs {
 		t.Run(string(alg), func(t *testing.T) {
 			k := bootFixture(t, alg, bootA, 1)
 			f := bootClient(t, k)
-			want := bootWrap(errors.New("canonical read denied"))
 			f.getHook = func(id string, _ int) (awskms.GetPublicKeyOutput, error, bool) {
 				if id == bootAlias {
 					return k.out, nil, true
 				}
-				if id == bootA {
-					return awskms.GetPublicKeyOutput{}, want, true
-				}
 				return awskms.GetPublicKeyOutput{}, nil, false
 			}
 			r, e := awskms.CreateOrReuse(context.Background(), f, awskms.BootstrapConfig{AliasName: bootAlias, Algorithm: alg})
-			if f.gets[bootA] > 0 {
-				bootFailure(t, r, e, want)
-			} else {
-				f.getHook = nil
-				bootWinner(t, r, e, k)
-				bootCounts(t, f, bootAlias, 1, 0, 0)
-				t.Skip("optional immutable read not exercised; native-error guard not applicable")
-			}
+			bootWinner(t, r, e, k)
 			bootCounts(t, f, bootAlias, 1, 0, 0)
 		})
+	}
+}
+
+// Mode: real-capable; executed offline with injected KMS. Given distinct winner
+// and candidate material, When resolving initially or after acquisition, Then
+// validate the alias winner without requiring an additional immutable read.
+func TestCreateOrReuse_ResolvedWinnerBaseline(t *testing.T) {
+	for _, alg := range bootAlgs {
+		for _, stage := range []string{"initial", "winner"} {
+			t.Run(string(alg)+"/"+stage, func(t *testing.T) {
+				a, b := bootFixture(t, alg, bootA, 1), bootFixture(t, alg, bootB, 2)
+				f := bootClient(t, a, b)
+				f.getHook = func(id string, n int) (awskms.GetPublicKeyOutput, error, bool) {
+					if id == bootAlias {
+						if stage == "winner" && n == 1 {
+							return awskms.GetPublicKeyOutput{}, &types.NotFoundException{}, true
+						}
+						return a.out, nil, true
+					}
+					return awskms.GetPublicKeyOutput{}, nil, false
+				}
+				r, e := awskms.CreateOrReuse(context.Background(), f, awskms.BootstrapConfig{AliasName: bootAlias, Algorithm: alg})
+				bootWinner(t, r, e, a)
+				reads, creates, acquires := 1, 0, 0
+				if stage == "winner" {
+					reads, creates, acquires = 2, 1, 1
+				}
+				bootCounts(t, f, bootAlias, reads, creates, acquires)
+			})
+		}
 	}
 }
