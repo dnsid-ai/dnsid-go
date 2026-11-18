@@ -123,6 +123,21 @@ rotation key. Bootstrap never deletes or retargets resources. Losing and
 ambiguous candidates can remain in KMS; their disposition is deferred and must
 be addressed separately. Persist the winner's reference/state for later loading.
 
+## Explicit Google Cloud operational-key bootstrap
+
+The optional `github.com/dnsid-ai/dnsid-go/key/gcp` module exposes
+`gcpkms.CreateOrReuse` for one caller-named software Ed25519 key in an existing
+key ring. See the [package bootstrap guide](key/gcp/README.md) and
+[API reference](https://docs.dnsid.ai/reference/go/key-gcp/).
+Successful calls converge on the named key's enabled immutable version **1**;
+bootstrap does not guarantee immediate readiness. `PENDING_GENERATION` returns
+an error and no usable signer. There is no internal retry or polling. A later,
+separate explicit invocation with the same project, location, key ring and key
+ID may succeed once that same version 1 is enabled and passes validation.
+Bootstrap never replaces the key, creates a replacement version or deletes
+resources. Obtain the key successfully before separately creating or reusing the
+agent ID. Configuration and ordinary opening remain existing-key-only.
+
 ## Negotiated signed responses
 
 Request signing alone does not authenticate the responder. Opt in through the
