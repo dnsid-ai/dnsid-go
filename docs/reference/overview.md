@@ -28,6 +28,7 @@ Start with the root package: `IdentityManager` is the facade for verifying domai
 | [Key providers: AWS KMS](https://docs.dnsid.ai/reference/go/key-aws) | AWS KMS-backed key provider for DNSid. |
 | [Key providers: Google Cloud KMS](https://docs.dnsid.ai/reference/go/key-gcp) | Google Cloud KMS-backed Ed25519 key provider for DNSid. |
 | [Registry](https://docs.dnsid.ai/reference/go/dnsid-registry) | HTTPRegistryClient, publication workflows, and registry request/response types. |
+| [Known Foundry (build-tagged)](https://docs.dnsid.ai/reference/go/foundry) | Named caller-key Live creation and durable recovery; requires the dnsid_foundry build tag and server acceptance. |
 | [Lifecycle log](https://docs.dnsid.ai/reference/go/log) | Agent lifecycle log abstractions for DNSid. |
 | [Transparency log](https://docs.dnsid.ai/reference/go/log-c2sptlog) | C2SP transparency-log (tlog) client support for DNSid lifecycle logs. |
 | [Errors & enums](https://docs.dnsid.ai/reference/go/dnsid-errors) | Typed errors and verification codes returned across the SDK. |

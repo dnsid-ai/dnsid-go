@@ -24,14 +24,20 @@ existing binary.
 
 ## CI-validated Go versions
 
-[`.github/workflows/test.yml`](.github/workflows/test.yml) runs the full test suite (root module,
-including `log/c2sptlog`, plus the `key/aws` module) on a matrix of:
+[`.github/workflows/test.yml`](.github/workflows/test.yml) runs the full test suites for all four modules
+(root, including `log/c2sptlog`; `key/aws`; `key/gcp`; and `examples/deployment-identity`)
+on `ubuntu-latest` with a Go matrix of:
 
 - **`1.26.10`** — the minimum, pinned to the `go.mod` directive.
 - **`stable`** — the latest stable release resolved by `actions/setup-go` at run time.
 
 The matrix uses an exact minimum rather than the moving `oldstable` alias, so it
 continues to test the security baseline when Go's supported release lines change.
+A separate `macos-latest` job uses Go 1.26.10 and runs only
+`TestRegisteredGCPConsumer`, `TestRegisteredGCPExternalConsumerModule`, and
+`TestRegisteredGCPTransportTrust` in `key/gcp`,
+with local TLS/ADC/publication fixtures. It is not a full macOS suite, coverage of
+both Mac architectures, a published-module install check, or a live GCP test.
 
 ## Module dependency versions
 
@@ -149,6 +155,22 @@ v0.18.0 adds two methods required for safe operational-key rotation:
 | `github.com/aws/aws-sdk-go-v2` | v1.43.0 | AWS SDK v2 core. |
 | `github.com/aws/aws-sdk-go-v2/service/kms` | v1.55.0 | KMS-backed key provider. |
 
+### `key/gcp` submodule ([`key/gcp/go.mod`](key/gcp/go.mod))
+
+This opt-in nested module does not add Google dependencies to core SDK consumers.
+These are its direct requirement pins (module floors), not live-cloud service compatibility proof;
+the root SDK requirement is locally replaced by `../..` in this repository.
+
+| Dependency | Pinned version | Role |
+|---|---|---|
+| `cloud.google.com/go/kms` | v1.36.1 | Official Google Cloud KMS client. |
+| `github.com/dnsid-ai/dnsid-go` | v0.46.1 | Root SDK integration (local replacement above). |
+| `github.com/googleapis/gax-go/v2` | v2.27.0 | Google API call options. |
+| `github.com/lestrrat-go/jwx/v3` | v3.2.0 | JOSE key representation. |
+| `google.golang.org/api` | v0.304.0 | Google client/authentication options and transport. |
+| `google.golang.org/grpc` | v1.84.0 | gRPC transport. |
+| `google.golang.org/protobuf` | v1.36.12 | Protocol buffer messages and wrappers. |
+
 ## Platform compatibility matrix
 
 The SDK is pure Go with no build tags gating OS/arch, so it builds and runs anywhere the Go
@@ -158,12 +180,13 @@ toolchain targets. Tested and support tiers:
 |---|---|---|
 | linux/amd64 | **Tested in CI** | `ubuntu-latest` GitHub runner. Primary support target. |
 | linux/arm64 | Supported | Not in CI; no platform-specific code, expected to work. |
-| darwin/amd64, darwin/arm64 | Supported | Primary development platform (arm64). |
+| darwin/amd64, darwin/arm64 | Supported | Primary development platform (arm64); scoped GCP fixtures on `macos-latest`, not the full suite or both architectures. |
 | windows/amd64 | Supported | No platform-specific code; DNS/system-resolver behavior differs (see below). |
 | wasm, other GOOS/GOARCH | Not supported | Untested; the OS stub-resolver dependency (below) makes `js/wasm` in particular unreliable. |
 
-CI currently exercises **linux/amd64 only**. Other rows are "supported" by construction (no
-platform-specific code), not by continuous testing.
+Full-suite CI exercises **linux/amd64**; the separate macOS job covers only the GCP fixtures
+described above. Other platform support is by construction (no platform-specific code),
+not full-suite continuous testing.
 
 File-backed `LocalKeyProvider` writes additionally require working file and parent-directory
 `os.File.Sync` support. Filesystems/platforms that reject directory sync (including Windows)

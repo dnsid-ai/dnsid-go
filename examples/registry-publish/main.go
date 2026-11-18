@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -15,7 +16,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "usage: %s (reads DNSID_REGISTRY_URL and DNSID_API_KEY; unset means the local registry)\n", os.Args[0])
 		os.Exit(2)
 	}
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
+func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -23,25 +30,42 @@ func main() {
 	// under `dnsid local run`, otherwise ~/.dnsid), then the environment.
 	env, err := config.LoadEnvironment(nil)
 	if err != nil {
-		die("reading DNSID_* environment", err)
+		return fmt.Errorf("reading DNSID_* environment failed: %w", err)
 	}
 	cli, err := config.LoadCliDirectory(env.KeySource.CliDirectory)
 	if err != nil {
-		die("reading DNSid identity directory", err)
+		return fmt.Errorf("reading DNSid identity directory failed: %w", err)
 	}
-	idm, err := config.Construct(ctx, config.Merge(cli, env), config.Dependencies{})
+	loaded := config.Merge(cli, env)
+	if err := loaded.Dnsid.Validate(); err != nil {
+		return fmt.Errorf("validating identity configuration failed: %w", err)
+	}
+	if loaded.Dnsid.Identity == nil {
+		return fmt.Errorf("publication setup requires a local identity")
+	}
+	// Initial publication opens an existing key explicitly: ordinary Construct
+	// requires established publication. This setup manager is not evidence of
+	// an authenticated application signer; the caller owns binding and cleanup.
+	provider, err := config.OperationalKeyProviderFrom(ctx, loaded.KeySource, loaded.Dnsid.Identity.Domain)
 	if err != nil {
-		die("creating identity manager", err)
+		return fmt.Errorf("opening operational key failed: %w", err)
+	}
+	if closer, ok := provider.(io.Closer); ok {
+		defer func() { _ = closer.Close() }()
+	}
+	idm, err := config.Construct(ctx, loaded, config.Dependencies{KeyProvider: provider})
+	if err != nil {
+		return fmt.Errorf("creating identity manager failed: %w", err)
 	}
 
 	client, err := config.RegistryClientFromEnvironment(nil)
 	if err != nil {
-		die("creating registry client", err)
+		return fmt.Errorf("creating registry client failed: %w", err)
 	}
 
 	registration, err := client.GetRegistration(ctx, idm.Domain())
 	if err != nil {
-		die("reading registration", err)
+		return fmt.Errorf("reading registration failed: %w", err)
 	}
 	fmt.Println("agent:", registration.Domain)
 	fmt.Println("publication authority:", registration.PublicationAuthority)
@@ -60,10 +84,10 @@ func main() {
 			PollInterval: 2 * time.Second,
 		})
 	default:
-		die("publishing identity record", fmt.Errorf("unknown publication authority %q", registration.PublicationAuthority))
+		return fmt.Errorf("publishing identity record failed: unknown publication authority %q", registration.PublicationAuthority)
 	}
 	if err != nil {
-		die("publishing identity record", err)
+		return fmt.Errorf("publishing identity record failed: %w", err)
 	}
 
 	fmt.Println("\npublished identity record:")
@@ -71,9 +95,5 @@ func main() {
 	fmt.Println("ttl:", published.TTL)
 	fmt.Println("publication status:", published.PublicationStatus)
 	fmt.Println("txt record:", published.TXTRecord)
-}
-
-func die(action string, err error) {
-	fmt.Fprintf(os.Stderr, "%s failed: %v\n", action, err)
-	os.Exit(1)
+	return nil
 }

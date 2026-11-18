@@ -6,8 +6,8 @@ import (
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
-	"errors"
 	"hash/crc32"
 	"os"
 	"reflect"
@@ -20,6 +20,8 @@ import (
 	gcpkms "github.com/dnsid-ai/dnsid-go/key/gcp"
 	"github.com/googleapis/gax-go/v2"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -53,6 +55,8 @@ type fakeKMS struct {
 	signMutate      func(*kmspb.AsymmetricSignResponse)
 	getErr, signErr error
 	gets            int
+	signs           int
+	calls           []string
 	want            []byte
 }
 
@@ -68,6 +72,7 @@ func newFake(t *testing.T) *fakeKMS {
 }
 func (f *fakeKMS) GetPublicKey(ctx context.Context, req *kmspb.GetPublicKeyRequest, _ ...gax.CallOption) (*kmspb.PublicKey, error) {
 	f.gets++
+	f.calls = append(f.calls, "read:"+req.GetName())
 	if req.GetName() != version {
 		f.t.Errorf("GetPublicKey name=%q want immutable %q", req.GetName(), version)
 	}
@@ -77,6 +82,8 @@ func (f *fakeKMS) GetPublicKey(ctx context.Context, req *kmspb.GetPublicKeyReque
 	return f.public, f.getErr
 }
 func (f *fakeKMS) AsymmetricSign(ctx context.Context, req *kmspb.AsymmetricSignRequest, _ ...gax.CallOption) (*kmspb.AsymmetricSignResponse, error) {
+	f.signs++
+	f.calls = append(f.calls, "sign:"+req.GetName())
 	if req.GetName() != version {
 		f.t.Errorf("sign name=%q want %q", req.GetName(), version)
 	}
@@ -232,27 +239,60 @@ func TestProviderRejectsInvalidMetadataAndServiceFailures(t *testing.T) {
 			}
 		})
 	}
-	sentinel := errors.New("KMS permission denied")
-	t.Run("public fetch denied", func(t *testing.T) {
-		f := newFake(t)
-		f.getErr = sentinel
-		p, err := gcpkms.New(context.Background(), f, gcpkms.Config{KeyVersionName: version})
-		if err == nil || p != nil {
-			t.Fatalf("denied fetch accepted: %v %v", p, err)
+
+	// The narrow GCP Client exposes only read/sign, not mutation methods.
+	for _, tc := range []struct {
+		name string
+		code codes.Code
+	}{
+		{"denied", codes.PermissionDenied}, {"disabled", codes.FailedPrecondition},
+		{"missing-version", codes.NotFound}, {"service-failure", codes.Unavailable},
+	} {
+		for _, boundary := range []string{"open", "sign"} {
+			t.Run(tc.name+"/"+boundary, func(t *testing.T) {
+				home := t.TempDir()
+				t.Setenv("HOME", home)
+				f := newFake(t)
+				fault := status.Error(tc.code, tc.name+" selected version "+version)
+				if boundary == "open" {
+					f.getErr = fault
+				}
+				p, err := gcpkms.New(context.Background(), f, gcpkms.Config{KeyVersionName: version})
+				want := []string{"read:" + version}
+				if boundary == "open" {
+					if err == nil || p != nil {
+						t.Fatalf("fault returned provider=%v error=%v", p, err)
+					}
+				} else {
+					if err != nil || p == nil {
+						t.Fatalf("healthy open failed: %v", err)
+					}
+					before, _ := json.Marshal(p.JWK())
+					ids := p.ListKeyIds()
+					if len(ids) != 1 || p.JWK() == nil {
+						t.Fatal("healthy public signer missing")
+					}
+					f.signErr = fault
+					sig, err := p.Sign(nil)
+					if err == nil || sig != nil {
+						t.Fatalf("fault returned signature=%v error=%v", sig, err)
+					}
+					after, _ := json.Marshal(p.JWK())
+					if string(before) != string(after) || !reflect.DeepEqual(ids, p.ListKeyIds()) {
+						t.Fatal("selected public signer changed")
+					}
+					want = append(want, "sign:"+version)
+				}
+				if !reflect.DeepEqual(f.calls, want) {
+					t.Fatalf("calls=%v want=%v", f.calls, want)
+				}
+				entries, err := os.ReadDir(home)
+				if err != nil || len(entries) != 0 {
+					t.Fatalf("local files=%v error=%v", entries, err)
+				}
+			})
 		}
-	})
-	t.Run("sign denied", func(t *testing.T) {
-		f := newFake(t)
-		p, err := gcpkms.New(context.Background(), f, gcpkms.Config{KeyVersionName: version})
-		if err != nil {
-			t.Fatal(err)
-		}
-		f.signErr = sentinel
-		sig, err := p.Sign(nil)
-		if err == nil || sig != nil {
-			t.Fatalf("denied signature accepted: %v %v", sig, err)
-		}
-	})
+	}
 	for _, ref := range []string{"", strings.TrimSuffix(version, "/cryptoKeyVersions/1"), strings.TrimSuffix(version, "1") + "latest"} {
 		t.Run("reference="+ref, func(t *testing.T) {
 			f := newFake(t)

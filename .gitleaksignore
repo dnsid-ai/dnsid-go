@@ -1,0 +1,19 @@
+# Public deterministic SHA-256 replay-key test digests, not API credentials.
+testdata/foundry/registration-vectors.json:generic-api-key:8
+testdata/foundry/registration-vectors.json:generic-api-key:12
+testdata/foundry/registration-vectors.json:generic-api-key:16
+testdata/foundry/registration-vectors.json:generic-api-key:20
+testdata/foundry/registration-vectors.json:generic-api-key:24
+testdata/foundry/registration-vectors.json:generic-api-key:28
+testdata/foundry/registration-vectors.json:generic-api-key:32
+testdata/foundry/registration-vectors.json:generic-api-key:36
+testdata/foundry/registration-vectors.json:generic-api-key:40
+testdata/foundry/registration-vectors.json:generic-api-key:44
+testdata/foundry/registration-vectors.json:generic-api-key:48
+testdata/foundry/registration-vectors.json:generic-api-key:52
+testdata/foundry/registration-vectors.json:generic-api-key:56
+testdata/foundry/registration-vectors.json:generic-api-key:60
+testdata/foundry/registration-vectors.json:generic-api-key:64
+testdata/foundry/registration-vectors.json:generic-api-key:68
+testdata/foundry/registration-vectors.json:generic-api-key:73
+testdata/foundry/registration-vectors.json:generic-api-key:74

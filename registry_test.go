@@ -611,6 +611,7 @@ func TestHTTPRegistryClient_GetRegistration(t *testing.T) {
 				json.NewEncoder(w).Encode(AgentDetail{
 					Domain: "agent.example.com", Managed: tt.managed, Status: "READY", ServerStatus: "READY",
 					DNSPublished: true, ProtocolStatus: &AgentStatus{State: AgentStateActive, LastTransitionAt: now},
+					OIDCIssuerURL: "https://issuer.example.com",
 				})
 			}))
 			defer srv.Close()
@@ -620,7 +621,7 @@ func TestHTTPRegistryClient_GetRegistration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetRegistration: %v", err)
 			}
-			if registration.PublicationAuthority != tt.authority || registration.RegistryStatus != "READY" || !registration.DNSPublished {
+			if registration.PublicationAuthority != tt.authority || registration.RegistryStatus != "READY" || !registration.DNSPublished || registration.OIDCIssuerURL != "https://issuer.example.com" {
 				t.Fatalf("registration = %#v", registration)
 			}
 			if registration.ProtocolStatus == nil || registration.ProtocolStatus.State != AgentStateActive {
@@ -947,6 +948,23 @@ func TestHTTPRegistryClient_RevokeAgent(t *testing.T) {
 	}
 	if resp.Status != "REVOKED" {
 		t.Fatalf("unexpected: %+v", resp)
+	}
+}
+
+func TestHTTPRegistryClient_RevokeAgentPolicyViolation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]string
+		json.NewDecoder(r.Body).Decode(&req)
+		if req["reason"] != "policy_violation" {
+			t.Errorf("reason = %q, want policy_violation", req["reason"])
+		}
+		json.NewEncoder(w).Encode(LifecycleResponse{ID: "ag_123", Status: "REVOKED"})
+	}))
+	defer srv.Close()
+
+	client := &HTTPRegistryClient{baseURL: srv.URL, client: srv.Client(), token: "tok", allowInsecure: true}
+	if _, err := client.RevokeAgent(context.Background(), "agent.example.com", &RevokeAgentRequest{AgentID: "ag_123", Reason: RegistryRevocationReasonPolicyViolation}); err != nil {
+		t.Fatalf("RevokeAgent: %v", err)
 	}
 }
 

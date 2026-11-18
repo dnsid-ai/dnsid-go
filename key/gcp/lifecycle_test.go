@@ -18,8 +18,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
-// Provisional contract: sdk-compliance 3e5d4d7ca662270739aa28b9e0d86fac2a704949,
-// 01 KeyProvider Interface and 12 Operational Key Source Selection (PR #56).
+// Lifecycle tests protect pending-key eligibility and local transitions.
 // No manager orchestration, persistence, or crash-recovery claims are made here.
 
 const successorVersion = "projects/test-project/locations/global/keyRings/agents/cryptoKeys/signing/cryptoKeyVersions/2"

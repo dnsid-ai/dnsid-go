@@ -2,6 +2,7 @@ package c2sptlog
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,11 +18,17 @@ witness dnsid-witness-1 witness.dev.dnsid.ai/w1+50822ded+BAH9KuulelD3yZBDTneG46g
 quorum dnsid-witness-1
 `
 	expectedManagedDevelopmentBundleVerifierKey = "dnsid-stream-bundle+0c241174+AeuT9PKyiewb9hkzygvki7UuOs5ly2kfY/C4Tfh7/ix0"
-	expectedManagedProductionPolicy             = `log log.dnsid.ai+f10a26bc+Aeo6u4o1XvQlcRczgY462ZdIGpm/ejBC2G3vSbyYYqqY
+	// expectedManagedDevelopmentOverflowBundleVerifierKey signs dev bundles over the
+	// 4096-byte KMS limit (Identity-Digital/dnsid#3286).
+	expectedManagedDevelopmentOverflowBundleVerifierKey = "dnsid-stream-bundle+62f7f9fa+ATdOWF5P759HgvDod9mIC0r1nXhTtJ7x1Ws0fjTvqwDV"
+	expectedManagedProductionPolicy                     = `log log.dnsid.ai+f10a26bc+Aeo6u4o1XvQlcRczgY462ZdIGpm/ejBC2G3vSbyYYqqY
 witness dnsid-witness-1 witness.dnsid.ai/w1+706fd4fb+BLqX21Sx9xG5+5vK7kSK5omcu9+2il20PLdfpOp8lQOJ
 quorum dnsid-witness-1
 `
 	expectedManagedProductionBundleVerifierKey = "dnsid-stream-bundle+2e77a3f1+AbKj/zrAfK04/NM07Zj7kxP2YXbM5neT8ym6juXC2PXG"
+	// expectedManagedProductionOverflowBundleVerifierKey signs production bundles over the
+	// 4096-byte KMS limit (Identity-Digital/dnsid#3286).
+	expectedManagedProductionOverflowBundleVerifierKey = "dnsid-stream-bundle+0f5a76a0+AXavEa0+EGj/qZFH4QuAOeomigSukspWQHC7PrVJa7pj"
 )
 
 func TestManagedDevelopmentCatalogEntryIsReviewedTrustProfile(t *testing.T) {
@@ -33,7 +40,7 @@ func TestManagedDevelopmentCatalogEntryIsReviewedTrustProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if profile.PolicyDocument != expectedManagedDevelopmentPolicy || len(profile.BundleVerifierKeys) != 1 || profile.BundleVerifierKeys[0] != expectedManagedDevelopmentBundleVerifierKey {
+	if profile.PolicyDocument != expectedManagedDevelopmentPolicy || len(profile.BundleVerifierKeys) != 2 || profile.BundleVerifierKeys[0] != expectedManagedDevelopmentBundleVerifierKey || profile.BundleVerifierKeys[1] != expectedManagedDevelopmentOverflowBundleVerifierKey {
 		t.Fatalf("unexpected pinned development trust profile: %+v", profile)
 	}
 }
@@ -53,7 +60,7 @@ func TestManagedProductionCatalogEntryIsReviewedTrustProfile(t *testing.T) {
 	if profile.PolicyDocument != expectedManagedProductionPolicy {
 		t.Fatalf("production policy = %q, want %q", profile.PolicyDocument, expectedManagedProductionPolicy)
 	}
-	if len(profile.BundleVerifierKeys) != 1 || profile.BundleVerifierKeys[0] != expectedManagedProductionBundleVerifierKey {
+	if len(profile.BundleVerifierKeys) != 2 || profile.BundleVerifierKeys[0] != expectedManagedProductionBundleVerifierKey || profile.BundleVerifierKeys[1] != expectedManagedProductionOverflowBundleVerifierKey {
 		t.Fatalf("production bundle verifier keys = %#v", profile.BundleVerifierKeys)
 	}
 }
@@ -64,6 +71,9 @@ witness dnsid-witness-1 witness.partners.dnsid.ai/w1+a115eb67+BB0avWVeSelUBk2w8F
 quorum dnsid-witness-1
 `
 	expectedManagedPartnersBundleVerifierKey = "dnsid-stream-bundle+b1e0b597+AQt9ol4cfwPHxdH4NHNRidsAvU2bYE7KVItOlBG/bsaZ"
+	// expectedManagedPartnersOverflowBundleVerifierKey signs partner bundles over the
+	// 4096-byte KMS limit (Identity-Digital/dnsid#3286).
+	expectedManagedPartnersOverflowBundleVerifierKey = "dnsid-stream-bundle+bc0d8136+AVfizbWWQD+s2N7OfpOeP7IaWF8nAeTqT4JpD03vKqc6"
 )
 
 func TestManagedPartnersCatalogEntryIsReviewedTrustProfile(t *testing.T) {
@@ -81,7 +91,7 @@ func TestManagedPartnersCatalogEntryIsReviewedTrustProfile(t *testing.T) {
 	if profile.PolicyDocument != expectedManagedPartnersPolicy {
 		t.Fatalf("partners policy = %q, want %q", profile.PolicyDocument, expectedManagedPartnersPolicy)
 	}
-	if len(profile.BundleVerifierKeys) != 1 || profile.BundleVerifierKeys[0] != expectedManagedPartnersBundleVerifierKey {
+	if len(profile.BundleVerifierKeys) != 2 || profile.BundleVerifierKeys[0] != expectedManagedPartnersBundleVerifierKey || profile.BundleVerifierKeys[1] != expectedManagedPartnersOverflowBundleVerifierKey {
 		t.Fatalf("partners bundle verifier keys = %#v", profile.BundleVerifierKeys)
 	}
 }
@@ -209,6 +219,13 @@ func TestDnsidManagedVerificationRegistryRejectsUnknownAndNoncanonicalSelectors(
 		"c2sp-tlog:testnet:https://log.partners.dnsid.ai#EREREREREREREREREREREQ",
 		"c2sp-tlog:public:https://log.partners.dnsid.ai.attacker.example#EREREREREREREREREREREQ",
 		"c2sp-tlog:public:https://partners.dnsid.ai#EREREREREREREREREREREQ",
+		"c2sp-tlog:testnet:https://log.stg.dnsid.ai#EREREREREREREREREREREQ",
+		"c2sp-tlog:public:https://log.stg.dnsid.ai.attacker.example#EREREREREREREREREREREQ",
+		"c2sp-tlog:testnet:https://log.knownsystems.ai#EREREREREREREREREREREQ",
+		"c2sp-tlog:public:https://log.knownsystems.ai.attacker.example#EREREREREREREREREREREQ",
+		"c2sp-tlog:public:https://knownsystems.ai#EREREREREREREREREREREQ",
+		"c2sp-tlog:public:https://log.dev.knownsystems.ai/#EREREREREREREREREREREQ",
+		"c2sp-tlog:testnet:https://log.stg.knownsystems.ai#EREREREREREREREREREREQ",
 	} {
 		reader, err := registry.NewReader(lr)
 		if err != nil {
@@ -249,5 +266,331 @@ func TestDnsidManagedVerificationRegistry_HonorsTransport(t *testing.T) {
 	}
 	if _, err := NewDnsidManagedVerificationRegistry(context.Background(), DnsidManagedVerificationConfig{Transport: transport, ResourceFetcher: &testBoundedFetcher{}}); err != nil {
 		t.Fatal("explicit fetcher should override SDK transport:", err)
+	}
+}
+
+// Reviewed service fixtures from Identity-Digital/dnsid#3286, captured
+// 2026-11-10. The dev log signs a bundle of at most 4096 signed bytes with its
+// KMS key and a larger one with a secret-held key, so the pinned development
+// profile must accept both: a two-event stream signed by the KMS key and a
+// three-event stream (issuance, key rotation, revocation) signed by the
+// secret-held key. Each verifies at a clock just inside its expiry.
+func TestManagedDevelopmentProfileVerifiesBundlesFromBothBundleKeys(t *testing.T) {
+	profile, err := ParseTrustProfile([]byte(managedDevelopmentProfile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifiers, err := profile.validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		fixture, kid string
+		events       int
+	}{
+		{"c2sp-dev-stream-bundle-kms-key.json", "dnsid-stream-bundle+0c241174", 2},
+		{"c2sp-dev-stream-bundle-overflow-key.json", "dnsid-stream-bundle+62f7f9fa", 3},
+	} {
+		t.Run(tc.kid, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("testdata", tc.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var bundle struct {
+				Expires int64 `json:"expires"`
+				Sig     struct {
+					Kid string `json:"kid"`
+				} `json:"sig"`
+			}
+			if err := json.Unmarshal(data, &bundle); err != nil {
+				t.Fatal(err)
+			}
+			if bundle.Sig.Kid != tc.kid {
+				t.Fatalf("fixture kid = %q, want %q", bundle.Sig.Kid, tc.kid)
+			}
+			verified, err := VerifyStreamBundle(context.Background(), data, StreamBundleTrust{
+				PolicyDocument:    []byte(profile.PolicyDocument),
+				BundleVerifiers:   verifiers,
+				Now:               func() time.Time { return time.Unix(bundle.Expires-60, 0) },
+				MaxBundleLifetime: managedVerificationFreshness,
+			})
+			if err != nil {
+				t.Fatalf("pinned development profile rejects a %s-signed stream bundle: %v", tc.kid, err)
+			}
+			if verified.Reference.LogPrefix != "https://log.dev.dnsid.ai" || verified.LoggedState != "REVOKED" || len(verified.Events) != tc.events || verified.SignerKeyID != tc.kid {
+				t.Fatalf("unexpected development bundle: %s %s, %d events, signer %q", verified.Reference.LogPrefix, verified.LoggedState, len(verified.Events), verified.SignerKeyID)
+			}
+		})
+	}
+}
+
+const (
+	expectedManagedStagingPolicy = `log log.stg.dnsid.ai+f6ad3bd8+ARl6baGOUzNIH2QvsnlqA8C71WM4SYecXE7eAwmytAsL
+witness dnsid-witness-1 witness.stg.dnsid.ai/w1+11a84cde+BEKB6hwsWXOm+PMnS7/JvO4i6bazjzJ8ojECphOTB3gt
+quorum dnsid-witness-1
+`
+	expectedManagedStagingBundleVerifierKey = "dnsid-stream-bundle+65c31b14+AXCMTPR4I/fqOgSHge4AEMp+1pWcflDqC1YEDaHDe3Ps"
+	// expectedManagedStagingOverflowBundleVerifierKey signs staging bundles over the
+	// 4096-byte KMS limit (Identity-Digital/dnsid#3286).
+	expectedManagedStagingOverflowBundleVerifierKey = "dnsid-stream-bundle+cdd64875+ATu1SYXvRiZPBUzrUJAfKHeMH3eHr3T22jKez/C3Yl1m"
+)
+
+func TestManagedStagingCatalogEntryIsReviewedTrustProfile(t *testing.T) {
+	entry := dnsidManagedTrustCatalog[3]
+	if entry.scope != "public" || entry.logPrefix != "https://log.stg.dnsid.ai" || entry.trustProfileDocument == "" || entry.policyDocument != "" {
+		t.Fatalf("staging catalog entry = %#v, want exact trust-profile selector", entry)
+	}
+	profile, err := ParseTrustProfile([]byte(entry.trustProfileDocument))
+	if err != nil {
+		t.Fatalf("ParseTrustProfile: %v", err)
+	}
+	if profile.Version != 1 || profile.Scope != entry.scope || profile.LogPrefix != entry.logPrefix {
+		t.Fatalf("staging profile selector = v%d %q %q", profile.Version, profile.Scope, profile.LogPrefix)
+	}
+	if profile.PolicyDocument != expectedManagedStagingPolicy {
+		t.Fatalf("staging policy = %q, want %q", profile.PolicyDocument, expectedManagedStagingPolicy)
+	}
+	if len(profile.BundleVerifierKeys) != 2 || profile.BundleVerifierKeys[0] != expectedManagedStagingBundleVerifierKey || profile.BundleVerifierKeys[1] != expectedManagedStagingOverflowBundleVerifierKey {
+		t.Fatalf("staging bundle verifier keys = %#v", profile.BundleVerifierKeys)
+	}
+}
+
+func TestNewDnsidManagedVerificationRegistrySelectsStagingEntry(t *testing.T) {
+	fetcher := &testBoundedFetcher{}
+	store := NewMemoryTrustedC2spCheckpointStore()
+	registry, err := NewDnsidManagedVerificationRegistry(context.Background(), DnsidManagedVerificationConfig{
+		ResourceFetcher:        fetcher,
+		TrustedCheckpointStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staging := verificationClient(t, registry, "c2sp-tlog:public:https://log.stg.dnsid.ai#EREREREREREREREREREREQ")
+	stagingSource, ok := staging.source.(*fetchedStreamBundleSource)
+	if !ok || stagingSource.fetcher != fetcher || stagingSource.requireBundle {
+		t.Fatalf("staging source = %#v, want preferred bundles with bounded raw fallback", staging.source)
+	}
+	if staging.checkpointStore != store || staging.policy.MaxCheckpointAge != managedVerificationFreshness || stagingSource.trust.MaxBundleLifetime != managedVerificationFreshness {
+		t.Fatal("staging reader does not use managed freshness and shared checkpoint store")
+	}
+	if staging.policy.LogVerifier == nil || staging.policy.LogVerifier.Name() != "log.stg.dnsid.ai" || staging.policy.LogVerifier.KeyHash() != 0xf6ad3bd8 {
+		t.Fatal("staging reader does not use the pinned staging log key")
+	}
+}
+
+// Reviewed service fixtures captured from log.stg.dnsid.ai on 2026-11-11
+// (Identity-Digital/dnsid#3286): a one-event stream small enough for the KMS
+// bundle key and a three-event stream (issuance, key rotation, revocation)
+// over the 4096-byte KMS limit, signed by the secret-held key. Each verifies at
+// a clock just inside its expiry with only the key its kid names.
+func TestManagedStagingProfileVerifiesBundlesFromBothBundleKeys(t *testing.T) {
+	profile, err := ParseTrustProfile([]byte(managedStagingProfile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifiers, err := profile.validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		fixture, kid, state string
+		events              int
+	}{
+		{"c2sp-staging-stream-bundle-kms-key.json", "dnsid-stream-bundle+65c31b14", "ACTIVE", 1},
+		{"c2sp-staging-stream-bundle-overflow-key.json", "dnsid-stream-bundle+cdd64875", "REVOKED", 3},
+	} {
+		t.Run(tc.kid, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("testdata", tc.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var bundle struct {
+				Expires int64 `json:"expires"`
+				Sig     struct {
+					Kid string `json:"kid"`
+				} `json:"sig"`
+			}
+			if err := json.Unmarshal(data, &bundle); err != nil {
+				t.Fatal(err)
+			}
+			if bundle.Sig.Kid != tc.kid {
+				t.Fatalf("fixture kid = %q, want %q", bundle.Sig.Kid, tc.kid)
+			}
+			verified, err := VerifyStreamBundle(context.Background(), data, StreamBundleTrust{
+				PolicyDocument:    []byte(profile.PolicyDocument),
+				BundleVerifiers:   verifiers,
+				Now:               func() time.Time { return time.Unix(bundle.Expires-60, 0) },
+				MaxBundleLifetime: managedVerificationFreshness,
+			})
+			if err != nil {
+				t.Fatalf("pinned staging profile rejects a %s-signed stream bundle: %v", tc.kid, err)
+			}
+			if verified.Reference.LogPrefix != "https://log.stg.dnsid.ai" || verified.LoggedState != tc.state || len(verified.Events) != tc.events || verified.SignerKeyID != tc.kid {
+				t.Fatalf("unexpected staging bundle: %s %s, %d events, signer %q", verified.Reference.LogPrefix, verified.LoggedState, len(verified.Events), verified.SignerKeyID)
+			}
+		})
+	}
+}
+
+// managedKnownEntries are the reviewed Known log profiles in catalog order, as
+// pinned in internal/c2sptrust/profiles/known-*.json in Identity-Digital/dnsid.
+// Each log has a KMS bundle key and a second key that signs bundles over the
+// 4096-byte KMS signing limit.
+var managedKnownEntries = []struct {
+	name, logPrefix, origin string
+	index                   int
+	logKeyHash              uint32
+	policy                  string
+	bundleKeys              [2]string
+}{
+	{
+		name: "known-development", logPrefix: "https://log.dev.knownsystems.ai", origin: "log.dev.knownsystems.ai", index: 4, logKeyHash: 0x78742e4f,
+		policy: `log log.dev.knownsystems.ai+78742e4f+AWJIIC/ZPaSwAprXLHT+JZ7lbTipE3MciQOdUGqG1T3j
+witness dnsid-witness-1 witness.dev.knownsystems.ai/w1+21be2f43+BLsio+pQhADB8grceyZnOVERcoq+V6oJuUNy/IEfhsgt
+quorum dnsid-witness-1
+`,
+		bundleKeys: [2]string{
+			"dnsid-stream-bundle+138e0d41+AXy9jwvH7hY3LgjqoZn3GmNllKTj2TyNApRLKbt/2WSU",
+			"dnsid-stream-bundle+ad87852b+AWWyHhKGf9oKqaRCQfrk9kixjuz4fmhI5P08W5bsYxzj",
+		},
+	},
+	{
+		name: "known-staging", logPrefix: "https://log.stg.knownsystems.ai", origin: "log.stg.knownsystems.ai", index: 5, logKeyHash: 0xd3504618,
+		policy: `log log.stg.knownsystems.ai+d3504618+AaUJP26XksZKcjmWHs7Cyq244q2efKUH1geUNb6bK5G7
+witness dnsid-witness-1 witness.stg.knownsystems.ai/w1+e3954927+BA8QcWZ+kIuuakqhAbltJ1lFAYeuEqE98AYWyG9eKTil
+quorum dnsid-witness-1
+`,
+		bundleKeys: [2]string{
+			"dnsid-stream-bundle+85bbbf6c+AQEr6kb1rP1ZUJxEUl5ai5KxD86uHDRhHoF9rGewVgvC",
+			"dnsid-stream-bundle+64bf74b3+Aa0M4XaiO7BzP4fn7gLnWOw570/ml9x8xnEiv5fUqIW1",
+		},
+	},
+	{
+		name: "known-production", logPrefix: "https://log.knownsystems.ai", origin: "log.knownsystems.ai", index: 6, logKeyHash: 0xffa9d1c9,
+		policy: `log log.knownsystems.ai+ffa9d1c9+Ad/NRlpkBsb9RjFstpUI2V38LF0G9DaJgHWtx5UtS6a7
+witness dnsid-witness-1 witness.knownsystems.ai/w1+f726713e+BPq3DkSLKz0bMwDnwhwb9yhsGKT/0g0iPKZYekuumLfV
+quorum dnsid-witness-1
+`,
+		bundleKeys: [2]string{
+			"dnsid-stream-bundle+4c5de6cf+AeoiHt6HX3fniAPFeNMerJ52HKAlfLxbwFnxvyVM8GPj",
+			"dnsid-stream-bundle+4296adc5+AX8gHt0vQT0mICUKU2svFWcdcIhcQmGHYuR2kk/EsXex",
+		},
+	},
+}
+
+func TestManagedKnownCatalogEntriesAreReviewedTrustProfiles(t *testing.T) {
+	if len(dnsidManagedTrustCatalog) != 7 {
+		t.Fatalf("managed catalog has %d entries, want 7", len(dnsidManagedTrustCatalog))
+	}
+	for _, want := range managedKnownEntries {
+		t.Run(want.name, func(t *testing.T) {
+			entry := dnsidManagedTrustCatalog[want.index]
+			if entry.scope != "public" || entry.logPrefix != want.logPrefix || entry.trustProfileDocument == "" || entry.policyDocument != "" {
+				t.Fatalf("%s catalog entry = %#v, want exact trust-profile selector", want.name, entry)
+			}
+			profile, err := ParseTrustProfile([]byte(entry.trustProfileDocument))
+			if err != nil {
+				t.Fatalf("ParseTrustProfile: %v", err)
+			}
+			if profile.Version != 1 || profile.Scope != entry.scope || profile.LogPrefix != entry.logPrefix {
+				t.Fatalf("%s profile selector = v%d %q %q", want.name, profile.Version, profile.Scope, profile.LogPrefix)
+			}
+			if profile.PolicyDocument != want.policy {
+				t.Fatalf("%s policy = %q, want %q", want.name, profile.PolicyDocument, want.policy)
+			}
+			if len(profile.BundleVerifierKeys) != 2 || profile.BundleVerifierKeys[0] != want.bundleKeys[0] || profile.BundleVerifierKeys[1] != want.bundleKeys[1] {
+				t.Fatalf("%s bundle verifier keys = %#v", want.name, profile.BundleVerifierKeys)
+			}
+		})
+	}
+}
+
+func TestNewDnsidManagedVerificationRegistrySelectsKnownEntries(t *testing.T) {
+	fetcher := &testBoundedFetcher{}
+	store := NewMemoryTrustedC2spCheckpointStore()
+	registry, err := NewDnsidManagedVerificationRegistry(context.Background(), DnsidManagedVerificationConfig{
+		ResourceFetcher:        fetcher,
+		TrustedCheckpointStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range managedKnownEntries {
+		t.Run(want.name, func(t *testing.T) {
+			client := verificationClient(t, registry, "c2sp-tlog:public:"+want.logPrefix+"#EREREREREREREREREREREQ")
+			source, ok := client.source.(*fetchedStreamBundleSource)
+			if !ok || source.fetcher != fetcher || source.requireBundle {
+				t.Fatalf("%s source = %#v, want preferred bundles with bounded raw fallback", want.name, client.source)
+			}
+			if client.checkpointStore != store || client.policy.MaxCheckpointAge != managedVerificationFreshness || source.trust.MaxBundleLifetime != managedVerificationFreshness {
+				t.Fatalf("%s reader does not use managed freshness and shared checkpoint store", want.name)
+			}
+			if client.policy.LogVerifier == nil || client.policy.LogVerifier.Name() != want.origin || client.policy.LogVerifier.KeyHash() != want.logKeyHash {
+				t.Fatalf("%s reader does not use the pinned log key", want.name)
+			}
+		})
+	}
+}
+
+// Reviewed service fixtures captured from each Known log in November 2026: a
+// stream small enough for the KMS bundle key and a three-event stream
+// (issuance, key rotation, revocation) over the 4096-byte KMS limit, signed by
+// the second key. Each verifies at a clock just inside its expiry with only the
+// key its kid names.
+func TestManagedKnownProfilesVerifyBundlesFromBothBundleKeys(t *testing.T) {
+	profiles := map[string]string{
+		"known-development": managedKnownDevelopmentProfile,
+		"known-staging":     managedKnownStagingProfile,
+		"known-production":  managedKnownProductionProfile,
+	}
+	for _, tc := range []struct {
+		log, fixture, kid, state string
+		events                   int
+	}{
+		{"known-development", "c2sp-known-dev-stream-bundle-kms-key.json", "dnsid-stream-bundle+138e0d41", "ACTIVE", 1},
+		{"known-development", "c2sp-known-dev-stream-bundle-overflow-key.json", "dnsid-stream-bundle+ad87852b", "REVOKED", 3},
+		{"known-staging", "c2sp-known-staging-stream-bundle-kms-key.json", "dnsid-stream-bundle+85bbbf6c", "REVOKED", 2},
+		{"known-staging", "c2sp-known-staging-stream-bundle-overflow-key.json", "dnsid-stream-bundle+64bf74b3", "REVOKED", 3},
+		{"known-production", "c2sp-known-production-stream-bundle-kms-key.json", "dnsid-stream-bundle+4c5de6cf", "ACTIVE", 1},
+		{"known-production", "c2sp-known-production-stream-bundle-overflow-key.json", "dnsid-stream-bundle+4296adc5", "REVOKED", 3},
+	} {
+		t.Run(tc.log+"/"+tc.kid, func(t *testing.T) {
+			profile, err := ParseTrustProfile([]byte(profiles[tc.log]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifiers, err := profile.validate()
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join("testdata", tc.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var bundle struct {
+				Expires int64 `json:"expires"`
+				Sig     struct {
+					Kid string `json:"kid"`
+				} `json:"sig"`
+			}
+			if err := json.Unmarshal(data, &bundle); err != nil {
+				t.Fatal(err)
+			}
+			if bundle.Sig.Kid != tc.kid {
+				t.Fatalf("fixture kid = %q, want %q", bundle.Sig.Kid, tc.kid)
+			}
+			verified, err := VerifyStreamBundle(context.Background(), data, StreamBundleTrust{
+				PolicyDocument:    []byte(profile.PolicyDocument),
+				BundleVerifiers:   verifiers,
+				Now:               func() time.Time { return time.Unix(bundle.Expires-60, 0) },
+				MaxBundleLifetime: managedVerificationFreshness,
+			})
+			if err != nil {
+				t.Fatalf("pinned %s profile rejects a %s-signed stream bundle: %v", tc.log, tc.kid, err)
+			}
+			if verified.Reference.LogPrefix != profile.LogPrefix || verified.LoggedState != tc.state || len(verified.Events) != tc.events || verified.SignerKeyID != tc.kid {
+				t.Fatalf("unexpected %s bundle: %s %s, %d events, signer %q", tc.log, verified.Reference.LogPrefix, verified.LoggedState, len(verified.Events), verified.SignerKeyID)
+			}
+		})
 	}
 }

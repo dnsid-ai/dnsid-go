@@ -58,14 +58,15 @@ func LoadDeploymentFile(path string) (Loaded, error) {
 		Registry struct {
 			RegistryURL string `json:"registryUrl"`
 		} `json:"registry"`
-		KeySource KeySource `json:"keySource"`
+		Foundry   FoundryConfig `json:"foundry"`
+		KeySource KeySource     `json:"keySource"`
 	}
 	object, err := decodeDeployment(data, &file)
 	if err != nil {
 		return Loaded{}, err
 	}
-	l := Loaded{KeySource: file.KeySource, Registry: Registry{RegistryURL: file.Registry.RegistryURL}}
-	for _, value := range []*string{&l.KeySource.Provider, &l.KeySource.KeyRef, &l.KeySource.CliDirectory, &l.KeySource.KeyStorePath, &l.KeySource.EntityKeyPath} {
+	l := Loaded{KeySource: file.KeySource, Registry: Registry{RegistryURL: file.Registry.RegistryURL}, Foundry: file.Foundry}
+	for _, value := range []*string{&l.KeySource.Provider, &l.KeySource.KeyRef, &l.KeySource.CliDirectory, &l.KeySource.KeyStorePath, &l.KeySource.EntityKeyPath, &l.Foundry.OrganizationID, &l.Foundry.GovernanceID} {
 		if strings.TrimSpace(*value) == "" {
 			*value = ""
 		}

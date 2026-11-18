@@ -33,6 +33,7 @@ jobs:
       - name: Run Go tests
         run: |
           go test ./...
+          go test -tags dnsid_foundry ./...
           (cd key/aws && go test ./...)
           (cd key/gcp && go test ./...)
           (cd examples/deployment-identity && go test ./...)
@@ -73,20 +74,26 @@ jobs:
 
       - name: Run static analysis
         run: |
-          go vet ./...
+          go vet -tags dnsid_foundry ./...
           (cd key/aws && go vet ./...)
           (cd key/gcp && go vet ./...)
           (cd examples/deployment-identity && go vet ./...)
-          go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+          go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -tags dnsid_foundry ./...
           (cd key/aws && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
           (cd key/gcp && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
           (cd examples/deployment-identity && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
+
+      - name: Vet Foundry platform-specific locking
+        run: |
+          GOOS=windows go vet -tags dnsid_foundry ./foundry/
+          GOOS=js GOARCH=wasm go vet -tags dnsid_foundry ./foundry/
 
       # Config lives in .golangci.yml at the repo root; nested modules need
       # their own invocations.
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13.1
+          args: --build-tags=dnsid_foundry
 
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
@@ -105,7 +112,7 @@ jobs:
 
       - name: Run race tests
         run: |
-          go test -race ./...
+          go test -race -tags dnsid_foundry ./...
           (cd key/aws && go test -race ./...)
           (cd key/gcp && go test -race ./...)
           (cd examples/deployment-identity && go test -race ./...)
@@ -133,8 +140,8 @@ jobs:
       # comment (internal/, cmd/, and examples/ are deliberately not passed).
       - name: Lint exported doc comments
         run: |
-          go run github.com/mgechev/revive@v1.15.0 -config revive.toml \
-            . ./jose/... ./oidc/... ./httpsig/... ./webbotauth/... ./log/...
+          GOFLAGS='-tags=dnsid_foundry' go run github.com/mgechev/revive@v1.15.0 -config revive.toml \
+            . ./jose/... ./oidc/... ./httpsig/... ./webbotauth/... ./log/... ./foundry/...
           (cd key/aws && go run github.com/mgechev/revive@v1.15.0 -config ../../revive.toml ./...)
           (cd key/gcp && go run github.com/mgechev/revive@v1.15.0 -config ../../revive.toml ./...)
 

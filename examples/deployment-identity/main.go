@@ -26,7 +26,8 @@ func main() {
 		die("constructing identity manager", err)
 	}
 
-	// Construct opens the key but does not verify its published binding.
+	// Construct already verifies the configured key against fresh publication.
+	// This additional check illustrates comparing the independently published key.
 	published, err := manager.VerifyDomain(ctx, manager.Domain())
 	if err != nil {
 		die("verifying own published identity", err)

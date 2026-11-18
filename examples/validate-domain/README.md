@@ -41,6 +41,15 @@ eval "$(dnsid local env bob)"
 go run ./examples/validate-domain bob.test
 ```
 
+When the environment loads an identity and configured operational key (as
+`dnsid local env bob` does), construction first requires that identity's own
+fresh, verified publication to match the selected key. Its required DNS, HTTPS,
+and log paths must be reachable even when the target domain is different and
+this example only calls `VerifyDomain`. A verification-only manager constructed
+without an identity/key source has no own-key binding check. Log trust and
+transport are separate requirements: retain them for target verification, and
+note that constructing the log registry can itself require network access.
+
 The example uses the default `auto` DNSSEC policy unless `DNSID_DNSSEC_MODE` is
 set. Go's built-in resolver cannot expose DNSSEC validation results, so
 successful output normally reports `dnssec: UNKNOWN`. Applications requiring
