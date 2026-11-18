@@ -89,6 +89,40 @@ the Go module release; the two versions are intentionally separate.
 | `.../dnsid-go/oidc` | Mint and verify DNSid OIDC tokens. |
 | `.../dnsid-go/httpsig` · `.../webbotauth` | RFC 9421 HTTP Message Signatures and the Web Bot Auth profile. |
 
+## Explicit AWS operational-key bootstrap
+
+The optional `github.com/dnsid-ai/dnsid-go/key/aws` module exposes an explicit
+key-first operation. Supply an AWS SDK KMS client configured for your account
+and region (and import this module as `awskms`):
+
+```go
+client := awskms.SDKClient{Client: kms.NewFromConfig(awsCfg)}
+result, err := awskms.CreateOrReuse(ctx, client, awskms.BootstrapConfig{
+    AliasName: "alias/dnsid/my-org/my-agent",
+    Algorithm: types.SigningAlgorithmSpecEcdsaSha256,
+})
+if err != nil {
+    return err
+}
+provider := result.KeyProvider // validated active signer
+keyRef := result.KeyRef       // immutable KMS key reference, not the alias
+```
+
+Empty Algorithm defaults to ES256; `types.SigningAlgorithmSpecEd25519Sha512`
+selects EdDSA. This operation reuses a compatible alias winner, creates a key
+only after native initial absence, and resolves concurrent alias acquisition
+with one winner read. It does not poll; unavailable winners and ambiguous
+acquisition errors are returned unchanged. A later explicit call can recover
+from a committed acquisition whose response was lost.
+
+Create or reuse the operational key **first**; create or reuse the agent ID
+separately afterward. Bootstrap does not register an agent, publish DNS or log
+records, or change server key custody. `Load`, `New`, and configuration factories
+still open existing keys only; `GenerateKey` still creates a fresh pending
+rotation key. Bootstrap never deletes or retargets resources. Losing and
+ambiguous candidates can remain in KMS; their disposition is deferred and must
+be addressed separately. Persist the winner's reference/state for later loading.
+
 ## Negotiated signed responses
 
 Request signing alone does not authenticate the responder. Opt in through the

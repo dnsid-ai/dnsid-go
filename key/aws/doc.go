@@ -18,6 +18,11 @@
 //	}
 //	sig, err := provider.Sign(payload)
 //
+// For explicit initial key acquisition, [CreateOrReuse] creates or reuses a
+// deterministic alias winner without registration or publication. Ordinary
+// Load/New remain existing-key operations. Bootstrap does not delete candidates;
+// losing or ambiguous resource disposition is separate.
+//
 // A Provider signs with a single configured algorithm. Two KMS signing
 // algorithms are supported: ECDSA_SHA_256 with an ECC_NIST_P256 key (JOSE
 // ES256) and ED25519_SHA_512 with an ECC_NIST_EDWARDS25519 key (JOSE EdDSA).
