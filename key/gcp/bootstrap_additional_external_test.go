@@ -7,10 +7,10 @@ import (
 	"crypto/elliptic"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"sync"
 	"testing"
@@ -48,9 +48,9 @@ func (f *additionalResponses) CreateCryptoKey(ctx context.Context, r *kmspb.Crea
 	// A competing caller commits between our initial absence and atomic create.
 	// Delegate request/count checks; the base then returns AlreadyExists.
 	if f.winner {
-		f.bootstrapFakeKMS.mu.Lock()
-		f.bootstrapFakeKMS.exists = true
-		f.bootstrapFakeKMS.mu.Unlock()
+		f.mu.Lock()
+		f.exists = true
+		f.mu.Unlock()
 	}
 	k, err := f.bootstrapFakeKMS.CreateCryptoKey(ctx, r, o...)
 	if err == nil && f.key != nil {
@@ -98,8 +98,17 @@ func additionalPEM(p *kmspb.PublicKey, text string) *kmspb.PublicKey {
 func additionalNonEdPEM(t *testing.T) string {
 	t.Helper()
 	// Fixed P-256 generator, not product output or randomness. Valid non-Ed25519 SPKI.
-	x, y := elliptic.P256().ScalarBaseMult(big.NewInt(1).Bytes())
-	der, err := x509.MarshalPKIXPublicKey(&ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y})
+	point, err := hex.DecodeString("04" +
+		"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296" +
+		"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5")
+	if err != nil {
+		t.Fatalf("independent P-256 generator encoding: %v", err)
+	}
+	public, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), point)
+	if err != nil {
+		t.Fatalf("independent P-256 generator: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(public)
 	if err != nil {
 		t.Fatalf("independent P-256 bootstrapFixture: %v", err)
 	}
