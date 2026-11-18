@@ -45,7 +45,7 @@ func sdkAdapter(f sdkRoundTrip) awskms.SDKClient {
 
 func sdkRequest(t *testing.T, r *http.Request) (string, map[string]any) {
 	t.Helper()
-	if r.Method != "POST" || r.URL.String() != "https://kms.fixture.invalid/" {
+	if r.Method != http.MethodPost || r.URL.String() != "https://kms.fixture.invalid/" {
 		t.Fatalf("unexpected endpoint: %s %s", r.Method, r.URL)
 	}
 	if r.Header.Get("Content-Type") != "application/x-amz-json-1.1" {
@@ -288,7 +288,7 @@ func TestBootstrapSDK_NativeErrorChainsAndIdentity(t *testing.T) {
 				return sdkNativeError("AccessDeniedException")
 			})}
 			out, err := awskms.CreateOrReuse(context.Background(), client, awskms.BootstrapConfig{AliasName: sdkAlias})
-			if out != nil || err == nil || err != client.observed {
+			if out != nil || err == nil || err != client.observed { //nolint:errorlint // Bootstrap must return the exact SDK adapter error object, not just its cause.
 				t.Fatalf("original adapter error not preserved: result=%v error=%v observed=%v", out, err, client.observed)
 			}
 			var operation *smithy.OperationError

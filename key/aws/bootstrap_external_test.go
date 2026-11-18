@@ -42,9 +42,8 @@ func bootFixture(t *testing.T, alg types.SigningAlgorithmSpec, id string, seed b
 	k := bootKey{out: awskms.GetPublicKeyOutput{KeyID: id, KeyUsage: types.KeyUsageTypeSignVerify, SigningAlgorithms: []types.SigningAlgorithmSpec{alg}}}
 	var pub any
 	if alg == types.SigningAlgorithmSpecEcdsaSha256 {
-		d := big.NewInt(int64(seed) + 1)
-		x, y := elliptic.P256().ScalarBaseMult(d.Bytes())
-		k.ec = &ecdsa.PrivateKey{PublicKey: ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, D: d}
+		// Preserve the fixed scalar seed+1 and distinct winner/candidate material.
+		k.ec = bootECFixture(t, elliptic.P256(), int64(seed)+1)
 		pub = &k.ec.PublicKey
 		k.out.KeySpec = types.KeySpecEccNistP256
 	} else {
@@ -58,6 +57,18 @@ func bootFixture(t *testing.T, alg types.SigningAlgorithmSpec, id string, seed b
 		t.Fatal(err)
 	}
 	return k
+}
+
+// bootECFixture uses a fixed-width SEC 1 scalar, independent of product code.
+func bootECFixture(t *testing.T, curve elliptic.Curve, scalar int64) *ecdsa.PrivateKey {
+	t.Helper()
+	raw := make([]byte, (curve.Params().N.BitLen()+7)/8)
+	big.NewInt(scalar).FillBytes(raw)
+	key, err := ecdsa.ParseRawPrivateKey(curve, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
 }
 
 type bootFake struct {
@@ -228,7 +239,11 @@ func bootWinner(t *testing.T, r *awskms.BootstrapResult, err error, k bootKey) {
 	}
 	enc := base64.RawURLEncoding.EncodeToString
 	if k.ec != nil {
-		if fields["kty"] != "EC" || fields["crv"] != "P-256" || fields["x"] != enc(k.ec.X.FillBytes(make([]byte, 32))) || fields["y"] != enc(k.ec.Y.FillBytes(make([]byte, 32))) {
+		point, err := k.ec.PublicKey.Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fields["kty"] != "EC" || fields["crv"] != "P-256" || fields["x"] != enc(point[1:33]) || fields["y"] != enc(point[33:65]) {
 			t.Errorf("JWK is not winner material: %s", raw)
 		}
 	} else {
@@ -264,7 +279,7 @@ func bootFailure(t *testing.T, r *awskms.BootstrapResult, err, want error) {
 	if r != nil || err == nil {
 		t.Fatalf("Then nil result and error: result=%v error=%v", r, err)
 	}
-	if want != nil && err != want {
+	if want != nil && err != want { //nolint:errorlint // Contract requires the exact error object, not an equivalent error in its chain.
 		t.Errorf("original error identity lost: got %v want %v", err, want)
 	}
 }
@@ -514,9 +529,9 @@ func TestCreateOrReuse_InvalidRemote(t *testing.T) {
 						}
 						bad.PublicKey = bootFixture(t, other, bootA, 3).out.PublicKey
 					case "wrong-curve":
-						x, y := elliptic.P384().ScalarBaseMult([]byte{4})
+						wrongCurve := bootECFixture(t, elliptic.P384(), 4)
 						var err error
-						bad.PublicKey, err = x509.MarshalPKIXPublicKey(&ecdsa.PublicKey{Curve: elliptic.P384(), X: x, Y: y})
+						bad.PublicKey, err = x509.MarshalPKIXPublicKey(&wrongCurve.PublicKey)
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -667,7 +682,7 @@ func TestCreateOrReuse_PublicErrorIdentity(t *testing.T) {
 			want := bootWrap(&types.NotFoundException{})
 			f.signErr = want
 			s, e := r.KeyProvider.Sign([]byte("failure"))
-			if s != nil || e != want {
+			if s != nil || e != want { //nolint:errorlint // Signing must return the exact injected error object without wrapping.
 				t.Errorf("sign error identity: sig=%v err=%v", s, e)
 			}
 			bootCounts(t, f, bootAlias, 1, 0, 0)
