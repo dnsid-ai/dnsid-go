@@ -66,6 +66,9 @@ func TestSafeHTTPClientPrivateAddressHosts(t *testing.T) {
 		{"link-local rejected", "alice.test", []string{".test"}, resolveTo("169.254.1.1"), true},
 		{"unspecified rejected", "alice.test", []string{".test"}, resolveTo("0.0.0.0"), true},
 		{"mixed public and private rejected", "alice.test", []string{".test"}, resolveTo("93.184.216.34", "127.0.0.1"), true},
+		{"public nat64 allowed without list", "ek.example", nil, resolveTo("64:ff9b::1714:b7e"), false},
+		{"nat64-wrapped private rejected without list", "evil.example", nil, resolveTo("64:ff9b::a00:5"), true},
+		{"nat64-wrapped private never satisfies list", "alice.test", []string{".test"}, resolveTo("64:ff9b::a00:1"), true},
 		{"ip literal rejected regardless of list", "127.0.0.1", []string{".test", "127.0.0.1"}, resolveTo("127.0.0.1"), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -381,7 +384,15 @@ func TestDialValidatedIPRejectsSpecialUseAddresses(t *testing.T) {
 		{ip: "198.51.100.1"},
 		{ip: "203.0.113.1"},
 		{ip: "240.0.0.1"},
-		{ip: "64:ff9b::1"},
+		{ip: "64:ff9b::1"},                        // NAT64 + 0.0.0.1
+		{ip: "64:ff9b::7f00:1"},                   // NAT64 + 127.0.0.1
+		{ip: "64:ff9b::a00:5"},                    // NAT64 + 10.0.0.5
+		{ip: "64:ff9b::a9fe:a9fe"},                // NAT64 + 169.254.169.254 (cloud metadata)
+		{ip: "64:ff9b::6440:1"},                   // NAT64 + 100.64.0.1 (CGNAT)
+		{ip: "64:ff9b:1::808:808"},                // RFC 8215 local-use NAT64 prefix stays rejected
+		{ip: "64:ff9b::1:808:808"},                // outside the /96: not a NAT64 address
+		{ip: "64:ff9b::808:808", wantDial: true},  // NAT64 + 8.8.8.8 (DNS64 network)
+		{ip: "64:ff9b::1714:b7e", wantDial: true}, // NAT64 + 23.20.11.126
 		{ip: "100::1"},
 		{ip: "2001::1"},
 		{ip: "2001:db8::1"},
