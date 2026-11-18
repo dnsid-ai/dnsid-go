@@ -28,6 +28,6 @@ func Example() {
 	fmt.Println("Signature-Agent:", signed.Header.Get("Signature-Agent"))
 	fmt.Println("signature present:", signed.Header.Get("Signature") != "")
 	// Output:
-	// Signature-Agent: sig1="https://bot.example";type=directory
+	// Signature-Agent: sig1="https://bot.example/.well-known/http-message-signatures-directory"
 	// signature present: true
 }

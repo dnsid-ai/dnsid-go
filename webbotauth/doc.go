@@ -1,17 +1,14 @@
 // Package webbotauth implements the constrained DNSid Web Bot Auth profile
-// targeting published draft-ietf-webbotauth-httpsig-protocol-00, including
-// its directory format, using package httpsig. Unpublished editor changes
-// are not the baseline; typed discovery and directory JWK alg="ed25519" remain.
+// targeting draft-ietf-webbotauth-httpsig-protocol-01, using package httpsig.
 // It signs and verifies requests and signed key directories using Ed25519.
 // This is not a generic WBA verifier or a partner interoperability claim.
 //
 // The main entry type is Profile. A Profile holds the agent's domain and its
 // dnsid.KeyProvider; Config controls the Signature-Agent header, the key
 // directory URL, and signature lifetimes, and its zero value applies the
-// profile defaults. Signature-Agent is always required and covered. Directory
-// discovery requires an HTTPS origin with no path (including /), query, or
-// fragment; jwks_uri identifies a direct HTTPS endpoint. Trusted caller policy
-// does not replace signed discovery. Directory creation times cannot be in the
+// profile defaults. Requests must cover the Signature-Agent dictionary member,
+// which contains a direct HTTPS directory URL and has no parameters. Trusted
+// caller policy does not replace signed discovery. Directory creation times cannot be in the
 // future, even within the configured request clock skew.
 //
 // A typical caller signs a request and lets the origin discover its key
@@ -40,7 +37,7 @@
 // no local identity. Discovery uses public-address-only, Web-PKI HTTPS with no
 // redirects, content coding, or directory caching. Each invocation sends an
 // unconditional no-cache GET; fresh directory key misses are not retried.
-// Discovery must not identify authenticated ku, including query/fragment variants.
+// Discovery must not identify authenticated ku, including query variants.
 // Discovery availability
 // failures are transient; invalid evidence and unsafe destinations are not.
 // Supply a trusted SignerDomain or explicitly
