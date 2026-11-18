@@ -557,19 +557,21 @@ func TestCreateOrReuse_InvalidRemote(t *testing.T) {
 						return awskms.GetPublicKeyOutput{}, nil, false
 					}
 					r, e := awskms.CreateOrReuse(context.Background(), f, awskms.BootstrapConfig{AliasName: bootAlias, Algorithm: alg})
+					reads, creates, acquires := 1, 0, 0
+					if stage == "winner" {
+						reads, creates, acquires = 2, 1, 1
+					}
 					if name == "identity-change" || name == "material-change" {
 						// Immutable reads are optional. If made, they must not switch identity/material.
 						if f.gets[bootA] == 0 {
 							bootWinner(t, r, e, a)
+							bootCounts(t, f, bootAlias, reads, creates, acquires)
+							t.Skip("optional immutable read not exercised; corruption guard not applicable")
 						} else {
 							bootFailure(t, r, e, nil)
 						}
 					} else {
 						bootFailure(t, r, e, nil)
-					}
-					reads, creates, acquires := 1, 0, 0
-					if stage == "winner" {
-						reads, creates, acquires = 2, 1, 1
 					}
 					bootCounts(t, f, bootAlias, reads, creates, acquires)
 				})
@@ -669,7 +671,7 @@ func TestCreateOrReuse_ConcurrentConvergence(t *testing.T) {
 	}
 }
 
-// Mode: fake-only for injected signing/immutable errors. Given a valid existing
+// Mode: fake-only for injected signing errors. Given a valid existing
 // winner, When a later public operation fails, Then preserve the native error value.
 func TestCreateOrReuse_PublicErrorIdentity(t *testing.T) {
 	for _, alg := range bootAlgs {
@@ -734,7 +736,8 @@ func TestBootstrapBoundary_OrdinaryLoadAndFreshGenerate(t *testing.T) {
 
 // Mode: fake-only (optional immutable-read fault). Given a valid resolved winner,
 // When an implementation elects an immutable validation read, Then its original
-// error must propagate. No extra immutable read is required by this test.
+// error must propagate. Otherwise the fault guard is explicitly not applicable.
+// No extra immutable read is required by this test.
 func TestCreateOrReuse_OptionalCanonicalError(t *testing.T) {
 	for _, alg := range bootAlgs {
 		t.Run(string(alg), func(t *testing.T) {
@@ -756,6 +759,8 @@ func TestCreateOrReuse_OptionalCanonicalError(t *testing.T) {
 			} else {
 				f.getHook = nil
 				bootWinner(t, r, e, k)
+				bootCounts(t, f, bootAlias, 1, 0, 0)
+				t.Skip("optional immutable read not exercised; native-error guard not applicable")
 			}
 			bootCounts(t, f, bootAlias, 1, 0, 0)
 		})

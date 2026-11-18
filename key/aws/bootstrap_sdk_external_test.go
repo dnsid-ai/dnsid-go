@@ -24,7 +24,7 @@ import (
 // These fake-only tests exercise the official SDK serializer/deserializer, not
 // a substitute for kms.Client. Wire expectations are AWS KMS JSON 1.1 API
 // contracts (CreateAlias, CreateKey, GetPublicKey); bootstrap expectations are
-// the frozen #62 public contract. No live KMS behavior is claimed.
+// README.md and docs/reference/key-aws.md. No live KMS behavior is claimed.
 const sdkAlias = "alias/dnsid/example/worker"
 const sdkCandidate = "arn:aws:kms:us-east-1:123456789012:key/11111111-2222-3333-4444-555555555555"
 const sdkWinner = "arn:aws:kms:us-east-1:123456789012:key/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"

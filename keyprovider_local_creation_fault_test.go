@@ -98,6 +98,14 @@ func TestLoadOrCreateLocalKeyProvider_ConcurrentFileSyncFailureCannotEraseSucces
 			t.Fatal("second caller did not return after gate release")
 		}
 	}
+	// Join both workers before inspecting their owned parent directory.
+	for i, done := range []<-chan struct{}{firstDone, secondDone} {
+		select {
+		case <-done:
+		case <-time.After(bound):
+			t.Fatalf("caller %d did not terminate before parent inventory", i+1)
+		}
+	}
 	if a.err == nil {
 		t.Error("initializer whose file sync failed reported success")
 	}
@@ -149,6 +157,13 @@ func TestLoadOrCreateLocalKeyProvider_ConcurrentFileSyncFailureCannotEraseSucces
 		saved := got
 		winner = &saved
 	}
+	// Internal cleanup characterization only: both may fail with an empty parent,
+	// or leave only the store; this does not promise general shared-writer safety.
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		assertOwnedInitialParent(t, filepath.Dir(path))
+	} else {
+		assertOwnedInitialParent(t, filepath.Dir(path), "keys.json")
+	}
 	// Both may explicitly fail; a clean retry must create/reuse persistent state.
 	recovered, err := LoadOrCreateLocalKeyProvider(path, JoseAlgEdDSA)
 	if err != nil {
@@ -165,4 +180,5 @@ func TestLoadOrCreateLocalKeyProvider_ConcurrentFileSyncFailureCannotEraseSucces
 	if !reflect.DeepEqual(recoveredKey, capture(reloaded)) {
 		t.Fatal("clean retry did not persist its returned key")
 	}
+	assertOwnedInitialParent(t, filepath.Dir(path), "keys.json")
 }

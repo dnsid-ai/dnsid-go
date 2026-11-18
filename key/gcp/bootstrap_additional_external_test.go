@@ -24,7 +24,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-// External #62 contract cases 6–8; companion to bootstrap_external_test.go.
+// Named-key bootstrap response validation, scope boundaries and caller composition.
+// Companion to bootstrap_external_test.go.
 // Wrappers alter responses, never the base fake or its fixed identity.
 type additionalResponses struct {
 	*bootstrapFakeKMS

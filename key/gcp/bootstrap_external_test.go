@@ -22,8 +22,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-// External acceptance tests for #62, cases 1–5 only. All KMS calls
-// are fake; cryptographic and CRC32C oracles use independent standard APIs.
+// Explicit named-key bootstrap: initial creation, reuse, contention and native failures.
+// Mode: fake-only KMS; independent standard cryptographic and CRC32C oracles.
 const parent = "projects/test-project/locations/us-central1/keyRings/test-ring"
 const keyID = "explicit_key-62"
 const keyName = parent + "/cryptoKeys/" + keyID
@@ -352,7 +352,7 @@ func assertResult(t *testing.T, r *gcpkms.BootstrapResult, err error) string {
 		t.Fatalf("CreateOrReuse must succeed, got %v", err)
 	}
 	if r == nil {
-		t.Fatal("CreateOrReuse succeeded with nil result (unimplemented scaffold is not success)")
+		t.Fatal("CreateOrReuse succeeded with nil result")
 	}
 	if r.KeyVersionName != versionName {
 		t.Fatalf("version ref = %q, want %q", r.KeyVersionName, versionName)

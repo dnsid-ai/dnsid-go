@@ -20,6 +20,7 @@ func TestLoadOrCreateLocalKeyProviderWritesStoreAndPersistsRotation(t *testing.T
 	}
 	initialKid := kp.ListKeyIds()[0]
 	assertKeyStoreFile(t, path, initialKid, 0, 0)
+	assertOwnedInitialParent(t, filepath.Dir(path), "key.json")
 
 	pending, err := kp.GenerateKey(JoseAlgEdDSA)
 	if err != nil {
@@ -247,6 +248,11 @@ func TestLoadOrCreateLocalKeyProvider_SyncFailures(t *testing.T) {
 				t.Fatalf("durability classification = %v", err)
 			}
 			if failAt == 1 {
+				assertOwnedInitialParent(t, filepath.Dir(path))
+			} else {
+				assertOwnedInitialParent(t, filepath.Dir(path), "key.json")
+			}
+			if failAt == 1 {
 				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("failed creation left file: %v", err)
 				}
@@ -269,6 +275,28 @@ func TestLoadOrCreateLocalKeyProvider_SyncFailures(t *testing.T) {
 				t.Fatalf("existing key was replaced: %v", err)
 			}
 		})
+	}
+}
+
+// assertOwnedInitialParent characterizes internal cleanup in an owned initial-creation
+// fixture, not a public temporary namespace or shared-writer guarantee.
+func assertOwnedInitialParent(t *testing.T, parent string, want ...string) {
+	t.Helper()
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		t.Fatalf("inventory owned initial parent: %v", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if len(names) != len(want) {
+		t.Fatalf("owned initial parent entries = %v, want %v", names, want)
+	}
+	for i := range names {
+		if names[i] != want[i] {
+			t.Fatalf("owned initial parent entries = %v, want %v", names, want)
+		}
 	}
 }
 
