@@ -101,9 +101,6 @@ func TestTXTRecordValidate_EKHostComparedInCanonicalForm(t *testing.T) {
 		{"sibling domain", "https://keys.other.example/ek.json", "must be at or under gi domain"},
 		{"gi as prefix", "https://identity.example.attacker.example/ek.json", "must be at or under gi domain"},
 		{"gi as label suffix", "https://notidentity.example/ek.json", "must be at or under gi domain"},
-		// Before canonical comparison this host lowercased to
-		// keys.identity.example and passed, while the JWKS was fetched from the
-		// punycode form of keys.i̇dentity.example, outside identity.example.
 		{"percent-encoded U+0130", "https://keys.%C4%B0dentity.example/ek.json", "without percent-escapes"},
 		{"raw U+0130", "https://keys.İdentity.example/ek.json", "without percent-escapes"},
 		{"leading hyphen label", "https://-keys.identity.example/ek.json", "not a valid DNS name"},
@@ -147,10 +144,10 @@ func TestTXTRecordValidate_TrailingDotHostRejected(t *testing.T) {
 	}
 }
 
-// TestTXTRecordValidate_U0130HostNormalizesOutsideGI documents why the folded
+// TestNormalizeFQDN_U0130MapsOutsideFoldedDomain documents why the folded
 // comparison was unsafe: the decoded ek= host from the bypass record is a valid
 // DNS name whose canonical (dialed) form lies outside the governance domain.
-func TestTXTRecordValidate_U0130HostNormalizesOutsideGI(t *testing.T) {
+func TestNormalizeFQDN_U0130MapsOutsideFoldedDomain(t *testing.T) {
 	dialed, err := NormalizeFQDN("keys.İdentity.example")
 	if err != nil {
 		t.Fatalf("NormalizeFQDN: %v", err)
