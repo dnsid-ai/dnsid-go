@@ -101,7 +101,7 @@ type BootstrapResult struct {
 ```
 
 <a name="CreateOrReuse"></a>
-### func [CreateOrReuse](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/bootstrap.go#L62>)
+### func [CreateOrReuse](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/bootstrap.go#L65>)
 
 ```go
 func CreateOrReuse(ctx context.Context, client BootstrapClient, cfg BootstrapConfig) (*BootstrapResult, error)
@@ -112,6 +112,8 @@ CreateOrReuse explicitly provisions or reuses one named software Ed25519 key. On
 The key template and enabled immutable version 1 must be compatible. New then validates the public key and constructs the provider. Missing or incompatible versions never authorize another version, fallback signer or ancestor creation. A failed attempt returns no result, even if creation committed remotely; a fresh explicit call with the same scope can discover that committed key.
 
 This is initial provisioning, not rotation recovery: open an established identity's persisted authorized version with New or Open. Bootstrap never registers an agent; applications perform that separate step after key success.
+
+Bootstrap adds no deadline; supply a context with the required deadline or cancellation. The injected client's transport timeouts and retries also apply.
 
 <a name="Client"></a>
 ## type [Client](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L27-L30>)
