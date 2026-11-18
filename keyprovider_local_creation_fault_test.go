@@ -12,7 +12,7 @@ import (
 )
 
 // Mode: fake-only (file-sync failure; isolated real temporary filesystem).
-// Evidence: NOTRUN. New-behavior regression guard, intended for the SDK root.
+// Guard: a failed concurrent initializer must not erase a successful key store.
 func TestLoadOrCreateLocalKeyProvider_ConcurrentFileSyncFailureCannotEraseSuccess(t *testing.T) {
 	// Given an absent store, hold the first initializer at file durability sync.
 	path := filepath.Join(t.TempDir(), "keys.json")

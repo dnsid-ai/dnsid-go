@@ -24,9 +24,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-// Cases 6–8 only. Draft: NOT RUN, NOT COMPILED, NOT FROZEN.
-// The frozen base external file must accompany this file in package gcpkms_test.
-// Wrappers alter responses, never the frozen fake or its fixed identity.
+// External #62 contract cases 6–8; companion to bootstrap_external_test.go.
+// Wrappers alter responses, never the base fake or its fixed identity.
 type additionalResponses struct {
 	*bootstrapFakeKMS
 	key     func(*kmspb.CryptoKey) *kmspb.CryptoKey

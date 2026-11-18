@@ -22,7 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-// Draft external acceptance tests for #62, cases 1–5 only. All KMS calls
+// External acceptance tests for #62, cases 1–5 only. All KMS calls
 // are fake; cryptographic and CRC32C oracles use independent standard APIs.
 const parent = "projects/test-project/locations/us-central1/keyRings/test-ring"
 const keyID = "explicit_key-62"
