@@ -1715,9 +1715,51 @@ func validateManagerFetchURL(raw, allowedHost string, domainBoundary bool) error
 	return nil
 }
 
+// fetchHostAllowed reports whether a fetch, or a redirect hop, to host stays on
+// the allowed host: equal to it or, when domainBoundary is set, at or under it
+// on a DNS-label boundary.
+//
+// Both names are compared in the canonical form produced by NormalizeFQDN
+// (UTS 46 mapping, A-label encoding, ASCII lowercase, no trailing dot). That is
+// the name net/http resolves and presents as TLS SNI, so the boundary is
+// enforced on exactly the name that will be dialed. A strings.ToLower
+// comparison is not equivalent: Go's ToLower applies simple case mappings,
+// under which U+0130 (LATIN CAPITAL LETTER I WITH DOT ABOVE) becomes ASCII
+// "i", whereas UTS 46 maps it to "i\u0307" and the label is then
+// punycode-encoded. The host "keys.b\u0130gcorp.com" lowercases to a name
+// under bigcorp.com while the transport dials "keys.xn--bigcorp-....com".
+// Canonical comparison closes that gap for every source of a host name: a TXT
+// record, a redirect Location header, or configuration.
+//
+// A trailing dot is not canonicalized away: host and allowed must agree on
+// it, exactly as the byte-wise comparison this replaces required. In practice
+// allowed never carries one for a ku or ek fetch (the identity FQDN and gi are
+// canonical, and TXTRecord.Validate rejects a trailing dot in those hosts), so
+// a redirect to "keys.example.com." is refused, while a status URL whose
+// allowed host is its own host keeps matching itself as before.
+//
+// IP literals are compared as addresses, never on a domain boundary. A host
+// that is neither a valid DNS name nor an IP literal is never allowed.
 func fetchHostAllowed(host, allowed string, domainBoundary bool) bool {
-	host, allowed = strings.ToLower(host), strings.ToLower(allowed)
-	return host == allowed || domainBoundary && strings.HasSuffix(host, "."+allowed)
+	if ip := net.ParseIP(host); ip != nil {
+		allowedIP := net.ParseIP(allowed)
+		return allowedIP != nil && ip.Equal(allowedIP)
+	}
+	if strings.HasSuffix(host, ".") != strings.HasSuffix(allowed, ".") {
+		return false
+	}
+	canonicalHost, err := NormalizeFQDN(host)
+	if err != nil {
+		return false
+	}
+	canonicalAllowed, err := NormalizeFQDN(allowed)
+	if err != nil {
+		return false
+	}
+	if domainBoundary {
+		return isDomainOrSubdomain(canonicalHost, canonicalAllowed)
+	}
+	return canonicalHost == canonicalAllowed
 }
 
 func isTLSError(err error) bool {
