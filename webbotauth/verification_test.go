@@ -148,7 +148,7 @@ func TestProfile_VerifyWebBotAuthSignedRequest(t *testing.T) {
 }
 
 func TestProfile_WBANonDefaultLabelsAndDiscovery(t *testing.T) {
-	for _, mode := range []string{"different-label", "relabeled", "default-type", "jwks-uri", "origin-policy"} {
+	for _, mode := range []string{"different-label", "relabeled", "root-endpoint", "custom-endpoint", "origin-policy"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newWBAFixture(t, false, false)
 			inputs, _ := httpsig.ParseSignatureInput(f.request.Header.Get("Signature-Input"))
@@ -171,7 +171,7 @@ func TestProfile_WBANonDefaultLabelsAndDiscovery(t *testing.T) {
 				params.Label = "bot"
 				f.request.Header.Del("Signature-Input")
 				f.request.Header.Del("Signature")
-				f.request.Header.Set("Signature-Agent", `agent="https://bot.example.com";type=directory`)
+				f.request.Header.Set("Signature-Agent", `agent="https://bot.example.com`+DirectoryPath+`"`)
 				for i, c := range params.Components {
 					if c.Name == "signature-agent" {
 						params.Components[i].Params["key"] = "agent"
@@ -181,10 +181,10 @@ func TestProfile_WBANonDefaultLabelsAndDiscovery(t *testing.T) {
 				for _, name := range []string{"Signature-Input", "Signature"} {
 					f.request.Header.Set(name, strings.Replace(f.request.Header.Get(name), "sig1=", "relabeled=", 1))
 				}
-			case "default-type":
+			case "root-endpoint":
 				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com"`)
-			case "jwks-uri":
-				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com/custom?q=x#fragment";type=jwks_uri`)
+			case "custom-endpoint":
+				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com/custom?q=x"`)
 			case "origin-policy":
 				f.opts.SignerDomain = ""
 				f.opts.AllowSignatureAgentDomain = true

@@ -151,8 +151,8 @@ func TestWBA_DiscoveryRejectsInvalidPolicy(t *testing.T) {
 	}
 }
 
-func TestWBA_RequiresCoveredOriginBeforeDiscovery(t *testing.T) {
-	for _, suffix := range []string{"missing", "uncovered", "/", "/custom", "?q=x", "?", "#fragment", "#", "unsupported"} {
+func TestWBA_RequiresDirectEndpointBeforeDiscovery(t *testing.T) {
+	for _, suffix := range []string{"missing", "uncovered", "#fragment", "#", "typed", "unknown-parameter"} {
 		t.Run(suffix, func(t *testing.T) {
 			f := newWBAFixture(t, false, false)
 			f.opts.DirectoryURL = "https://bot.example.com" + DirectoryPath
@@ -166,10 +166,12 @@ func TestWBA_RequiresCoveredOriginBeforeDiscovery(t *testing.T) {
 				if err := httpsig.SignHTTPMessage(f.request, params, f.signer.keys); err != nil {
 					t.Fatal(err)
 				}
-			case "unsupported":
-				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com";type=cimd`)
+			case "typed":
+				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com";type=directory`)
+			case "unknown-parameter":
+				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com`+DirectoryPath+`";unknown`)
 			default:
-				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com`+suffix+`";type=directory`)
+				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com`+suffix+`"`)
 			}
 			f.checker.client.Transport = wbaRoundTrip(func(*http.Request) (*http.Response, error) {
 				t.Fatal("invalid discovery reached the network")

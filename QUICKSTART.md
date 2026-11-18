@@ -191,8 +191,8 @@ the current application's authenticated peer chains through `Peer` or `req.TLS`.
 The default coverage requires authority, not method or path. Sign extra components
 with `AdditionalComponentIDs` and require them at the recipient with
 `VerificationOptions.RequiredComponents`. Directories must not use `Content-Encoding`.
-For a custom discovery endpoint, explicitly set `SignatureAgentType: "jwks_uri"`. This targets the WBA protocol and
-directory drafts at revision `00`, not general WBA interoperability.
+The profile targets WBA draft `-01`. For a custom discovery endpoint, set
+`Config.DirectoryURL` to its full HTTPS URL.
 
 Runnable signing version: [`examples/webbotauth`](examples/webbotauth).
 

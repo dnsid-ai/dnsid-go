@@ -445,7 +445,7 @@ func directoryKey(body []byte, keyID string) (jwk.Key, error) {
 		if !ok || private || m["kty"] != "OKP" || m["crv"] != "Ed25519" {
 			return nil, wbaError("invalid public directory key")
 		}
-		if alg, present := m["alg"]; present && alg != "ed25519" {
+		if alg, present := m["alg"]; present && alg != "Ed25519" {
 			return nil, wbaError("invalid directory algorithm")
 		}
 		if use, present := m["use"]; present && use != "sig" {
@@ -546,27 +546,12 @@ func discovery(header http.Header, params httpsig.SignatureParams, opts Verifica
 		return "", "", wbaError("missing covered Signature-Agent member")
 	}
 	raw, ok := item.Value.(string)
-	if !ok {
-		return "", "", wbaError("invalid Signature-Agent URI")
-	}
-	kind := "directory"
-	typeSeen := false
-	for _, parameter := range item.Parameters {
-		if parameter.Key != "type" {
-			continue
-		}
-		token, ok := parameter.Value.(sfv.Token)
-		if !ok || typeSeen {
-			return "", "", wbaError("invalid discovery type")
-		}
-		kind, typeSeen = token.Value, true
+	if !ok || len(item.Parameters) != 0 {
+		return "", "", wbaError("Signature-Agent member must be a URI string without parameters")
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || (kind != "directory" && kind != "jwks_uri") {
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || strings.Contains(raw, "#") {
 		return "", "", wbaError("invalid HTTPS discovery")
-	}
-	if kind == "directory" && raw != "https://"+u.Host {
-		return "", "", wbaError("directory Signature-Agent must be an origin URI")
 	}
 	domain := opts.SignerDomain
 	if domain != "" {
@@ -584,9 +569,6 @@ func discovery(header http.Header, params httpsig.SignatureParams, opts Verifica
 	}
 	if domain == "" || host != domain {
 		return "", "", wbaError("discovery host not approved as signer")
-	}
-	if kind == "directory" {
-		u.Path = DirectoryPath
 	}
 	return domain, u.String(), nil
 }
