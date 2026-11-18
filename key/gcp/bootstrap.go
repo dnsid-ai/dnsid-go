@@ -59,6 +59,9 @@ var bootstrapKeyID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,63}$`)
 // This is initial provisioning, not rotation recovery: open an established
 // identity's persisted authorized version with New or Open. Bootstrap never
 // registers an agent; applications perform that separate step after key success.
+//
+// Bootstrap adds no deadline; supply a context with the required deadline or
+// cancellation. The injected client's transport timeouts and retries also apply.
 func CreateOrReuse(ctx context.Context, client BootstrapClient, cfg BootstrapConfig) (*BootstrapResult, error) {
 	if client == nil || !bootstrapParent.MatchString(cfg.Parent) || !bootstrapKeyID.MatchString(cfg.CryptoKeyID) {
 		return nil, dnsid.NewArgumentError("dnsid/gcpkms: bootstrap requires a client, fully qualified key ring and valid CryptoKey ID", nil)

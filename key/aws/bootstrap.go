@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -58,6 +57,9 @@ type BootstrapResult struct {
 // deferred to the caller's resource-management policy. It does not register an
 // agent or publish an identity. [Load], configuration loading and [Provider.GenerateKey]
 // remain separate existing-key and rotation operations.
+//
+// Bootstrap adds no deadline; supply a context with the required deadline or
+// cancellation. The injected client's transport timeouts and retries also apply.
 func CreateOrReuse(ctx context.Context, client BootstrapClient, cfg BootstrapConfig) (*BootstrapResult, error) {
 	if client == nil {
 		return nil, dnsid.NewArgumentError("dnsid/awskms: nil bootstrap client", nil)
@@ -111,12 +113,15 @@ func CreateOrReuse(ctx context.Context, client BootstrapClient, cfg BootstrapCon
 		return nil, err
 	}
 	state := State{ActiveKeyID: out.KeyID}
+	providerCfg, err := normalizeConfig(Config{State: state, Algorithm: cfg.Algorithm})
+	if err != nil {
+		return nil, err
+	}
 	p := &Provider{
 		client: client,
 		state:  state,
-		cfg: Config{State: state, Algorithm: cfg.Algorithm, KeySpec: spec,
-			DeletionWindowInDays: 30, OperationTimeout: 30 * time.Second},
-		cache: map[string]jwk.Key{out.KeyID: key},
+		cfg:    providerCfg,
+		cache:  map[string]jwk.Key{out.KeyID: key},
 	}
 	return &BootstrapResult{KeyRef: out.KeyID, KeyProvider: p}, nil
 }
