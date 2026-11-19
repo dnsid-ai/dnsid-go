@@ -138,6 +138,9 @@ func NewLocalKeyProvider(path string) (*LocalKeyProvider, error) {
 }
 
 // LoadOrCreateLocalKeyProvider loads a JWK keypair from disk, or creates one if path does not exist.
+//
+// Initial creation requires filesystem hard-link support to publish a complete key store
+// without overwriting an existing file. See OPERATIONS.md for durability requirements.
 func LoadOrCreateLocalKeyProvider(path string, alg JoseAlg) (*LocalKeyProvider, error) {
 	return loadOrCreateLocalKeyProvider(path, alg, (*os.File).Sync)
 }

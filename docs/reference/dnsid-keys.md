@@ -84,7 +84,7 @@ type LocalKeyProvider struct {
 ```
 
 <a name="GenerateES256KeyProvider"></a>
-### func [GenerateES256KeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L224>)
+### func [GenerateES256KeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L227>)
 
 ```go
 func GenerateES256KeyProvider() *LocalKeyProvider
@@ -93,7 +93,7 @@ func GenerateES256KeyProvider() *LocalKeyProvider
 GenerateES256KeyProvider creates an ephemeral in\-memory ES256 keypair.
 
 <a name="GenerateEd25519KeyProvider"></a>
-### func [GenerateEd25519KeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L211>)
+### func [GenerateEd25519KeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L214>)
 
 ```go
 func GenerateEd25519KeyProvider() *LocalKeyProvider
@@ -102,13 +102,15 @@ func GenerateEd25519KeyProvider() *LocalKeyProvider
 GenerateEd25519KeyProvider creates an ephemeral in\-memory Ed25519 keypair.
 
 <a name="LoadOrCreateLocalKeyProvider"></a>
-### func [LoadOrCreateLocalKeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L141>)
+### func [LoadOrCreateLocalKeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L144>)
 
 ```go
 func LoadOrCreateLocalKeyProvider(path string, alg JoseAlg) (*LocalKeyProvider, error)
 ```
 
 LoadOrCreateLocalKeyProvider loads a JWK keypair from disk, or creates one if path does not exist.
+
+Initial creation requires filesystem hard\-link support to publish a complete key store without overwriting an existing file. See OPERATIONS.md for durability requirements.
 
 <a name="NewLocalKeyProvider"></a>
 ### func [NewLocalKeyProvider](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L109>)
@@ -120,7 +122,7 @@ func NewLocalKeyProvider(path string) (*LocalKeyProvider, error)
 NewLocalKeyProvider loads a key store file. It accepts the current active/retained/pending store shape and the older flat private JWK shape.
 
 <a name="LocalKeyProvider.Activate"></a>
-### func \(\*LocalKeyProvider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L664>)
+### func \(\*LocalKeyProvider\) [Activate](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L667>)
 
 ```go
 func (p *LocalKeyProvider) Activate(kid string) error
@@ -129,7 +131,7 @@ func (p *LocalKeyProvider) Activate(kid string) error
 Activate promotes the named pending or retained key to active and retains the previously active key. It returns an \*ArgumentError for unknown kids. Even when kid is already active, the store is persisted again so callers can retry a durability failure. On failure before publication the previous state is restored; ErrKeyStoreDurability leaves the new state in memory and on disk.
 
 <a name="LocalKeyProvider.GenerateKey"></a>
-### func \(\*LocalKeyProvider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L623>)
+### func \(\*LocalKeyProvider\) [GenerateKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L626>)
 
 ```go
 func (p *LocalKeyProvider) GenerateKey(alg JoseAlg) (string, error)
@@ -138,7 +140,7 @@ func (p *LocalKeyProvider) GenerateKey(alg JoseAlg) (string, error)
 GenerateKey creates a new pending key for alg and returns its kid \(the key's RFC 7638 thumbprint\). The new key is persisted to the provider's key store file, when one is configured, before the kid is returned; the active key is unchanged until Activate is called. On ErrKeyStoreDurability, the pending key is retained and its kid is returned alongside the error.
 
 <a name="LocalKeyProvider.JWK"></a>
-### func \(\*LocalKeyProvider\) [JWK](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L532>)
+### func \(\*LocalKeyProvider\) [JWK](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L535>)
 
 ```go
 func (p *LocalKeyProvider) JWK(kidOpt ...string) jwk.Key
@@ -147,7 +149,7 @@ func (p *LocalKeyProvider) JWK(kidOpt ...string) jwk.Key
 JWK returns the public JWK for the requested kid, or for the active key when no kid is given. The returned key carries kid, alg, and use=sig. It returns nil when the kid is unknown or no key is active.
 
 <a name="LocalKeyProvider.ListKeyIds"></a>
-### func \(\*LocalKeyProvider\) [ListKeyIds](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L552>)
+### func \(\*LocalKeyProvider\) [ListKeyIds](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L555>)
 
 ```go
 func (p *LocalKeyProvider) ListKeyIds() []string
@@ -156,7 +158,7 @@ func (p *LocalKeyProvider) ListKeyIds() []string
 ListKeyIds returns the active kid first, followed by retained kids in insertion order. Pending kids are not listed.
 
 <a name="LocalKeyProvider.Purge"></a>
-### func \(\*LocalKeyProvider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L711>)
+### func \(\*LocalKeyProvider\) [Purge](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L714>)
 
 ```go
 func (p *LocalKeyProvider) Purge(kid string) error
@@ -165,7 +167,7 @@ func (p *LocalKeyProvider) Purge(kid string) error
 Purge removes a pending or retained key and persists the change. Purging the active key or an unknown kid returns an \*ArgumentError. On ErrKeyStoreDurability the removal is not rolled back.
 
 <a name="LocalKeyProvider.Sign"></a>
-### func \(\*LocalKeyProvider\) [Sign](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L572>)
+### func \(\*LocalKeyProvider\) [Sign](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L575>)
 
 ```go
 func (p *LocalKeyProvider) Sign(payload []byte) (*KeySignature, error)
@@ -174,7 +176,7 @@ func (p *LocalKeyProvider) Sign(payload []byte) (*KeySignature, error)
 Sign signs payload with the active key. It returns an error when no key is active. ES256 signatures are deterministic \(RFC 6979\) raw R||S; EdDSA signatures are standard Ed25519.
 
 <a name="LocalKeyProvider.SignKey"></a>
-### func \(\*LocalKeyProvider\) [SignKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L584>)
+### func \(\*LocalKeyProvider\) [SignKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L587>)
 
 ```go
 func (p *LocalKeyProvider) SignKey(kid string, payload []byte) (*KeySignature, error)
@@ -183,7 +185,7 @@ func (p *LocalKeyProvider) SignKey(kid string, payload []byte) (*KeySignature, e
 SignKey signs payload with the named key, which must be in the active or pending state; signing with a retained key returns an \*ArgumentError.
 
 <a name="LocalKeyProvider.Supersede"></a>
-### func \(\*LocalKeyProvider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L698>)
+### func \(\*LocalKeyProvider\) [Supersede](<https://github.com/dnsid-ai/dnsid-go/blob/main/keyprovider.go#L701>)
 
 ```go
 func (p *LocalKeyProvider) Supersede(kid string) error
