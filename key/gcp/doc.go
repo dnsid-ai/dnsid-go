@@ -7,6 +7,13 @@
 // that client. Official client options can select a local gRPC endpoint for
 // credential-free integration tests. The provider never creates local files.
 //
+// CreateOrReuse is a separate explicit initial-provisioning operation: it creates
+// or reuses one caller-named key in an existing key ring and validates immutable
+// version 1. The injected BootstrapClient remains caller-owned. It never creates
+// ancestors, registers agents or recovers rotation state. Applications obtain the
+// key successfully before separately creating or reusing their agent identity.
+// Established identities instead open their persisted authorized version.
+//
 // Importing this package also registers the google-kms configuration factory:
 //
 //	import _ "github.com/dnsid-ai/dnsid-go/key/gcp"

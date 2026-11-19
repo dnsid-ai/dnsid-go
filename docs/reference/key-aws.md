@@ -30,6 +30,8 @@ if err != nil {
 sig, err := provider.Sign(payload)
 ```
 
+For explicit initial key acquisition, [CreateOrReuse](<#CreateOrReuse>) creates or reuses a deterministic alias winner without registration or publication. Ordinary Load/New remain existing\-key operations. Bootstrap does not delete candidates; losing or ambiguous resource disposition is separate.
+
 A Provider signs with a single configured algorithm. Two KMS signing algorithms are supported: ECDSA\_SHA\_256 with an ECC\_NIST\_P256 key \(JOSE ES256\) and ED25519\_SHA\_512 with an ECC\_NIST\_EDWARDS25519 key \(JOSE EdDSA\). Rotation state is held in memory; persist it across restarts with [Provider.State](<#Provider.State>) and restore it through [Config.State](<#Config>).
 
 See https://docs.dnsid.ai for DNSid guides and account setup.
@@ -38,8 +40,13 @@ Copyright 2026 Known Systems AI, Inc.
 
 ## Index
 
+- [type BootstrapClient](<#BootstrapClient>)
+- [type BootstrapConfig](<#BootstrapConfig>)
+- [type BootstrapResult](<#BootstrapResult>)
+  - [func CreateOrReuse\(ctx context.Context, client BootstrapClient, cfg BootstrapConfig\) \(\*BootstrapResult, error\)](<#CreateOrReuse>)
 - [type Client](<#Client>)
 - [type Config](<#Config>)
+- [type CreateAliasInput](<#CreateAliasInput>)
 - [type CreateSigningKeyInput](<#CreateSigningKeyInput>)
 - [type CreateSigningKeyOutput](<#CreateSigningKeyOutput>)
 - [type GetPublicKeyInput](<#GetPublicKeyInput>)
@@ -59,6 +66,7 @@ Copyright 2026 Known Systems AI, Inc.
   - [func \(p \*Provider\) State\(\) State](<#Provider.State>)
   - [func \(p \*Provider\) Supersede\(kid string\) error](<#Provider.Supersede>)
 - [type SDKClient](<#SDKClient>)
+  - [func \(c SDKClient\) CreateAlias\(ctx context.Context, in CreateAliasInput\) error](<#SDKClient.CreateAlias>)
   - [func \(c SDKClient\) CreateSigningKey\(ctx context.Context, in CreateSigningKeyInput\) \(CreateSigningKeyOutput, error\)](<#SDKClient.CreateSigningKey>)
   - [func \(c SDKClient\) GetPublicKey\(ctx context.Context, in GetPublicKeyInput\) \(GetPublicKeyOutput, error\)](<#SDKClient.GetPublicKey>)
   - [func \(c SDKClient\) ScheduleKeyDeletion\(ctx context.Context, in ScheduleKeyDeletionInput\) error](<#SDKClient.ScheduleKeyDeletion>)
@@ -68,6 +76,55 @@ Copyright 2026 Known Systems AI, Inc.
 - [type SignOutput](<#SignOutput>)
 - [type State](<#State>)
 
+
+<a name="BootstrapClient"></a>
+## type [BootstrapClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/bootstrap.go#L26-L29>)
+
+BootstrapClient is the KMS surface consumed by [CreateOrReuse](<#CreateOrReuse>). Ordinary [Client](<#Client>) implementations do not need to support alias creation.
+
+```go
+type BootstrapClient interface {
+    Client
+    CreateAlias(context.Context, CreateAliasInput) error
+}
+```
+
+<a name="BootstrapConfig"></a>
+## type [BootstrapConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/bootstrap.go#L35-L38>)
+
+BootstrapConfig selects an explicit alias in the injected client's account and region. AliasName must start with alias/ and have a nonempty suffix; surrounding whitespace, \#, and reserved alias/aws/ names are rejected. Algorithm defaults to ECDSA\_SHA\_256; ED25519\_SHA\_512 is also supported.
+
+```go
+type BootstrapConfig struct {
+    AliasName string
+    Algorithm types.SigningAlgorithmSpec
+}
+```
+
+<a name="BootstrapResult"></a>
+## type [BootstrapResult](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/bootstrap.go#L42-L45>)
+
+BootstrapResult holds only the validated winner, active with no retained or pending keys. KeyRef is its canonical KMS identifier, never the alias.
+
+```go
+type BootstrapResult struct {
+    KeyRef      string
+    KeyProvider *Provider
+}
+```
+
+<a name="CreateOrReuse"></a>
+### func [CreateOrReuse](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/bootstrap.go#L63>)
+
+```go
+func CreateOrReuse(ctx context.Context, client BootstrapClient, cfg BootstrapConfig) (*BootstrapResult, error)
+```
+
+CreateOrReuse explicitly opens an alias or creates one initial signing key when the initial read returns a native KMS NotFoundException \(possibly wrapped\). It attempts CreateAlias once; native AlreadyExistsException is contention, not failure. After either acquisition outcome it reads the alias exactly once to resolve the winner. Other dependency errors are returned unchanged. There is no polling or same\-invocation recovery from response loss.
+
+The winner's canonical identity, metadata and public key are validated before constructing a standalone provider. Bootstrap never deletes or retargets keys or aliases, including losing or ambiguous candidates; their disposition is deferred to the caller's resource\-management policy. It does not register an agent or publish an identity. [Load](<#Load>), configuration loading and [Provider.GenerateKey](<#Provider.GenerateKey>) remain separate existing\-key and rotation operations.
+
+Bootstrap adds no deadline; supply a context with the required deadline or cancellation. The injected client's transport timeouts and retries also apply.
 
 <a name="Client"></a>
 ## type [Client](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L88-L100>)
@@ -132,6 +189,18 @@ type Config struct {
     // OperationTimeout bounds each KMS call. Defaults to 30 seconds; a
     // negative value disables the timeout.
     OperationTimeout time.Duration
+}
+```
+
+<a name="CreateAliasInput"></a>
+## type [CreateAliasInput](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/bootstrap.go#L19-L22>)
+
+CreateAliasInput names an alias and its immutable target key reference.
+
+```go
+type CreateAliasInput struct {
+    AliasName   string
+    TargetKeyID string
 }
 ```
 
@@ -319,6 +388,15 @@ SDKClient adapts an AWS SDK for Go v2 \*kms.Client to the [Client](<#Client>) in
 ```go
 type SDKClient struct{ Client *kms.Client }
 ```
+
+<a name="SDKClient.CreateAlias"></a>
+### func \(SDKClient\) [CreateAlias](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/bootstrap.go#L149>)
+
+```go
+func (c SDKClient) CreateAlias(ctx context.Context, in CreateAliasInput) error
+```
+
+CreateAlias maps to KMS CreateAlias, never UpdateAlias, and preserves the original AWS SDK error value.
 
 <a name="SDKClient.CreateSigningKey"></a>
 ### func \(SDKClient\) [CreateSigningKey](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/aws/awskms.go#L159>)
