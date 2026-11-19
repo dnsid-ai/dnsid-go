@@ -123,6 +123,27 @@ rotation key. Bootstrap never deletes or retargets resources. Losing and
 ambiguous candidates can remain in KMS; their disposition is deferred and must
 be addressed separately. Persist the winner's reference/state for later loading.
 
+### Bootstrap authorization
+
+- **Reuse:** `GetPublicKey` requires `kms:GetPublicKey` on the KMS key
+  selected by the alias, not on the alias ARN.
+- **Create after absence:** `CreateKey` requires `kms:CreateKey` in an IAM
+  policy (`Resource: "*"`, because the key does not yet exist). `CreateAlias`
+  requires `kms:CreateAlias` on **both** the chosen alias (IAM policy) and
+  the candidate KMS key (key-policy authorization).
+- **Subsequent signing:** the returned provider's `Sign` operation requires
+  `kms:Sign` on the winning KMS key. Bootstrap itself does not sign.
+
+Key operations require effective KMS key-policy authorization, directly or
+through enabled IAM delegation; an IAM allow alone is not sufficient if the
+key policy does not permit it. Scope key permissions to the intended keys and
+alias creation to the chosen alias. See the official
+[KMS permissions reference](https://docs.aws.amazon.com/kms/latest/developerguide/kms-api-permissions-reference.html),
+[CreateKey requirements](https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateKey.html),
+and [CreateAlias requirements](https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateAlias.html).
+This is operation-level authorization guidance, not a complete policy or proof
+that a deployed principal can bootstrap or sign.
+
 ## Explicit Google Cloud operational-key bootstrap
 
 The optional `github.com/dnsid-ai/dnsid-go/key/gcp` module exposes
