@@ -2,6 +2,7 @@ package dnsid
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,6 +99,14 @@ func TestConcurrentCreateOnlyMissingSuccess(t *testing.T) {
 		t.Fatalf("A returned before the file-sync hold: provider present=%t, err=%v", r.provider != nil, r.err)
 	case <-timer.C:
 		t.Fatal("A did not reach its file-sync hold within the bound")
+	}
+
+	// OPERATIONS requires initial temp write/sync/close before no-clobber
+	// publication. While A is held before publication and before B may start,
+	// the intended destination must still be absent. This checks visibility
+	// ordering, not a direct partial-read experiment or fault injection.
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("destination visible or absence check failed before publication: %v", err)
 	}
 
 	// WHEN B uses the public entry point while A remains held, B must finish
