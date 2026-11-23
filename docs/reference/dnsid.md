@@ -183,7 +183,7 @@ func CreateDnsidHTTPClient(transportConfig TransportConfig) (*http.Client, error
 CreateDnsidHTTPClient creates an SDK\-managed HTTP client using DNSid transport settings.
 
 <a name="MissingRequiredField"></a>
-## func [NormalizeFQDN](<https://github.com/dnsid-ai/dnsid-go/blob/main/fqdn.go#L37>)
+## func [NormalizeFQDN](<https://github.com/dnsid-ai/dnsid-go/blob/main/fqdn.go#L39>)
 
 ```go
 func NormalizeFQDN(input string) (string, error)
@@ -199,7 +199,7 @@ NormalizeFQDN returns the canonical form of the given DNS name:
 
 Returns the normalized FQDN or a non\-nil error if input is invalid.
 
-The 246\-octet limit applies only to identity FQDNs. Use normalizeDNSHost for other DNS host names, which the specification permits up to 253 octets.
+NormalizeFQDN is for agent \(identity\) FQDNs. It enforces the 246\-octet agent\-FQDN limit, which is stricter than the 253\-octet limit the specification allows for other DNS names, so it is not suitable for checking general host names such as a gi domain or an endpoint host.
 
 <a name="ParseJWKSet"></a>
 ## func [RegistrantDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L124>)
@@ -495,7 +495,7 @@ func NewVerifier(opts ...IdentityManagerOption) (*IdentityManager, error)
 NewVerifier constructs an IdentityManager for verification without local identity configuration or key material. It is shorthand for NewIdentityManager with a zero Config and nil KeyProvider; pass a Config with nil Identity to NewIdentityManager to set verification or transport settings.
 
 <a name="IdentityManager.AwaitRegistryManagedPublication"></a>
-### func \(\*IdentityManager\) [AwaitRegistryManagedPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1732>)
+### func \(\*IdentityManager\) [AwaitRegistryManagedPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1742>)
 
 ```go
 func (m *IdentityManager) AwaitRegistryManagedPublication(ctx context.Context, client RegistryRegistrationReader, opts *WaitForStatusOptions) (*PublishedRecord, error)
@@ -549,7 +549,7 @@ func (m *IdentityManager) EntityKeyURL() string
 EntityKeyURL returns the HTTPS URL where the draft 01 entity \(ek\) JWKS should be served. It returns an empty string when no entity KeyProvider is configured. Draft 01 defines no default path, so an unset EntityKeyURL returns an empty string.
 
 <a name="IdentityManager.EvictDomain"></a>
-### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1676>)
+### func \(\*IdentityManager\) [EvictDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1685>)
 
 ```go
 func (m *IdentityManager) EvictDomain(domain string)
@@ -612,7 +612,7 @@ func (m *IdentityManager) OperationalKeyURL() string
 OperationalKeyURL returns the HTTPS URL where the operational \(ku\) JWKS should be served. This is the ku= value that CreateTXTRecord would produce. Draft 01 defines no default path, so an unset KeyURL returns an empty string.
 
 <a name="IdentityManager.PublishClientControlledRecord"></a>
-### func \(\*IdentityManager\) [PublishClientControlledRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1605>)
+### func \(\*IdentityManager\) [PublishClientControlledRecord](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L1615>)
 
 ```go
 func (m *IdentityManager) PublishClientControlledRecord(ctx context.Context, client RegistryClientControlledPublisher) (*PublishedRecord, error)
@@ -621,7 +621,7 @@ func (m *IdentityManager) PublishClientControlledRecord(ctx context.Context, cli
 PublishClientControlledRecord signs registry\-prepared canonical TXT content when the client controls the accountable\-entity key.
 
 <a name="IdentityManager.RefreshDomain"></a>
-### func \(\*IdentityManager\) [RefreshDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L996>)
+### func \(\*IdentityManager\) [RefreshDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L998>)
 
 ```go
 func (m *IdentityManager) RefreshDomain(ctx context.Context, domain string, opts VerifyDomainOpts) (*VerifiedDomain, error)
@@ -657,7 +657,7 @@ func (m *IdentityManager) SignLogEvent(event dnsidlog.LogEvent, role LogSignerRo
 SignLogEvent adds one lifecycle signature without writing the event. This supports split signing where the accountable entity and operational key are held by different SDK instances or machines.
 
 <a name="IdentityManager.VerifyDomain"></a>
-### func \(\*IdentityManager\) [VerifyDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L985>)
+### func \(\*IdentityManager\) [VerifyDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L987>)
 
 ```go
 func (m *IdentityManager) VerifyDomain(ctx context.Context, domain string) (*VerifiedDomain, error)
@@ -795,7 +795,7 @@ status: ACTIVE
 </details>
 
 <a name="IdentityManager.VerifyDomainWithOptions"></a>
-### func \(\*IdentityManager\) [VerifyDomainWithOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1017>)
+### func \(\*IdentityManager\) [VerifyDomainWithOptions](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1019>)
 
 ```go
 func (m *IdentityManager) VerifyDomainWithOptions(ctx context.Context, domain string, opts VerifyDomainOpts) (*VerifiedDomain, error)
@@ -804,7 +804,7 @@ func (m *IdentityManager) VerifyDomainWithOptions(ctx context.Context, domain st
 VerifyDomainWithOptions performs core DNSid trust establishment with optional peer inputs, then enforces any configured VerificationConfig.TrustedEntities acceptance policy. Acceptance runs on every successful path, including cache hits; verified protocol evidence is cached before acceptance, and denials are never cached. A denial is reported as a permanent VerificationCodeCounterpartyNotAccepted error.
 
 <a name="IdentityManager.VerifyLocalPublication"></a>
-### func \(\*IdentityManager\) [VerifyLocalPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1004>)
+### func \(\*IdentityManager\) [VerifyLocalPublication](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_manager.go#L1006>)
 
 ```go
 func (m *IdentityManager) VerifyLocalPublication(ctx context.Context) (*VerifiedDomain, error)

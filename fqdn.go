@@ -32,8 +32,10 @@ var fqdnIDNAProfile = idna.New(
 //
 // Returns the normalized FQDN or a non-nil error if input is invalid.
 //
-// The 246-octet limit applies only to identity FQDNs. Use normalizeDNSHost for
-// other DNS host names, which the specification permits up to 253 octets.
+// NormalizeFQDN is for agent (identity) FQDNs. It enforces the 246-octet
+// agent-FQDN limit, which is stricter than the 253-octet limit the
+// specification allows for other DNS names, so it is not suitable for checking
+// general host names such as a gi domain or an endpoint host.
 func NormalizeFQDN(input string) (string, error) {
 	normalized, err := normalizeDNSHost(input)
 	if err != nil {

@@ -262,12 +262,13 @@ func longDNSHost(t *testing.T, n int, suffix string) string {
 	return host
 }
 
-// TestEndpointHostLengthLimit pins that the 246-octet limit applies only to
+// TestFetchHostAllowed_EndpointHostsUseDNSLengthLimit pins that the 246-octet limit applies only to
 // identity FQDNs (so that _dnsid.<fqdn> fits in 253 octets). Endpoint hosts
 // such as status, ek and redirect targets are ordinary DNS names and may be up
 // to 253 octets; canonical comparison must not shrink that.
-func TestEndpointHostLengthLimit(t *testing.T) {
-	// 63.63.63.55.3 = 251 octets: the status host from the review feedback.
+func TestFetchHostAllowed_EndpointHostsUseDNSLengthLimit(t *testing.T) {
+	// A valid 251-octet status host (labels 63.63.63.55.3): longer than the
+	// agent-FQDN limit, within the DNS limit.
 	statusHost := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." +
 		strings.Repeat("c", 63) + "." + strings.Repeat("d", 55) + ".com"
 	if len(statusHost) != 251 {
@@ -334,6 +335,99 @@ func TestEndpointHostLengthLimit(t *testing.T) {
 		record.GovernanceID = gi
 		if err := record.Validate("agent.identity.example"); err != nil {
 			t.Fatalf("Validate with 250-octet gi: %v", err)
+		}
+	})
+}
+
+// TestEnforceRecordPolicy_LongDelegatedGIRequiresGovernanceRelationship pins
+// that a gi longer than the 246-octet agent-FQDN limit still goes through the
+// delegated-governance check. Such a gi can never be at or above the agent
+// FQDN, so the record is always delegated; normalizing gi under the identity
+// limit and skipping the check on error would let it bypass the ISSUANCE
+// binding. A gi with no canonical form at all must fail closed.
+func TestEnforceRecordPolicy_LongDelegatedGIRequiresGovernanceRelationship(t *testing.T) {
+	const domain = "agent.identity.example"
+	ctx := t.Context()
+
+	t.Run("long gi is checked", func(t *testing.T) {
+		gi := longDNSHost(t, 250, "example")
+		reader := &testLogReader{govErr: errors.New("no ISSUANCE binding")}
+		err := (&IdentityManager{}).enforceRecordPolicy(ctx, reader, &TXTRecord{GovernanceID: gi}, domain, "", "", nil)
+		if err == nil {
+			t.Fatal("enforceRecordPolicy accepted a delegated gi without a governance relationship")
+		}
+		if reader.govID != gi || reader.govDomain != domain {
+			t.Fatalf("VerifyGovernanceRelationship called with (%q, %q), want (%q, %q)", reader.govDomain, reader.govID, domain, gi)
+		}
+	})
+
+	t.Run("gi without canonical form fails closed", func(t *testing.T) {
+		reader := &testLogReader{}
+		err := (&IdentityManager{}).enforceRecordPolicy(ctx, reader, &TXTRecord{GovernanceID: longDNSHost(t, 254, "example")}, domain, "", "", nil)
+		var ve *VerificationError
+		if !errors.As(err, &ve) || ve.Code() != VerificationCodeRecordInvalid {
+			t.Fatalf("error = %v, want VerificationCodeRecordInvalid", err)
+		}
+		if reader.govID != "" {
+			t.Fatal("VerifyGovernanceRelationship called for an invalid gi")
+		}
+	})
+}
+
+// TestGovernanceID_UsesDNSLengthLimitEverywhere pins that every place a gi or
+// ek host is accepted (publication config, TrustedEntities, registration
+// responses) uses the same 253-octet DNS limit as TXTRecord.Validate, so the
+// SDK can publish, and a verifier can allowlist, every record it validates.
+func TestGovernanceID_UsesDNSLengthLimitEverywhere(t *testing.T) {
+	gi := longDNSHost(t, 250, "example")
+	ek := "https://" + gi + "/ek.json"
+	tooLong := longDNSHost(t, 254, "example")
+
+	t.Run("publication config", func(t *testing.T) {
+		cfg := IdentityConfig{
+			Domain:       "agent.identity.example",
+			GovernanceID: gi,
+			LogRef:       "testlog:agent",
+			StatusURL:    "https://agent.identity.example/status",
+			KeyURL:       "https://agent.identity.example/ku.json",
+			EntityKeyURL: ek,
+		}
+		if err := validatePublicationConfig(cfg, GenerateES256KeyProvider(), GenerateES256KeyProvider()); err != nil {
+			t.Fatalf("validatePublicationConfig with 250-octet gi: %v", err)
+		}
+		cfg.GovernanceID = tooLong
+		if err := validatePublicationConfig(cfg, GenerateES256KeyProvider(), GenerateES256KeyProvider()); err == nil {
+			t.Fatal("validatePublicationConfig accepted a 254-octet gi")
+		}
+	})
+
+	t.Run("trusted entities", func(t *testing.T) {
+		if err := (VerificationConfig{TrustedEntities: []TrustedEntity{{GovernanceID: gi}}}).validate(); err != nil {
+			t.Fatalf("TrustedEntity with 250-octet gi: %v", err)
+		}
+		if got := (VerificationConfig{TrustedEntities: []TrustedEntity{{GovernanceID: strings.ToUpper(gi)}}}).snapshot().TrustedEntities[0].GovernanceID; got != gi {
+			t.Fatalf("snapshot gi = %q, want %q", got, gi)
+		}
+		if err := (VerificationConfig{TrustedEntities: []TrustedEntity{{GovernanceID: tooLong}}}).validate(); err == nil {
+			t.Fatal("TrustedEntity accepted a 254-octet gi")
+		}
+	})
+
+	t.Run("registration response", func(t *testing.T) {
+		resp := &CreateAgentResponse{
+			ID:     "agent-1",
+			Domain: "agent.identity.example",
+			PublicationConfig: PublicationConfig{
+				PublishProfile: DefaultPublishProfile,
+				GovernanceID:   gi,
+				KeyURL:         "https://agent.identity.example/ku.json",
+				EntityKeyURL:   ek,
+				LogRef:         "testlog:agent",
+				StatusURL:      "https://agent.identity.example/status",
+			},
+		}
+		if err := validateRegistrationCreation(&CreateAgentRequest{}, resp); err != nil {
+			t.Fatalf("validateRegistrationCreation with 250-octet gi: %v", err)
 		}
 	})
 }

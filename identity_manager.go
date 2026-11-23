@@ -181,7 +181,7 @@ func (c VerificationConfig) validate() error {
 	}
 	seen := make(map[string]bool, len(c.TrustedEntities))
 	for _, e := range c.TrustedEntities {
-		gi, err := NormalizeFQDN(e.GovernanceID)
+		gi, err := normalizeDNSHost(e.GovernanceID)
 		if err != nil {
 			return NewArgumentError(fmt.Sprintf("dnsid: invalid TrustedEntity.GovernanceID %q", e.GovernanceID), err)
 		}
@@ -218,7 +218,7 @@ func (c VerificationConfig) snapshot() VerificationConfig {
 	}
 	entities := make([]TrustedEntity, 0, len(c.TrustedEntities))
 	for _, e := range c.TrustedEntities {
-		gi, _ := NormalizeFQDN(e.GovernanceID) // validated already
+		gi, _ := normalizeDNSHost(e.GovernanceID) // validated already
 		var pins []string
 		if e.EntityKeyThumbprints != nil {
 			pins = append([]string(nil), e.EntityKeyThumbprints...)
@@ -900,7 +900,9 @@ func validatePublicationConfig(cfg IdentityConfig, operationalKeys, entityKeys K
 	if !isDomainName(cfg.GovernanceID) {
 		return NewArgumentError(fmt.Sprintf("dnsid: draft 01 requires IdentityConfig.GovernanceID to be a domain name, got %q", cfg.GovernanceID), nil)
 	}
-	giDomain, err := NormalizeFQDN(cfg.GovernanceID)
+	// gi and the ek host are ordinary DNS names, not agent FQDNs: they take the
+	// 253-octet DNS limit, matching TXTRecord.Validate.
+	giDomain, err := normalizeDNSHost(cfg.GovernanceID)
 	if err != nil {
 		return NewArgumentError("dnsid: invalid IdentityConfig.GovernanceID", err)
 	}
@@ -911,7 +913,7 @@ func validatePublicationConfig(cfg IdentityConfig, operationalKeys, entityKeys K
 	if err != nil {
 		return NewArgumentError("dnsid: invalid IdentityConfig.EntityKeyURL", err)
 	}
-	ekHost, err := NormalizeFQDN(ekURL.Hostname())
+	ekHost, err := normalizeDNSHost(ekURL.Hostname())
 	if err != nil || !isDomainOrSubdomain(ekHost, giDomain) {
 		return NewArgumentError(fmt.Sprintf("dnsid: IdentityConfig.EntityKeyURL host %q must be at or under GovernanceID domain %q", ekURL.Hostname(), giDomain), err)
 	}
@@ -1440,8 +1442,15 @@ func (m *IdentityManager) enforceRecordPolicy(ctx context.Context, reader dnsidl
 	}
 	govID := rec.GovernanceID
 	// A delegated governance domain requires an ISSUANCE evidence binding.
-	giDomain, _ := NormalizeFQDN(govID)
-	if giDomain != "" && !isDomainOrSubdomain(domain, giDomain) {
+	// gi is a registrant domain, not an agent FQDN, so it is normalized under
+	// the 253-octet DNS limit, the same rule TXTRecord.Validate applies. A gi
+	// with no canonical form fails closed: skipping the relationship check on
+	// a normalization error would let such a record bypass it.
+	giDomain, err := normalizeDNSHost(govID)
+	if err != nil {
+		return NewVerificationError(VerificationCodeRecordInvalid, false, fmt.Sprintf("dnsid: invalid gi %q", govID), err)
+	}
+	if !isDomainOrSubdomain(domain, giDomain) {
 		verifier, ok := reader.(interface {
 			VerifyGovernanceRelationship(context.Context, string, string) error
 		})
