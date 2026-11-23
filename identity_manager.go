@@ -260,11 +260,13 @@ func (c TransportConfig) IsZero() bool {
 }
 
 // validate checks that every PrivateAddressHosts entry is a bare hostname or a
-// leading-dot suffix.
+// leading-dot suffix. Entries name endpoint hosts, not agent FQDNs, so they take
+// the 253-octet DNS limit (NormalizeDNSName), matching the fetch host checks.
+// IP literals are rejected.
 func (c TransportConfig) validate() error {
 	for _, entry := range c.PrivateAddressHosts {
 		name := strings.TrimPrefix(entry, ".")
-		if _, err := NormalizeFQDN(name); err != nil || net.ParseIP(strings.TrimSuffix(name, ".")) != nil {
+		if _, err := NormalizeDNSName(name); err != nil || net.ParseIP(strings.TrimSuffix(name, ".")) != nil {
 			return NewArgumentError(fmt.Sprintf("dnsid: Config.Transport.PrivateAddressHosts entry %q must be a hostname or leading-dot suffix", entry), err)
 		}
 	}
