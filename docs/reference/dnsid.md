@@ -183,7 +183,7 @@ func CreateDnsidHTTPClient(transportConfig TransportConfig) (*http.Client, error
 CreateDnsidHTTPClient creates an SDK\-managed HTTP client using DNSid transport settings.
 
 <a name="MissingRequiredField"></a>
-## func [NormalizeFQDN](<https://github.com/dnsid-ai/dnsid-go/blob/main/fqdn.go#L29>)
+## func [NormalizeFQDN](<https://github.com/dnsid-ai/dnsid-go/blob/main/fqdn.go#L37>)
 
 ```go
 func NormalizeFQDN(input string) (string, error)
@@ -198,6 +198,8 @@ NormalizeFQDN returns the canonical form of the given DNS name:
 5. Validate total length \<=246 octets \(DNSid agent\-FQDN limit per spec\).
 
 Returns the normalized FQDN or a non\-nil error if input is invalid.
+
+The 246\-octet limit applies only to identity FQDNs. Use normalizeDNSHost for other DNS host names, which the specification permits up to 253 octets.
 
 <a name="ParseJWKSet"></a>
 ## func [RegistrantDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L124>)
