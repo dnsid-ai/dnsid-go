@@ -63,6 +63,11 @@ func mapIDNADot(r rune) rune {
 	}
 }
 
+// isDomainOrSubdomain reports whether name equals domain or lies below it on a
+// DNS-label boundary. Both arguments must already be in NormalizeFQDN form: the
+// comparison is byte-exact and does no case folding or dot trimming of its own,
+// so a caller holding a URL host must normalize it first (see
+// TXTRecord.Validate and fetchHostAllowed).
 func isDomainOrSubdomain(name, domain string) bool {
 	return name == domain || strings.HasSuffix(name, "."+domain)
 }
