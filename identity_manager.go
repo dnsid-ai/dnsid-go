@@ -181,7 +181,7 @@ func (c VerificationConfig) validate() error {
 	}
 	seen := make(map[string]bool, len(c.TrustedEntities))
 	for _, e := range c.TrustedEntities {
-		gi, err := normalizeDNSHost(e.GovernanceID)
+		gi, err := NormalizeDNSName(e.GovernanceID)
 		if err != nil {
 			return NewArgumentError(fmt.Sprintf("dnsid: invalid TrustedEntity.GovernanceID %q", e.GovernanceID), err)
 		}
@@ -218,7 +218,7 @@ func (c VerificationConfig) snapshot() VerificationConfig {
 	}
 	entities := make([]TrustedEntity, 0, len(c.TrustedEntities))
 	for _, e := range c.TrustedEntities {
-		gi, _ := normalizeDNSHost(e.GovernanceID) // validated already
+		gi, _ := NormalizeDNSName(e.GovernanceID) // validated already
 		var pins []string
 		if e.EntityKeyThumbprints != nil {
 			pins = append([]string(nil), e.EntityKeyThumbprints...)
@@ -902,7 +902,7 @@ func validatePublicationConfig(cfg IdentityConfig, operationalKeys, entityKeys K
 	}
 	// gi and the ek host are ordinary DNS names, not agent FQDNs: they take the
 	// 253-octet DNS limit, matching TXTRecord.Validate.
-	giDomain, err := normalizeDNSHost(cfg.GovernanceID)
+	giDomain, err := NormalizeDNSName(cfg.GovernanceID)
 	if err != nil {
 		return NewArgumentError("dnsid: invalid IdentityConfig.GovernanceID", err)
 	}
@@ -913,7 +913,7 @@ func validatePublicationConfig(cfg IdentityConfig, operationalKeys, entityKeys K
 	if err != nil {
 		return NewArgumentError("dnsid: invalid IdentityConfig.EntityKeyURL", err)
 	}
-	ekHost, err := normalizeDNSHost(ekURL.Hostname())
+	ekHost, err := NormalizeDNSName(ekURL.Hostname())
 	if err != nil || !isDomainOrSubdomain(ekHost, giDomain) {
 		return NewArgumentError(fmt.Sprintf("dnsid: IdentityConfig.EntityKeyURL host %q must be at or under GovernanceID domain %q", ekURL.Hostname(), giDomain), err)
 	}
@@ -1446,7 +1446,7 @@ func (m *IdentityManager) enforceRecordPolicy(ctx context.Context, reader dnsidl
 	// the 253-octet DNS limit, the same rule TXTRecord.Validate applies. A gi
 	// with no canonical form fails closed: skipping the relationship check on
 	// a normalization error would let such a record bypass it.
-	giDomain, err := normalizeDNSHost(govID)
+	giDomain, err := NormalizeDNSName(govID)
 	if err != nil {
 		return NewVerificationError(VerificationCodeRecordInvalid, false, fmt.Sprintf("dnsid: invalid gi %q", govID), err)
 	}
@@ -1728,7 +1728,7 @@ func validateManagerFetchURL(raw, allowedHost string, domainBoundary bool) error
 // the allowed host: equal to it or, when domainBoundary is set, at or under it
 // on a DNS-label boundary.
 //
-// Both names are compared in the canonical form produced by normalizeDNSHost
+// Both names are compared in the canonical form produced by NormalizeDNSName
 // (UTS 46 mapping, A-label encoding, ASCII lowercase, no trailing dot): the
 // NormalizeFQDN form without the 246-octet identity FQDN limit, since an
 // endpoint host such as a status or ek host is an ordinary DNS name and may be
@@ -1759,11 +1759,11 @@ func fetchHostAllowed(host, allowed string, domainBoundary bool) bool {
 	if strings.HasSuffix(host, ".") != strings.HasSuffix(allowed, ".") {
 		return false
 	}
-	canonicalHost, err := normalizeDNSHost(host)
+	canonicalHost, err := NormalizeDNSName(host)
 	if err != nil {
 		return false
 	}
-	canonicalAllowed, err := normalizeDNSHost(allowed)
+	canonicalAllowed, err := NormalizeDNSName(allowed)
 	if err != nil {
 		return false
 	}

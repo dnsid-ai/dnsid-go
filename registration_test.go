@@ -195,3 +195,46 @@ func TestRegistration_UnknownOutcome(t *testing.T) {
 		t.Fatalf("lost unknown outcome: %v", err)
 	}
 }
+
+// TestCreateAgentWithIdempotencyKey_GovernanceDomainUsesDNSLengthLimit pins the
+// selector split: GovernanceDomain is a gi and takes the 253-octet DNS limit,
+// while RootDomain names the agent's parent and keeps the 246-octet agent-FQDN
+// limit.
+func TestCreateAgentWithIdempotencyKey_GovernanceDomainUsesDNSLengthLimit(t *testing.T) {
+	gi := longDNSHost(t, 250, "example")
+	var calls int
+	var sent map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+			t.Error(err)
+		}
+		cfg := registrationTestConfig()
+		cfg.GovernanceID = gi
+		cfg.EntityKeyURL = "https://" + gi + "/keys"
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(CreateAgentResponse{ID: "id-1", Domain: "agent.example.test", PublicationConfig: cfg})
+	}))
+	defer srv.Close()
+	client, _ := NewRegistryClientWithOptions(srv.URL)
+	key := map[string]string{"kty": "OKP"}
+
+	if _, err := client.CreateAgentWithIdempotencyKey(t.Context(), &CreateAgentRequest{GovernanceDomain: strings.ToUpper(gi), PublicKey: key}, "create-1"); err != nil {
+		t.Fatalf("250-octet GovernanceDomain: %v", err)
+	}
+	if calls != 1 || sent["governance_domain"] != gi {
+		t.Fatalf("governance_domain sent = %v (calls=%d), want normalized %q", sent["governance_domain"], calls, gi)
+	}
+
+	for name, req := range map[string]*CreateAgentRequest{
+		"254-octet GovernanceDomain": {GovernanceDomain: longDNSHost(t, 254, "example"), PublicKey: key},
+		"247-octet RootDomain":       {RootDomain: longDNSHost(t, 247, "example"), PublicKey: key},
+	} {
+		if _, err := client.CreateAgentWithIdempotencyKey(t.Context(), req, "create-2"); err == nil {
+			t.Errorf("%s accepted, want error", name)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("invalid selectors reached the registry: calls = %d", calls)
+	}
+}

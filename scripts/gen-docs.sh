@@ -38,6 +38,7 @@ Constants dnsid
 Variables dnsid
 CreateDnsidHTTPClient dnsid
 NewVerifier dnsid
+NormalizeDNSName dnsid
 NormalizeFQDN dnsid
 RegistrantDomain dnsid
 SafeDialerTransport dnsid

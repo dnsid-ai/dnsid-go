@@ -222,7 +222,7 @@ func (d *RecoveryDocument) validate() error {
 	if d.RegistryURL == "" || d.OrganizationID == "" || d.GovernanceID == "" {
 		return fmt.Errorf("foundry: missing recovery bindings")
 	}
-	gi, err := dnsid.NormalizeFQDN(d.GovernanceID)
+	gi, err := dnsid.NormalizeDNSName(d.GovernanceID)
 	if err != nil || gi != d.GovernanceID {
 		return fmt.Errorf("foundry: invalid recovery governance domain")
 	}

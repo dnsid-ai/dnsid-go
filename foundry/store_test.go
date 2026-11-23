@@ -269,3 +269,45 @@ func TestRecoveryDocumentJCSOrderingAndUnicode(t *testing.T) {
 		t.Fatalf("non-JCS JSON: %s", data)
 	}
 }
+
+// TestParseRecoveryDocument_LongGovernanceID pins that a recovery document's gi
+// uses the 253-octet DNS limit, matching the root package, rather than the
+// 246-octet agent-FQDN limit.
+func TestParseRecoveryDocument_LongGovernanceID(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.client.Create(context.Background(), "state"); err != nil {
+		t.Fatal(err)
+	}
+	good, err := f.document("state").Export()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(good, &obj); err != nil {
+		t.Fatal(err)
+	}
+	withGI := func(gi string) []byte {
+		obj["governanceId"] = gi
+		data, err := json.Marshal(obj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	labels := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "."
+	gi250 := labels + strings.Repeat("d", 50) + ".example"
+	gi254 := labels + strings.Repeat("d", 54) + ".example"
+	if len(gi250) != 250 || len(gi254) != 254 {
+		t.Fatalf("gi lengths = %d, %d; want 250, 254", len(gi250), len(gi254))
+	}
+	doc, err := ParseRecoveryDocument(withGI(gi250))
+	if err != nil {
+		t.Fatalf("250-octet gi: %v", err)
+	}
+	if doc.GovernanceID != gi250 {
+		t.Fatalf("GovernanceID = %q, want %q", doc.GovernanceID, gi250)
+	}
+	if _, err := ParseRecoveryDocument(withGI(gi254)); err == nil {
+		t.Fatal("254-octet gi accepted")
+	}
+}

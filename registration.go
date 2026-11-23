@@ -31,7 +31,7 @@ func validateRegistrationCreation(req *CreateAgentRequest, response *CreateAgent
 	if p.PublishProfile != DefaultPublishProfile || p.KeyURL == "" || p.EntityKeyURL == "" {
 		return NewValidationError("dnsid: missing or unsupported publication configuration", nil)
 	}
-	gi, err := normalizeDNSHost(p.GovernanceID)
+	gi, err := NormalizeDNSName(p.GovernanceID)
 	if err != nil {
 		return err
 	}

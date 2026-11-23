@@ -34,10 +34,10 @@ var fqdnIDNAProfile = idna.New(
 //
 // NormalizeFQDN is for agent (identity) FQDNs. It enforces the 246-octet
 // agent-FQDN limit, which is stricter than the 253-octet limit the
-// specification allows for other DNS names, so it is not suitable for checking
-// general host names such as a gi domain or an endpoint host.
+// specification allows for other DNS names. Use NormalizeDNSName for other
+// names, such as a gi domain or an endpoint host.
 func NormalizeFQDN(input string) (string, error) {
-	normalized, err := normalizeDNSHost(input)
+	normalized, err := NormalizeDNSName(input)
 	if err != nil {
 		return "", err
 	}
@@ -47,13 +47,15 @@ func NormalizeFQDN(input string) (string, error) {
 	return normalized, nil
 }
 
-// normalizeDNSHost returns the canonical form of a general DNS host name using
-// the same steps as NormalizeFQDN (dot mapping, single trailing dot stripped,
-// UTS 46 mapping, A-label encoding, ASCII lowercase, label-length checks), but
-// with the 253-octet DNS limit instead of the 246-octet identity FQDN limit.
-// It is the form used to compare endpoint hosts (ek, status, redirect targets)
-// that are not themselves identity FQDNs.
-func normalizeDNSHost(input string) (string, error) {
+// NormalizeDNSName returns the canonical form of a DNS name that is not an
+// agent FQDN, such as a gi (governance) domain or the host of an ek, status or
+// redirect URL. It applies the same steps as NormalizeFQDN (dot mapping, single
+// trailing dot stripped, UTS 46 mapping, A-label encoding, ASCII lowercase,
+// label-length checks) but enforces the 253-octet DNS presentation limit
+// instead of the 246-octet agent-FQDN limit.
+//
+// Returns the normalized name or a non-nil error if input is invalid.
+func NormalizeDNSName(input string) (string, error) {
 	if input == "" {
 		return "", invalidFQDNError(input, errors.New("empty input"))
 	}
@@ -92,7 +94,7 @@ func mapIDNADot(r rune) rune {
 
 // isDomainOrSubdomain reports whether name equals domain or lies below it on a
 // DNS-label boundary. Both arguments must already be in canonical form
-// (NormalizeFQDN or normalizeDNSHost): the
+// (NormalizeFQDN or NormalizeDNSName): the
 // comparison is byte-exact and does no case folding or dot trimming of its own,
 // so a caller holding a URL host must normalize it first (see
 // TXTRecord.Validate and fetchHostAllowed).

@@ -738,7 +738,7 @@ func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, 
 	}{
 		{&normalized.Domain, NormalizeFQDN},
 		{&normalized.RootDomain, NormalizeFQDN},
-		{&normalized.GovernanceDomain, normalizeDNSHost},
+		{&normalized.GovernanceDomain, NormalizeDNSName},
 	} {
 		if *selector.value != "" {
 			value, err := selector.normalize(*selector.value)

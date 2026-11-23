@@ -11,7 +11,7 @@ import (
 // to DNS names: ku= must equal the identity FQDN, ek= must sit at or under the
 // gi= governance domain, and a same-host redirect must stay on the allowed
 // host. Every check compares hosts in canonical form (NormalizeFQDN for the
-// identity FQDN, normalizeDNSHost for other hosts), the exact name the
+// identity FQDN, NormalizeDNSName for other hosts), the exact name the
 // transport resolves and presents as TLS SNI.
 //
 // U+0130 (LATIN CAPITAL LETTER I WITH DOT ABOVE) is the probe used throughout.
@@ -289,13 +289,13 @@ func TestFetchHostAllowed_EndpointHostsUseDNSLengthLimit(t *testing.T) {
 		}
 	})
 
-	t.Run("normalizeDNSHost uses the DNS limit", func(t *testing.T) {
+	t.Run("NormalizeDNSName uses the DNS limit", func(t *testing.T) {
 		for _, h := range []string{statusHost, host253, host253 + "."} {
-			if _, err := normalizeDNSHost(h); err != nil {
-				t.Errorf("normalizeDNSHost(%d octets): %v", len(h), err)
+			if _, err := NormalizeDNSName(h); err != nil {
+				t.Errorf("NormalizeDNSName(%d octets): %v", len(h), err)
 			}
 		}
-		if _, err := normalizeDNSHost(host254); err == nil {
+		if _, err := NormalizeDNSName(host254); err == nil {
 			t.Error("254-octet host accepted, want error")
 		}
 	})
@@ -374,11 +374,14 @@ func TestEnforceRecordPolicy_LongDelegatedGIRequiresGovernanceRelationship(t *te
 	})
 }
 
-// TestGovernanceID_UsesDNSLengthLimitEverywhere pins that every place a gi or
-// ek host is accepted (publication config, TrustedEntities, registration
-// responses) uses the same 253-octet DNS limit as TXTRecord.Validate, so the
-// SDK can publish, and a verifier can allowlist, every record it validates.
-func TestGovernanceID_UsesDNSLengthLimitEverywhere(t *testing.T) {
+// TestGovernanceID_UsesDNSLengthLimitInRootPackage pins that the root
+// package's gi and ek host checks (publication config, TrustedEntities,
+// registration responses) use the same 253-octet DNS limit as
+// TXTRecord.Validate, so the SDK can publish, and a verifier can allowlist,
+// every record it validates. The registry GovernanceDomain selector is covered
+// in registration_test.go; managed issuance and Foundry, which also use
+// NormalizeDNSName for gi, are covered in their own packages.
+func TestGovernanceID_UsesDNSLengthLimitInRootPackage(t *testing.T) {
 	gi := longDNSHost(t, 250, "example")
 	ek := "https://" + gi + "/ek.json"
 	tooLong := longDNSHost(t, 254, "example")

@@ -17,7 +17,7 @@ func MissingRequiredField(rec *TXTRecord) string
 
 MissingRequiredField returns the first missing required non\-signature DNSid TXT tag name, or "" if the unsigned record has all required signing inputs.
 
-<a name="NormalizeFQDN"></a>
+<a name="NormalizeDNSName"></a>
 ## type [AgentError](<https://github.com/dnsid-ai/dnsid-go/blob/main/registry.go#L237-L242>)
 
 AgentError matches the OpenAPI AgentError schema.

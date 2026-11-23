@@ -140,7 +140,7 @@ func BeginManagedIssuance(ctx context.Context, opts ManagedIssuanceOptions) (*Ma
 	if err != nil {
 		return nil, err
 	}
-	governanceID, err := dnsid.NormalizeFQDN(opts.GovernanceID)
+	governanceID, err := dnsid.NormalizeDNSName(opts.GovernanceID)
 	if err != nil {
 		return nil, dnsid.NewArgumentError("dnsid: managed issuance governance ID is invalid", err)
 	}

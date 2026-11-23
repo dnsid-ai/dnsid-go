@@ -183,6 +183,17 @@ func CreateDnsidHTTPClient(transportConfig TransportConfig) (*http.Client, error
 CreateDnsidHTTPClient creates an SDK\-managed HTTP client using DNSid transport settings.
 
 <a name="MissingRequiredField"></a>
+## func [NormalizeDNSName](<https://github.com/dnsid-ai/dnsid-go/blob/main/fqdn.go#L58>)
+
+```go
+func NormalizeDNSName(input string) (string, error)
+```
+
+NormalizeDNSName returns the canonical form of a DNS name that is not an agent FQDN, such as a gi \(governance\) domain or the host of an ek, status or redirect URL. It applies the same steps as NormalizeFQDN \(dot mapping, single trailing dot stripped, UTS 46 mapping, A\-label encoding, ASCII lowercase, label\-length checks\) but enforces the 253\-octet DNS presentation limit instead of the 246\-octet agent\-FQDN limit.
+
+Returns the normalized name or a non\-nil error if input is invalid.
+
+<a name="NormalizeFQDN"></a>
 ## func [NormalizeFQDN](<https://github.com/dnsid-ai/dnsid-go/blob/main/fqdn.go#L39>)
 
 ```go
@@ -199,7 +210,7 @@ NormalizeFQDN returns the canonical form of the given DNS name:
 
 Returns the normalized FQDN or a non\-nil error if input is invalid.
 
-NormalizeFQDN is for agent \(identity\) FQDNs. It enforces the 246\-octet agent\-FQDN limit, which is stricter than the 253\-octet limit the specification allows for other DNS names, so it is not suitable for checking general host names such as a gi domain or an endpoint host.
+NormalizeFQDN is for agent \(identity\) FQDNs. It enforces the 246\-octet agent\-FQDN limit, which is stricter than the 253\-octet limit the specification allows for other DNS names. Use NormalizeDNSName for other names, such as a gi domain or an endpoint host.
 
 <a name="ParseJWKSet"></a>
 ## func [RegistrantDomain](<https://github.com/dnsid-ai/dnsid-go/blob/main/identity_record.go#L124>)
