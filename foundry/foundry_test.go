@@ -633,7 +633,11 @@ func TestCreate_LongGovernanceIDUsesDNSLengthLimit(t *testing.T) {
 
 	t.Run("254 octets refused", func(t *testing.T) {
 		f := newFixture(t)
-		f.registry.onboarding.GovernanceDomain = labels + strings.Repeat("d", 54) + ".example"
+		// governance_domain and gi.domain must agree, so that only the length
+		// limit (not the gi binding check) can reject the onboarding response.
+		gi254 := labels + strings.Repeat("d", 54) + ".example"
+		f.registry.onboarding.GovernanceDomain = gi254
+		f.registry.onboarding.GI.Domain = gi254
 		_, err := f.client.Create(ctx, "long")
 		requireKind(t, err, Integrity)
 		if f.registry.createCalls != 0 {
