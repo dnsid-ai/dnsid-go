@@ -38,6 +38,7 @@ const testDomain = "agent.example"
 type fixture struct {
 	mu          sync.Mutex
 	t           *testing.T
+	gi          string // governance domain used by the registry fakes and the issuance event
 	operational dnsid.KeyProvider
 	entity      dnsid.KeyProvider
 	client      *Client
@@ -54,7 +55,15 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{t: t, operational: dnsid.GenerateEd25519KeyProvider(), entity: dnsid.GenerateES256KeyProvider(), responses: map[string]json.RawMessage{}}
+	return newFixtureWithGI(t, "governance.example")
+}
+
+// newFixtureWithGI builds a fixture whose registry onboarding, publication
+// config, published record and ISSUANCE event all use gi as the governance
+// domain, with the entity key endpoint at https://<gi>/ek.
+func newFixtureWithGI(t *testing.T, gi string) *fixture {
+	t.Helper()
+	f := &fixture{t: t, gi: gi, operational: dnsid.GenerateEd25519KeyProvider(), entity: dnsid.GenerateES256KeyProvider(), responses: map[string]json.RawMessage{}}
 	store, err := NewFileFoundryStore(filepath.Join(t.TempDir(), "state"))
 	if err != nil {
 		t.Fatal(err)
@@ -67,22 +76,43 @@ func newFixture(t *testing.T) *fixture {
 	f.log = &fakeLog{NoopLogReader: dnsidlog.NoopLogReader{Method: "fake"}, f: f}
 	f.registry = &fakeRegistry{f: f, logClient: logClient, status: "VERIFIED", responseDomain: testDomain}
 	var onboarding dnsid.OrganizationOnboardingResponse
-	if err := json.Unmarshal([]byte(`{"org_id":"`+testOrg+`","governance_domain":"Governance.Example.","gi":{"domain":"GOVERNANCE.EXAMPLE","state":"verified","gate_authorized":true},"ek":{"status":"verified"}}`), &onboarding); err != nil {
+	// The registry returns gi in non-canonical form (mixed case, trailing dot)
+	// so Foundry's normalization is exercised.
+	if err := json.Unmarshal([]byte(`{"org_id":"`+testOrg+`","governance_domain":"`+mixedCase(gi)+`.","gi":{"domain":"`+strings.ToUpper(gi)+`","state":"verified","gate_authorized":true},"ek":{"status":"verified"}}`), &onboarding); err != nil {
 		t.Fatal(err)
 	}
 	f.registry.onboarding = &onboarding
-	f.publish(f.operational, "governance.example", testLR, dnsid.AgentStateActive)
+	f.publish(f.operational, gi, testLR, dnsid.AgentStateActive)
 	f.client = f.newClient(f.operational, store)
 	return f
 }
 
+// mixedCase capitalizes the first letter of each label, matching the
+// non-canonical "Governance.Example" form the registry fake has always returned.
+func mixedCase(name string) string {
+	labels := strings.Split(name, ".")
+	for i, l := range labels {
+		if l != "" {
+			labels[i] = strings.ToUpper(l[:1]) + l[1:]
+		}
+	}
+	return strings.Join(labels, ".")
+}
+
 func (f *fixture) newClient(provider dnsid.KeyProvider, store FoundryStore) *Client {
+	f.t.Helper()
+	return f.newClientWithFoundryConfig(provider, store, config.FoundryConfig{})
+}
+
+// newClientWithFoundryConfig is newClient with Foundry account expectations,
+// which New validates.
+func (f *fixture) newClientWithFoundryConfig(provider dnsid.KeyProvider, store FoundryStore, foundryCfg config.FoundryConfig) *Client {
 	f.t.Helper()
 	logs := dnsidlog.NewLogRegistry()
 	if err := logs.Register("c2sp-tlog", func(string) dnsidlog.LogReader { return f.log }); err != nil {
 		f.t.Fatal(err)
 	}
-	client, err := New(config.Loaded{Registry: config.Registry{RegistryURL: "https://registry.example"}, Dnsid: dnsid.Config{Verification: dnsid.VerificationConfig{TrustedEntities: []dnsid.TrustedEntity{}}}}, Dependencies{Credential: "not-for-public-hosts", KeyProvider: provider, RegistryClient: f.registry, Store: store, LogRegistry: logs, DNSResolver: fakeDNS{f}, HTTPSFetcher: fakeHTTPS{f}})
+	client, err := New(config.Loaded{Foundry: foundryCfg, Registry: config.Registry{RegistryURL: "https://registry.example"}, Dnsid: dnsid.Config{Verification: dnsid.VerificationConfig{TrustedEntities: []dnsid.TrustedEntity{}}}}, Dependencies{Credential: "not-for-public-hosts", KeyProvider: provider, RegistryClient: f.registry, Store: store, LogRegistry: logs, DNSResolver: fakeDNS{f}, HTTPSFetcher: fakeHTTPS{f}})
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -91,7 +121,7 @@ func (f *fixture) newClient(provider dnsid.KeyProvider, store FoundryStore) *Cli
 
 func (f *fixture) publish(provider dnsid.KeyProvider, gi, lr string, state dnsid.AgentState) {
 	f.t.Helper()
-	manager, err := dnsid.NewIdentityManager(dnsid.Config{Identity: &dnsid.IdentityConfig{Domain: testDomain, GovernanceID: gi, LogRef: lr, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}, provider, dnsid.WithEntityKeyProvider(f.entity))
+	manager, err := dnsid.NewIdentityManager(dnsid.Config{Identity: &dnsid.IdentityConfig{Domain: testDomain, GovernanceID: gi, LogRef: lr, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://" + gi + "/ek"}}, provider, dnsid.WithEntityKeyProvider(f.entity))
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -100,7 +130,7 @@ func (f *fixture) publish(provider dnsid.KeyProvider, gi, lr string, state dnsid
 		f.t.Fatal(err)
 	}
 	f.record = record.Serialize()
-	for url, provider := range map[string]dnsid.KeyProvider{"https://governance.example/ek": f.entity, "https://agent.example/ku": provider} {
+	for url, provider := range map[string]dnsid.KeyProvider{"https://" + gi + "/ek": f.entity, "https://agent.example/ku": provider} {
 		set := jwk.NewSet()
 		if err := set.AddKey(provider.JWK()); err != nil {
 			f.t.Fatal(err)
@@ -304,7 +334,7 @@ func (r *fakeRegistry) GetAgentStatus(context.Context, string) (*dnsid.AgentDeta
 		r.status = r.statuses[0]
 		r.statuses = r.statuses[1:]
 	}
-	return &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, OIDCIssuerURL: r.oidcIssuerURL, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: "governance.example", LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://governance.example/ek"}}, nil
+	return &dnsid.AgentDetail{ID: "agent-id", Domain: testDomain, Name: r.name, Status: r.status, Managed: "dnsid", DNSPublished: true, OIDCIssuerURL: r.oidcIssuerURL, PublicationConfig: dnsid.PublicationConfig{PublishProfile: dnsid.DefaultPublishProfile, GovernanceID: r.f.gi, LogRef: testLR, StatusURL: "https://agent.example/status", KeyURL: "https://agent.example/ku", EntityKeyURL: "https://" + r.f.gi + "/ek"}}, nil
 }
 func (r *fakeRegistry) SubmitLiveProof(_ context.Context, _ string, request *dnsid.LiveProofRequest) (*dnsid.LiveProofResponse, error) {
 	r.proofCalls++
@@ -343,7 +373,7 @@ func (r *fakeRegistry) PrepareIssuance(ctx context.Context, domain, key string) 
 	if len(r.f.log.events) > 0 {
 		return nil, &dnsid.RegistryAPIError{StatusCode: http.StatusConflict, Code: "TLOG_PREPARATION_MISMATCH"}
 	}
-	prepared, err := r.logClient.PrepareEvent(dnsidlog.LogEvent{Type: dnsidlog.LogEventIssuance, Domain: domain, GovernanceID: "governance.example", Timestamp: time.Now().Add(-time.Minute).UTC().Truncate(time.Second), InitialEntityPublicKey: r.f.entity.JWK(), InitialOperationalPublicKey: r.f.operational.JWK()})
+	prepared, err := r.logClient.PrepareEvent(dnsidlog.LogEvent{Type: dnsidlog.LogEventIssuance, Domain: domain, GovernanceID: r.f.gi, Timestamp: time.Now().Add(-time.Minute).UTC().Truncate(time.Second), InitialEntityPublicKey: r.f.entity.JWK(), InitialOperationalPublicKey: r.f.operational.JWK()})
 	if err != nil {
 		return nil, err
 	}
@@ -567,6 +597,53 @@ func TestCreateActiveAndCompletedResume(t *testing.T) {
 	requireKind(t, err, Terminal)
 	_, err = manager.KeyProvider().Sign([]byte("data"))
 	requirePaused(t, err)
+}
+
+// TestCreate_LongGovernanceIDUsesDNSLengthLimit pins that Foundry treats gi
+// as an ordinary DNS name (253 octets), not an agent FQDN (246 octets), on
+// every path: onboarding, the configured expected gi, active publication and
+// the observed record. A 250-octet gi must create and activate cleanly rather
+// than surface as an Integrity failure, and a 254-octet gi must be refused.
+func TestCreate_LongGovernanceIDUsesDNSLengthLimit(t *testing.T) {
+	labels := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "."
+	gi := labels + strings.Repeat("d", 50) + ".example"
+	if len(gi) != 250 {
+		t.Fatalf("gi is %d octets, want 250", len(gi))
+	}
+	ctx := context.Background()
+
+	t.Run("250 octets activates", func(t *testing.T) {
+		f := newFixtureWithGI(t, gi)
+		// The expected gi goes through New, which validates it.
+		f.client = f.newClientWithFoundryConfig(f.operational, f.store, config.FoundryConfig{GovernanceID: strings.ToUpper(gi)})
+		id, err := f.client.Create(ctx, "long")
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if _, err := id.Active(ctx); err != nil {
+			t.Fatalf("Active: %v", err)
+		}
+		if _, err := id.Active(ctx); err != nil {
+			t.Fatalf("second Active: %v", err)
+		}
+		if doc := f.document("long"); doc.GovernanceID != gi || doc.Phase != "complete" {
+			t.Fatalf("document gi=%q phase=%q, want %q complete", doc.GovernanceID, doc.Phase, gi)
+		}
+	})
+
+	t.Run("254 octets refused", func(t *testing.T) {
+		f := newFixture(t)
+		// governance_domain and gi.domain must agree, so that only the length
+		// limit (not the gi binding check) can reject the onboarding response.
+		gi254 := labels + strings.Repeat("d", 54) + ".example"
+		f.registry.onboarding.GovernanceDomain = gi254
+		f.registry.onboarding.GI.Domain = gi254
+		_, err := f.client.Create(ctx, "long")
+		requireKind(t, err, Integrity)
+		if f.registry.createCalls != 0 {
+			t.Fatal("refused gi reached agent creation")
+		}
+	})
 }
 
 func TestCreateValidationAndErrors(t *testing.T) {

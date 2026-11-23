@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -327,5 +328,40 @@ func TestPublicC2spDataErrorsUseSharedTaxonomy(t *testing.T) {
 	_, err = ParsePolicy([]byte("unknown directive"))
 	if !errors.As(err, &parseErr) {
 		t.Fatalf("ParsePolicy error = %T, want *dnsid.ParseError", err)
+	}
+}
+
+// TestBeginManagedIssuance_LongDelegatedGovernanceID pins that managed issuance
+// accepts a gi up to the 253-octet DNS limit. A gi longer than the 246-octet
+// agent-FQDN limit is always delegated, so it needs the ISSUANCE binding this
+// workflow produces; capping it at 246 would leave such a record, which the
+// root package publishes and validates, with no way to be issued.
+func TestBeginManagedIssuance_LongDelegatedGovernanceID(t *testing.T) {
+	// 63.63.63.50 + ".example" = 250 octets.
+	gi := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 50) + ".example"
+	if len(gi) != 250 {
+		t.Fatalf("gi is %d octets, want 250", len(gi))
+	}
+	client, entity, operational := managedIssuanceFixture(t)
+	store := &memoryManagedIssuanceStore{}
+	registry := &managedIssuanceRegistry{client: client, entity: entity, operational: operational.JWK(), governanceID: gi, state: dnsid.SubmissionStateAccepted}
+	activation := ManagedIssuanceActivationControllerFunc(func(context.Context, bool) error { return nil })
+	issuance, err := BeginManagedIssuance(context.Background(), ManagedIssuanceOptions{
+		Domain: "agent.identity.example", GovernanceID: strings.ToUpper(gi), Client: client, EntityPublicKey: entity.JWK(),
+		KeyProvider: operational, RegistryClient: registry, IdempotencyKey: "issuance-1", Store: store, ActivationControl: activation,
+	})
+	if err != nil {
+		t.Fatalf("BeginManagedIssuance with 250-octet gi: %v", err)
+	}
+	if issuance.GovernanceID != gi || issuance.Submission == nil || issuance.Submission.State != dnsid.SubmissionStateAccepted {
+		t.Fatalf("issuance = %#v, want accepted with gi %q", issuance, gi)
+	}
+
+	_, err = BeginManagedIssuance(context.Background(), ManagedIssuanceOptions{
+		Domain: "other.identity.example", GovernanceID: gi + "xxxx", Client: client, EntityPublicKey: entity.JWK(),
+		KeyProvider: operational, RegistryClient: registry, IdempotencyKey: "issuance-2", Store: &memoryManagedIssuanceStore{}, ActivationControl: activation,
+	})
+	if err == nil || !strings.Contains(err.Error(), "governance ID is invalid") {
+		t.Fatalf("254-octet gi: error = %v, want governance ID is invalid", err)
 	}
 }

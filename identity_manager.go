@@ -181,7 +181,7 @@ func (c VerificationConfig) validate() error {
 	}
 	seen := make(map[string]bool, len(c.TrustedEntities))
 	for _, e := range c.TrustedEntities {
-		gi, err := NormalizeFQDN(e.GovernanceID)
+		gi, err := NormalizeDNSName(e.GovernanceID)
 		if err != nil {
 			return NewArgumentError(fmt.Sprintf("dnsid: invalid TrustedEntity.GovernanceID %q", e.GovernanceID), err)
 		}
@@ -218,7 +218,7 @@ func (c VerificationConfig) snapshot() VerificationConfig {
 	}
 	entities := make([]TrustedEntity, 0, len(c.TrustedEntities))
 	for _, e := range c.TrustedEntities {
-		gi, _ := NormalizeFQDN(e.GovernanceID) // validated already
+		gi, _ := NormalizeDNSName(e.GovernanceID) // validated already
 		var pins []string
 		if e.EntityKeyThumbprints != nil {
 			pins = append([]string(nil), e.EntityKeyThumbprints...)
@@ -260,11 +260,13 @@ func (c TransportConfig) IsZero() bool {
 }
 
 // validate checks that every PrivateAddressHosts entry is a bare hostname or a
-// leading-dot suffix.
+// leading-dot suffix. Entries name endpoint hosts, not agent FQDNs, so they take
+// the 253-octet DNS limit (NormalizeDNSName), matching the fetch host checks.
+// IP literals are rejected.
 func (c TransportConfig) validate() error {
 	for _, entry := range c.PrivateAddressHosts {
 		name := strings.TrimPrefix(entry, ".")
-		if _, err := NormalizeFQDN(name); err != nil || net.ParseIP(strings.TrimSuffix(name, ".")) != nil {
+		if _, err := NormalizeDNSName(name); err != nil || net.ParseIP(strings.TrimSuffix(name, ".")) != nil {
 			return NewArgumentError(fmt.Sprintf("dnsid: Config.Transport.PrivateAddressHosts entry %q must be a hostname or leading-dot suffix", entry), err)
 		}
 	}
@@ -900,7 +902,9 @@ func validatePublicationConfig(cfg IdentityConfig, operationalKeys, entityKeys K
 	if !isDomainName(cfg.GovernanceID) {
 		return NewArgumentError(fmt.Sprintf("dnsid: draft 01 requires IdentityConfig.GovernanceID to be a domain name, got %q", cfg.GovernanceID), nil)
 	}
-	giDomain, err := NormalizeFQDN(cfg.GovernanceID)
+	// gi and the ek host are ordinary DNS names, not agent FQDNs: they take the
+	// 253-octet DNS limit, matching TXTRecord.Validate.
+	giDomain, err := NormalizeDNSName(cfg.GovernanceID)
 	if err != nil {
 		return NewArgumentError("dnsid: invalid IdentityConfig.GovernanceID", err)
 	}
@@ -911,7 +915,7 @@ func validatePublicationConfig(cfg IdentityConfig, operationalKeys, entityKeys K
 	if err != nil {
 		return NewArgumentError("dnsid: invalid IdentityConfig.EntityKeyURL", err)
 	}
-	ekHost, err := NormalizeFQDN(ekURL.Hostname())
+	ekHost, err := NormalizeDNSName(ekURL.Hostname())
 	if err != nil || !isDomainOrSubdomain(ekHost, giDomain) {
 		return NewArgumentError(fmt.Sprintf("dnsid: IdentityConfig.EntityKeyURL host %q must be at or under GovernanceID domain %q", ekURL.Hostname(), giDomain), err)
 	}
@@ -1440,8 +1444,15 @@ func (m *IdentityManager) enforceRecordPolicy(ctx context.Context, reader dnsidl
 	}
 	govID := rec.GovernanceID
 	// A delegated governance domain requires an ISSUANCE evidence binding.
-	giDomain, _ := NormalizeFQDN(govID)
-	if giDomain != "" && !isDomainOrSubdomain(domain, giDomain) {
+	// gi is a registrant domain, not an agent FQDN, so it is normalized under
+	// the 253-octet DNS limit, the same rule TXTRecord.Validate applies. A gi
+	// with no canonical form fails closed: skipping the relationship check on
+	// a normalization error would let such a record bypass it.
+	giDomain, err := NormalizeDNSName(govID)
+	if err != nil {
+		return NewVerificationError(VerificationCodeRecordInvalid, false, fmt.Sprintf("dnsid: invalid gi %q", govID), err)
+	}
+	if !isDomainOrSubdomain(domain, giDomain) {
 		verifier, ok := reader.(interface {
 			VerifyGovernanceRelationship(context.Context, string, string) error
 		})
@@ -1719,9 +1730,11 @@ func validateManagerFetchURL(raw, allowedHost string, domainBoundary bool) error
 // the allowed host: equal to it or, when domainBoundary is set, at or under it
 // on a DNS-label boundary.
 //
-// Both names are compared in the canonical form produced by NormalizeFQDN
-// (UTS 46 mapping, A-label encoding, ASCII lowercase, no trailing dot). That is
-// the name net/http resolves and presents as TLS SNI, so the boundary is
+// Both names are compared in the canonical form produced by NormalizeDNSName
+// (UTS 46 mapping, A-label encoding, ASCII lowercase, no trailing dot): the
+// NormalizeFQDN form without the 246-octet identity FQDN limit, since an
+// endpoint host such as a status or ek host is an ordinary DNS name and may be
+// up to 253 octets. That is the name net/http resolves and presents as TLS SNI, so the boundary is
 // enforced on exactly the name that will be dialed. A strings.ToLower
 // comparison is not equivalent: Go's ToLower applies simple case mappings,
 // under which U+0130 (LATIN CAPITAL LETTER I WITH DOT ABOVE) becomes ASCII
@@ -1748,11 +1761,11 @@ func fetchHostAllowed(host, allowed string, domainBoundary bool) bool {
 	if strings.HasSuffix(host, ".") != strings.HasSuffix(allowed, ".") {
 		return false
 	}
-	canonicalHost, err := NormalizeFQDN(host)
+	canonicalHost, err := NormalizeDNSName(host)
 	if err != nil {
 		return false
 	}
-	canonicalAllowed, err := NormalizeFQDN(allowed)
+	canonicalAllowed, err := NormalizeDNSName(allowed)
 	if err != nil {
 		return false
 	}

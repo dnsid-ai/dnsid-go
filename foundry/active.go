@@ -65,7 +65,7 @@ func (i *FoundryIdentity) publication(ctx context.Context, lease FoundryLease, d
 		return failure(UnsupportedContract, doc, fmt.Errorf("foundry requires registry publication authority"))
 	}
 	p := detail.PublicationConfig
-	gi, err := dnsid.NormalizeFQDN(p.GovernanceID)
+	gi, err := dnsid.NormalizeDNSName(p.GovernanceID)
 	if err != nil || gi != doc.GovernanceID {
 		return failure(Integrity, doc, fmt.Errorf("publication governance binding mismatch"))
 	}
@@ -592,7 +592,7 @@ func (i *FoundryIdentity) observe(ctx context.Context, lease FoundryLease, doc *
 			continue
 		}
 		record := vd.Record()
-		gi, err := dnsid.NormalizeFQDN(record.GovernanceID)
+		gi, err := dnsid.NormalizeDNSName(record.GovernanceID)
 		if err != nil || vd.Domain() != doc.Domain || record.Version != doc.PublicationConfig.PublishProfile || gi != doc.GovernanceID || record.LogRef != doc.PublicationConfig.LogRef {
 			return failure(Integrity, doc, fmt.Errorf("public identity bindings differ from saved publication"))
 		}

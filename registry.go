@@ -729,13 +729,23 @@ func (c *HTTPRegistryClient) CreateAgentWithIdempotencyKey(ctx context.Context, 
 	if normalized.Tier == "live" {
 		return nil, NewArgumentError("dnsid: use CreateLiveAgent for managed Live", nil)
 	}
-	for _, selector := range []*string{&normalized.Domain, &normalized.RootDomain, &normalized.GovernanceDomain} {
-		if *selector != "" {
-			value, err := NormalizeFQDN(*selector)
+	// Domain and RootDomain name the agent (or its parent), so they keep the
+	// 246-octet agent-FQDN limit. GovernanceDomain is a gi and takes the
+	// 253-octet DNS limit, matching TXTRecord.Validate.
+	for _, selector := range []struct {
+		value     *string
+		normalize func(string) (string, error)
+	}{
+		{&normalized.Domain, NormalizeFQDN},
+		{&normalized.RootDomain, NormalizeFQDN},
+		{&normalized.GovernanceDomain, NormalizeDNSName},
+	} {
+		if *selector.value != "" {
+			value, err := selector.normalize(*selector.value)
 			if err != nil {
 				return nil, NewArgumentError("dnsid: invalid registration selector", err)
 			}
-			*selector = value
+			*selector.value = value
 		}
 	}
 	normalized.Name = strings.TrimSpace(normalized.Name)

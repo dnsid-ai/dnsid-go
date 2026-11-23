@@ -65,7 +65,7 @@ func New(loaded config.Loaded, deps Dependencies) (*Client, error) {
 		return nil, err
 	}
 	if loaded.Foundry.GovernanceID != "" {
-		if _, err := dnsid.NormalizeFQDN(loaded.Foundry.GovernanceID); err != nil {
+		if _, err := dnsid.NormalizeDNSName(loaded.Foundry.GovernanceID); err != nil {
 			return nil, err
 		}
 	}
@@ -406,11 +406,11 @@ func (c *Client) onboarding(ctx context.Context, doc *RecoveryDocument) (*dnsid.
 		outcome.Resumable = true
 		return nil, outcome
 	}
-	gi, err := dnsid.NormalizeFQDN(value.GovernanceDomain)
+	gi, err := dnsid.NormalizeDNSName(value.GovernanceDomain)
 	if err != nil {
 		return nil, failure(Integrity, doc, err)
 	}
-	proofGI, err := dnsid.NormalizeFQDN(value.GI.Domain)
+	proofGI, err := dnsid.NormalizeDNSName(value.GI.Domain)
 	if err != nil || proofGI != gi {
 		return nil, failure(Integrity, doc, fmt.Errorf("onboarding GI binding mismatch"))
 	}
@@ -423,7 +423,7 @@ func (c *Client) onboarding(ctx context.Context, doc *RecoveryDocument) (*dnsid.
 		return nil, failure(Integrity, doc, fmt.Errorf("unexpected organization ID"))
 	}
 	if expected := c.loaded.Foundry.GovernanceID; expected != "" {
-		normalized, err := dnsid.NormalizeFQDN(expected)
+		normalized, err := dnsid.NormalizeDNSName(expected)
 		if err != nil || normalized != gi {
 			return nil, failure(Integrity, doc, fmt.Errorf("unexpected governance ID"))
 		}
