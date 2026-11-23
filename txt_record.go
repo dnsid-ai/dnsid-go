@@ -112,18 +112,18 @@ func (r *TXTRecord) validateWithSignatureRequirement(identityFQDN string, includ
 	}
 	// The entity key endpoint must sit at or under the governance domain. This
 	// boundary is what binds the record-signing key to gi, so, as for ku, the
-	// host is compared in NormalizeFQDN form: the exact name that will be
-	// dialed. Under a strings.ToLower comparison the host "keys.b\u0130gcorp.com"
-	// (reachable from an all-ASCII record as keys.b%C4%B0gcorp.com) folded to a
-	// name under bigcorp.com while the JWKS was fetched from
-	// keys.xn--bigcorp-....com, a domain anyone can register. As for ku, a
-	// trailing dot is rejected rather than canonicalized away.
+	// host is compared in canonical form: the exact name that will be dialed.
+	// Unlike ku, the ek host is an ordinary DNS name, not the agent FQDN, so it
+	// is normalized with NormalizeDNSName (253 octets) rather than NormalizeFQDN
+	// (246 octets). Under a strings.ToLower comparison the host
+	// "keys.b\u0130gcorp.com" (reachable from an all-ASCII record as
+	// keys.b%C4%B0gcorp.com) folded to a name under bigcorp.com while the JWKS
+	// was fetched from keys.xn--bigcorp-....com, a domain anyone can register.
+	// As for ku, a trailing dot is rejected rather than canonicalized away.
 	ekURL, _ := url.Parse(r.EntityKeyURI)
 	if host := ekURL.Hostname(); strings.HasSuffix(host, ".") {
 		return NewValidationError(fmt.Sprintf("dnsid: ek host %q must not end with a dot", host), nil)
 	}
-	// The ek host is an ordinary DNS name, not an identity FQDN, so it takes
-	// the 253-octet DNS limit rather than the 246-octet identity limit.
 	ekHost, err := NormalizeDNSName(ekURL.Hostname())
 	if err != nil {
 		return NewValidationError(fmt.Sprintf("dnsid: ek host %+q is not a valid DNS name", ekURL.Hostname()), err)

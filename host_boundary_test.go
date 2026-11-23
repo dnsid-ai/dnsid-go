@@ -114,8 +114,8 @@ func TestTXTRecordValidate_EKHostComparedInCanonicalForm(t *testing.T) {
 }
 
 // TestTXTRecordValidate_TrailingDotHostRejected pins that a trailing dot in a
-// ku= or ek= host is rejected before normalization. NormalizeFQDN would accept
-// and strip it, but the byte-wise comparisons that canonical comparison
+// ku= or ek= host is rejected before normalization. NormalizeFQDN (ku) and
+// NormalizeDNSName (ek) would both accept and strip it, but the byte-wise comparisons that canonical comparison
 // replaced never admitted one, and that rule is deliberately kept: the host as
 // published is the host that is compared and dialed. The su= host is outside
 // the rule, as before, since no host comparison applies to it.

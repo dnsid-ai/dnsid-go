@@ -276,8 +276,8 @@ func TestFetchHostAllowed(t *testing.T) {
 		{"keys.example.com", "example.com", true, true},
 		{"keys.example.com", "example.com", false, false},
 		{"notexample.test", "example.com", true, false},
-		// Hosts are compared in NormalizeFQDN form: ASCII case is canonicalized
-		// on either side, and a U-label equals its A-label.
+		// Hosts are compared in NormalizeDNSName form: ASCII case is
+		// canonicalized on either side, and a U-label equals its A-label.
 		{"KEYS.Example.COM", "example.com", true, true},
 		{"keys.example.com", "Example.COM", true, true},
 		{"xn--mnchen-3ya.de", "m\u00fcnchen.de", false, true},
