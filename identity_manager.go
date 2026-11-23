@@ -1719,9 +1719,11 @@ func validateManagerFetchURL(raw, allowedHost string, domainBoundary bool) error
 // the allowed host: equal to it or, when domainBoundary is set, at or under it
 // on a DNS-label boundary.
 //
-// Both names are compared in the canonical form produced by NormalizeFQDN
-// (UTS 46 mapping, A-label encoding, ASCII lowercase, no trailing dot). That is
-// the name net/http resolves and presents as TLS SNI, so the boundary is
+// Both names are compared in the canonical form produced by normalizeDNSHost
+// (UTS 46 mapping, A-label encoding, ASCII lowercase, no trailing dot): the
+// NormalizeFQDN form without the 246-octet identity FQDN limit, since an
+// endpoint host such as a status or ek host is an ordinary DNS name and may be
+// up to 253 octets. That is the name net/http resolves and presents as TLS SNI, so the boundary is
 // enforced on exactly the name that will be dialed. A strings.ToLower
 // comparison is not equivalent: Go's ToLower applies simple case mappings,
 // under which U+0130 (LATIN CAPITAL LETTER I WITH DOT ABOVE) becomes ASCII
@@ -1748,11 +1750,11 @@ func fetchHostAllowed(host, allowed string, domainBoundary bool) bool {
 	if strings.HasSuffix(host, ".") != strings.HasSuffix(allowed, ".") {
 		return false
 	}
-	canonicalHost, err := NormalizeFQDN(host)
+	canonicalHost, err := normalizeDNSHost(host)
 	if err != nil {
 		return false
 	}
-	canonicalAllowed, err := NormalizeFQDN(allowed)
+	canonicalAllowed, err := normalizeDNSHost(allowed)
 	if err != nil {
 		return false
 	}

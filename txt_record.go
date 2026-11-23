@@ -101,7 +101,9 @@ func (r *TXTRecord) validateWithSignatureRequirement(identityFQDN string, includ
 	if !isDomainName(gi) {
 		return NewValidationError(fmt.Sprintf("dnsid: gi %q must be a domain name for version %q", gi, r.Version), nil)
 	}
-	giDomain, err := NormalizeFQDN(gi)
+	// gi is a registrant domain, not an agent FQDN: the spec's 246-octet limit
+	// applies only to the agent FQDN, so gi takes the 253-octet DNS limit.
+	giDomain, err := normalizeDNSHost(gi)
 	if err != nil {
 		return NewValidationError("", err)
 	}
@@ -120,7 +122,9 @@ func (r *TXTRecord) validateWithSignatureRequirement(identityFQDN string, includ
 	if host := ekURL.Hostname(); strings.HasSuffix(host, ".") {
 		return NewValidationError(fmt.Sprintf("dnsid: ek host %q must not end with a dot", host), nil)
 	}
-	ekHost, err := NormalizeFQDN(ekURL.Hostname())
+	// The ek host is an ordinary DNS name, not an identity FQDN, so it takes
+	// the 253-octet DNS limit rather than the 246-octet identity limit.
+	ekHost, err := normalizeDNSHost(ekURL.Hostname())
 	if err != nil {
 		return NewValidationError(fmt.Sprintf("dnsid: ek host %+q is not a valid DNS name", ekURL.Hostname()), err)
 	}

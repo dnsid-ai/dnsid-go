@@ -10,7 +10,8 @@ import (
 // These tests pin the host-boundary checks that bind a record's key endpoints
 // to DNS names: ku= must equal the identity FQDN, ek= must sit at or under the
 // gi= governance domain, and a same-host redirect must stay on the allowed
-// host. Every check compares hosts in NormalizeFQDN form, the exact name the
+// host. Every check compares hosts in canonical form (NormalizeFQDN for the
+// identity FQDN, normalizeDNSHost for other hosts), the exact name the
 // transport resolves and presents as TLS SNI.
 //
 // U+0130 (LATIN CAPITAL LETTER I WITH DOT ABOVE) is the probe used throughout.
@@ -237,4 +238,102 @@ func TestClientWithRedirectPolicy_SameHostComparesCanonicalForm(t *testing.T) {
 			}
 		})
 	}
+}
+
+// longDNSHost returns a valid DNS name of exactly n octets ending in suffix,
+// built from labels of at most 63 octets.
+func longDNSHost(t *testing.T, n int, suffix string) string {
+	t.Helper()
+	var labels []string
+	remaining := n - len(suffix)
+	for remaining > 0 {
+		// Each label costs its length plus one separating dot.
+		size := min(63, remaining-1)
+		if size < 1 {
+			t.Fatalf("cannot build a %d-octet host ending in %q", n, suffix)
+		}
+		labels = append(labels, strings.Repeat("a", size))
+		remaining -= size + 1
+	}
+	host := strings.Join(labels, ".") + "." + suffix
+	if len(host) != n {
+		t.Fatalf("built host of %d octets, want %d", len(host), n)
+	}
+	return host
+}
+
+// TestEndpointHostLengthLimit pins that the 246-octet limit applies only to
+// identity FQDNs (so that _dnsid.<fqdn> fits in 253 octets). Endpoint hosts
+// such as status, ek and redirect targets are ordinary DNS names and may be up
+// to 253 octets; canonical comparison must not shrink that.
+func TestEndpointHostLengthLimit(t *testing.T) {
+	// 63.63.63.55.3 = 251 octets: the status host from the review feedback.
+	statusHost := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." +
+		strings.Repeat("c", 63) + "." + strings.Repeat("d", 55) + ".com"
+	if len(statusHost) != 251 {
+		t.Fatalf("status host is %d octets, want 251", len(statusHost))
+	}
+	host253 := longDNSHost(t, 253, "example.com")
+	host254 := longDNSHost(t, 254, "example.com")
+
+	t.Run("NormalizeFQDN keeps the identity limit", func(t *testing.T) {
+		if _, err := NormalizeFQDN(longDNSHost(t, 246, "example.com")); err != nil {
+			t.Fatalf("246-octet FQDN: %v", err)
+		}
+		if _, err := NormalizeFQDN(longDNSHost(t, 247, "example.com")); err == nil {
+			t.Fatal("247-octet FQDN accepted, want error")
+		}
+		if _, err := NormalizeFQDN(statusHost); err == nil {
+			t.Fatal("251-octet FQDN accepted as identity FQDN, want error")
+		}
+	})
+
+	t.Run("normalizeDNSHost uses the DNS limit", func(t *testing.T) {
+		for _, h := range []string{statusHost, host253, host253 + "."} {
+			if _, err := normalizeDNSHost(h); err != nil {
+				t.Errorf("normalizeDNSHost(%d octets): %v", len(h), err)
+			}
+		}
+		if _, err := normalizeDNSHost(host254); err == nil {
+			t.Error("254-octet host accepted, want error")
+		}
+	})
+
+	t.Run("status host matches itself", func(t *testing.T) {
+		statusURL := "https://" + statusHost + "/status"
+		if err := validateManagerFetchURL(statusURL, allowedHostFromURL(statusURL), false); err != nil {
+			t.Fatalf("validateManagerFetchURL: %v", err)
+		}
+		if !fetchHostAllowed(strings.ToUpper(statusHost), statusHost, false) {
+			t.Fatal("251-octet host does not match itself in canonical form")
+		}
+		if !fetchHostAllowed(host253, host253, false) {
+			t.Fatal("253-octet host does not match itself")
+		}
+		if fetchHostAllowed(host254, host254, false) {
+			t.Fatal("254-octet host allowed, want refused")
+		}
+	})
+
+	t.Run("long ek host under gi", func(t *testing.T) {
+		ku := "https://agent.identity.example/ku.json"
+		ek := "https://" + longDNSHost(t, 251, "identity.example") + "/ek.json"
+		if err := hostBoundaryRecord(t, ku, ek).Validate("agent.identity.example"); err != nil {
+			t.Fatalf("Validate with 251-octet ek host: %v", err)
+		}
+		if !fetchHostAllowed(longDNSHost(t, 251, "identity.example"), "identity.example", true) {
+			t.Fatal("251-octet ek host not allowed under gi boundary")
+		}
+	})
+
+	t.Run("long gi", func(t *testing.T) {
+		// A delegated record's gi need not be above the agent FQDN, so it is
+		// bound only by the DNS limit, not the 246-octet agent-FQDN limit.
+		gi := longDNSHost(t, 250, "example")
+		record := hostBoundaryRecord(t, "https://agent.identity.example/ku.json", "https://"+gi+"/ek.json")
+		record.GovernanceID = gi
+		if err := record.Validate("agent.identity.example"); err != nil {
+			t.Fatalf("Validate with 250-octet gi: %v", err)
+		}
+	})
 }
