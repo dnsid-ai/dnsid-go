@@ -192,6 +192,14 @@ var (
 		netip.MustParsePrefix("3fff::/20"),
 	}
 	allocatedIPv6GlobalUnicast = netip.MustParsePrefix("2000::/3")
+	// nat64WellKnownPrefix is the RFC 6052 well-known NAT64 prefix. On IPv6-only
+	// networks with DNS64, names with only IPv4 addresses resolve to this prefix
+	// plus the IPv4 address, and the NAT64 gateway connects to that embedded
+	// address. RFC 6052 section 3.1 forbids the prefix for non-global IPv4, but an
+	// attacker can still publish such AAAA records, so the embedded address gets
+	// the full IPv4 policy. The local-use prefix 64:ff9b:1::/48 (RFC 8215) maps
+	// network-specific space and stays rejected.
+	nat64WellKnownPrefix = netip.MustParsePrefix("64:ff9b::/96")
 )
 
 // IsPrivateOrLoopbackIP reports whether ip is loopback (127.0.0.0/8, ::1) or
@@ -208,13 +216,18 @@ func IsPrivateOrLoopbackIP(ip net.IP) bool {
 
 // IsNonPublicIP reports whether ip is not publicly routable. In addition to
 // the address classes recognized by net.IP, it rejects IANA special-purpose
-// ranges and unallocated IPv6 space.
+// ranges and unallocated IPv6 space. IPv4-mapped and well-known NAT64
+// addresses are judged by the IPv4 address they carry.
 func IsNonPublicIP(ip net.IP) bool {
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
 		return true
 	}
 	addr = addr.Unmap()
+	if nat64WellKnownPrefix.Contains(addr) {
+		b := addr.As16()
+		addr = netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]})
+	}
 	for _, prefix := range globallyRoutableSpecialPrefixes {
 		if prefix.Contains(addr) {
 			return false
