@@ -1222,7 +1222,7 @@ func (c *HTTPRegistryClient) PrepareIssuance(ctx context.Context, fqdn, idempote
 	if err := validateRegistryIdempotencyKey(idempotencyKey); err != nil {
 		return nil, err
 	}
-	response, _, _, err := c.doRequest(ctx, http.MethodPost, "/api/v1/agent/"+url.PathEscape(fqdn)+"/tlog/issuance/prepare", nil, map[string]string{
+	response, _, _, err := c.doRequest(ctx, http.MethodGet, "/api/v1/agent/"+url.PathEscape(fqdn)+"/tlog/issuance/prepare", nil, map[string]string{
 		"Content-Type":    "application/json",
 		"Idempotency-Key": idempotencyKey,
 	})
@@ -1473,7 +1473,7 @@ func (e *RegistryAPIError) RetrySameEntry() bool {
 		return true
 	}
 	switch e.Code {
-	case "TLOG_SUBMISSION_BUSY", "TLOG_SUBMISSION_INDETERMINATE":
+	case "TLOG_SUBMISSION_BUSY", "submission_busy", "TLOG_SUBMISSION_INDETERMINATE":
 		return true
 	case "IDEMPOTENCY_MISMATCH", "TLOG_IDEMPOTENCY_MISMATCH", "TLOG_PREPARATION_MISMATCH", "TLOG_INVALID_ENTRY":
 		return false
@@ -1493,7 +1493,7 @@ func (e *RegistryAPIError) SubmissionState() SubmissionState {
 	switch e.Code {
 	case "TLOG_SUBMISSION_INDETERMINATE":
 		return SubmissionStateIndeterminate
-	case "TLOG_SUBMISSION_BUSY":
+	case "TLOG_SUBMISSION_BUSY", "submission_busy":
 		return SubmissionStatePending
 	case "IDEMPOTENCY_MISMATCH", "TLOG_IDEMPOTENCY_MISMATCH", "TLOG_PREPARATION_MISMATCH", "TLOG_INVALID_ENTRY":
 		return SubmissionStateRejected
