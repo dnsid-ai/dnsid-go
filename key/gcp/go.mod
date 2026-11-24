@@ -4,7 +4,7 @@ go 1.26.10
 
 require (
 	cloud.google.com/go/kms v1.36.1
-	github.com/dnsid-ai/dnsid-go v0.48.0
+	github.com/dnsid-ai/dnsid-go v0.49.0
 	github.com/googleapis/gax-go/v2 v2.27.0
 	github.com/lestrrat-go/jwx/v3 v3.2.0
 	google.golang.org/api v0.304.0

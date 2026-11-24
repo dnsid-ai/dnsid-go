@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.49.0] - 2026-11-24
+
+### Features
+
+- feat(registry): add policy_violation revocation reason ([#143](https://github.com/dnsid-ai/dnsid-go/pull/143))
+- feat: add the Known logs to the managed verification catalog ([#142](https://github.com/dnsid-ai/dnsid-go/pull/142))
+- feat!: update Web Bot Auth to draft -01; no draft -00 fallback. Upgrade signers, directory servers, and verifiers together. Append `/.well-known/http-message-signatures-directory` to origin-only `Config.DirectoryURL` values. See [migration guidance](https://github.com/dnsid-ai/dnsid-go/blob/main/COMPATIBILITY.md#web-bot-auth-draft--01) ([#158](https://github.com/dnsid-ai/dnsid-go/pull/158))
+
+### Bug Fixes
+
+- fix: compare record and redirect hosts in canonical form ([#155](https://github.com/dnsid-ai/dnsid-go/pull/155))
+- fix: apply 246-octet limit only to identity FQDNs ([#159](https://github.com/dnsid-ai/dnsid-go/pull/159))
+- fix: accept public IPv4 behind the well-known NAT64 prefix in the SSRF guard ([#156](https://github.com/dnsid-ai/dnsid-go/pull/156))
+- fix: support alternate registry lifecycle responses ([#163](https://github.com/dnsid-ai/dnsid-go/pull/163))
+- fix: correct release compatibility and WBA migration notes ([#164](https://github.com/dnsid-ai/dnsid-go/pull/164))
+
+### Other
+
+- Single-cloud multi-region operational keys (Known Foundry #61) ([#145](https://github.com/dnsid-ai/dnsid-go/pull/145))
+
 ## [0.48.0] - 2026-11-11
 
 ### Features
