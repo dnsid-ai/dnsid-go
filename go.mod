@@ -3,7 +3,7 @@ module github.com/dnsid-ai/dnsid-go
 go 1.26.10
 
 require (
-	github.com/WebDecoy/web-bot-auth v0.4.1
+	github.com/WebDecoy/web-bot-auth v0.5.1
 	github.com/forcebit/http-message-signatures-rfc9421-go v0.0.20
 	github.com/lestrrat-go/httpcc v1.0.1
 	github.com/lestrrat-go/jwx/v3 v3.2.0
