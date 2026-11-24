@@ -59,6 +59,26 @@ func TestDirectoryKey_RejectsInvalidPublicJWK(t *testing.T) {
 	}
 }
 
+func TestDirectoryKey_Algorithm(t *testing.T) {
+	public, err := wbaJWK(dnsid.GenerateEd25519KeyProvider().JWK())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, alg := range []string{"Ed25519", "ed25519"} {
+		t.Run(alg, func(t *testing.T) {
+			public["alg"] = alg
+			body, err := json.Marshal(map[string]any{"keys": []any{public}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = directoryKey(body, public["kid"].(string))
+			if wantValid := alg == "Ed25519"; (err == nil) != wantValid {
+				t.Fatalf("alg=%q: error=%v, want valid=%v", alg, err, wantValid)
+			}
+		})
+	}
+}
+
 func TestWBAContent_LimitsAndCancellation(t *testing.T) {
 	large := newWBAFixture(t, false, false)
 	large.request.Header.Set("X-Large", strings.Repeat("x", (1<<20)+1))
