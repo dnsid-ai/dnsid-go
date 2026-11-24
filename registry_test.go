@@ -1171,6 +1171,9 @@ func TestHTTPRegistryClient_PrepareAndSubmitKeyRotation(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		switch r.URL.Path {
 		case "/api/v1/agent/agent.example.com/tlog/issuance/prepare":
+			if r.Method != http.MethodGet {
+				t.Errorf("issuance method = %q", r.Method)
+			}
 			if len(body) != 0 {
 				t.Errorf("issuance body = %q", body)
 			}
