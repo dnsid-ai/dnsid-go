@@ -173,7 +173,7 @@ the root SDK requirement is locally replaced by `../..` in this repository.
 | Dependency | Pinned version | Role |
 |---|---|---|
 | `cloud.google.com/go/kms` | v1.36.1 | Official Google Cloud KMS client. |
-| `github.com/dnsid-ai/dnsid-go` | v0.46.1 | Root SDK integration (local replacement above). |
+| `github.com/dnsid-ai/dnsid-go` | See [`key/gcp/go.mod`](key/gcp/go.mod) | Root SDK integration (local replacement above). |
 | `github.com/googleapis/gax-go/v2` | v2.27.0 | Google API call options. |
 | `github.com/lestrrat-go/jwx/v3` | v3.2.0 | JOSE key representation. |
 | `google.golang.org/api` | v0.304.0 | Google client/authentication options and transport. |
