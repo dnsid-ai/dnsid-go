@@ -122,16 +122,7 @@ func TestCustomDNSServerResolverRetriesTruncatedAnswerOverTCP(t *testing.T) {
 	const name = "_dnsid.agent.example.com."
 	const txt = "v=DNSid1;ek=https://agent.example.com/.well-known/dnsid.json"
 
-	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer udp.Close()
-	tcp, err := net.Listen("tcp", udp.LocalAddr().String())
-	if err != nil {
-		t.Fatalf("tcp listen on the udp port: %v", err)
-	}
-	defer tcp.Close()
+	udp, tcp := listenTestDNS(t)
 
 	answer := func(query []byte, truncated bool) []byte {
 		var p dnsmessage.Parser
