@@ -148,12 +148,13 @@ func TestProfile_VerifyWebBotAuthSignedRequest(t *testing.T) {
 }
 
 func TestProfile_WBANonDefaultLabelsAndDiscovery(t *testing.T) {
-	for _, mode := range []string{"different-label", "relabeled", "default-type", "jwks-uri", "origin-policy"} {
+	for _, mode := range []string{"different-label", "relabeled", "root-endpoint", "custom-endpoint", "origin-policy"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newWBAFixture(t, false, false)
 			inputs, _ := httpsig.ParseSignatureInput(f.request.Header.Get("Signature-Input"))
 			params := inputs["sig1"]
 			params.Parameters = nil
+			var wantEndpoint string
 			switch mode {
 			case "different-label":
 				f.checker.client = &http.Client{Transport: wbaRoundTrip(func(req *http.Request) (*http.Response, error) {
@@ -171,7 +172,7 @@ func TestProfile_WBANonDefaultLabelsAndDiscovery(t *testing.T) {
 				params.Label = "bot"
 				f.request.Header.Del("Signature-Input")
 				f.request.Header.Del("Signature")
-				f.request.Header.Set("Signature-Agent", `agent="https://bot.example.com";type=directory`)
+				f.request.Header.Set("Signature-Agent", `agent="https://bot.example.com`+DirectoryPath+`"`)
 				for i, c := range params.Components {
 					if c.Name == "signature-agent" {
 						params.Components[i].Params["key"] = "agent"
@@ -181,13 +182,23 @@ func TestProfile_WBANonDefaultLabelsAndDiscovery(t *testing.T) {
 				for _, name := range []string{"Signature-Input", "Signature"} {
 					f.request.Header.Set(name, strings.Replace(f.request.Header.Get(name), "sig1=", "relabeled=", 1))
 				}
-			case "default-type":
-				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com"`)
-			case "jwks-uri":
-				f.request.Header.Set("Signature-Agent", `sig1="https://bot.example.com/custom?q=x#fragment";type=jwks_uri`)
+			case "root-endpoint":
+				wantEndpoint = "https://bot.example.com"
+				f.request.Header.Set("Signature-Agent", `sig1="`+wantEndpoint+`"`)
+			case "custom-endpoint":
+				wantEndpoint = "https://bot.example.com/custom?q=x"
+				f.request.Header.Set("Signature-Agent", `sig1="`+wantEndpoint+`"`)
 			case "origin-policy":
 				f.opts.SignerDomain = ""
 				f.opts.AllowSignatureAgentDomain = true
+			}
+			if wantEndpoint != "" {
+				f.checker.client.Transport = wbaRoundTrip(func(req *http.Request) (*http.Response, error) {
+					if got := req.URL.String(); got != wantEndpoint {
+						t.Fatalf("directory URL = %q, want %q", got, wantEndpoint)
+					}
+					return f.signer.ServeHttpMessageSignaturesDirectory(req)
+				})
 			}
 			if mode != "relabeled" {
 				if err := httpsig.SignHTTPMessage(f.request, params, f.signer.keys); err != nil {

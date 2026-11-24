@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,14 +37,9 @@ const (
 // Config contains Web Bot Auth profile defaults. The zero value applies the
 // profile defaults.
 type Config struct {
-	// DirectoryURL overrides the URI advertised in Signature-Agent. Empty
-	// means "https://<domain>". Directory discovery requires an origin URI;
-	// jwks_uri discovery uses this as the direct endpoint.
+	// DirectoryURL is the HTTPS JWKS endpoint advertised in Signature-Agent.
+	// Empty uses the well-known directory URL at the local domain.
 	DirectoryURL string
-
-	// SignatureAgentType controls discovery interpretation. Empty means
-	// "directory". A direct custom endpoint requires "jwks_uri".
-	SignatureAgentType string
 
 	// SignatureTTL is the default request signature lifetime (the distance
 	// from the created to the expires parameter). Zero means the default of
@@ -379,26 +375,16 @@ func (p *Profile) signatureAgentValue() (string, error) {
 		if p.domain == "" {
 			return "", dnsid.NewArgumentError("dnsid: Web Bot Auth directory URL requires local domain", nil)
 		}
-		raw = "https://" + p.domain
+		raw = "https://" + p.domain + DirectoryPath
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || strings.Contains(raw, "#") {
 		return "", dnsid.NewArgumentError("dnsid: Web Bot Auth Signature-Agent must be https", nil)
 	}
-	discoveryType := p.cfg.SignatureAgentType
-	if discoveryType == "" {
-		discoveryType = "directory"
-	}
-	if discoveryType != "directory" && discoveryType != "jwks_uri" {
-		return "", dnsid.NewArgumentError("dnsid: unsupported Web Bot Auth Signature-Agent type", nil)
-	}
-	if discoveryType == "directory" && raw != "https://"+u.Host {
-		return "", dnsid.NewArgumentError("dnsid: Web Bot Auth directory Signature-Agent must be an origin URI", nil)
-	}
-	if discoveryType == "jwks_uri" && p.kuURL != "" && normalizedIdentifier(raw) == normalizedIdentifier(p.kuURL) {
+	if p.kuURL != "" && normalizedIdentifier(raw) == normalizedIdentifier(p.kuURL) {
 		return "", dnsid.NewArgumentError("dnsid: WBA discovery must not identify local ku", nil)
 	}
-	item := sfv.Item{Value: raw, Parameters: []sfv.Parameter{{Key: "type", Value: sfv.Token{Value: discoveryType}}}}
+	item := sfv.Item{Value: raw}
 	return sfv.SerializeDictionary(&sfv.Dictionary{Keys: []string{"sig1"}, Values: map[string]interface{}{"sig1": item}})
 }
 
@@ -426,7 +412,6 @@ func wbaJWK(key jwk.Key) (map[string]any, error) {
 		return nil, err
 	}
 	jwkMap := map[string]any{"kty": source["kty"], "crv": source["crv"], "x": source["x"]}
-	jwkMap["alg"] = "ed25519"
 	jwkMap["kid"] = base64.RawURLEncoding.EncodeToString(thumb)
 	jwkMap["use"] = "sig"
 	return jwkMap, nil

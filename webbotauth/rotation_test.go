@@ -114,7 +114,7 @@ func TestWBA_KeyMismatchRefresh(t *testing.T) {
 				t.Fatalf("refresh calls=%d, want %d", calls, want)
 			}
 			if mode == "unchanged" || mode == "unavailable" {
-				f.signer.cfg = Config{SignatureAgentType: "jwks_uri", DirectoryURL: "https://" + f.opts.SignerDomain + "/another?key=changed"}
+				f.signer.cfg = Config{DirectoryURL: "https://" + f.opts.SignerDomain + "/another?key=changed"}
 				f.signer.keys = dnsid.GenerateEd25519KeyProvider()
 				f.request, err = f.signer.CreateWebBotAuthSignedRequest(f.request, SigningOptions{})
 				if err != nil {
@@ -168,16 +168,16 @@ func TestWBA_RequiresRefreshingResolver(t *testing.T) {
 }
 
 func TestWBA_DiscoveryCannotIdentifyKU(t *testing.T) {
-	for _, suffix := range []string{"", "?cache=x#fragment"} {
+	for _, suffix := range []string{"", "?cache=x"} {
 		f := newWBAFixture(t, false, false)
 		// Normalize host/default port, dot segments, and unreserved escapes too.
 		uri := "https://BOT.EXAMPLE.COM:443/other/../%6bu" + suffix
-		f.signer.cfg = Config{DirectoryURL: uri, SignatureAgentType: "jwks_uri"}
+		f.signer.cfg = Config{DirectoryURL: uri}
 		f.signer.kuURL = f.dns.record.KeyURI
 		if _, err := f.signer.CreateWebBotAuthSignedRequest(f.request, SigningOptions{}); err == nil {
 			t.Fatal("signer accepted local ku discovery")
 		}
-		f.request.Header.Set("Signature-Agent", `sig1="`+uri+`";type=jwks_uri`)
+		f.request.Header.Set("Signature-Agent", `sig1="`+uri+`"`)
 		inputs, _ := httpsig.ParseSignatureInput(f.request.Header.Get("Signature-Input"))
 		params := inputs["sig1"]
 		if err := httpsig.SignHTTPMessage(f.request, params, f.signer.keys); err != nil {

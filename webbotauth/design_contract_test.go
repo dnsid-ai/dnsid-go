@@ -134,9 +134,6 @@ func TestWBA_ConfigExplicitPresence(t *testing.T) {
 	if _, err := f.signer.CreateWebBotAuthSignedRequest(f.request, SigningOptions{}.WithTTL(0)); err == nil {
 		t.Fatal("explicit zero TTL accepted")
 	}
-	if _, err := New("bot.example.com", f.signer.keys, Config{DirectoryURL: "https://bot.example.com/custom"}).CreateWebBotAuthSignedRequest(f.request, SigningOptions{}); err == nil {
-		t.Fatal("custom endpoint implicitly selected jwks_uri")
-	}
 	inputs, _ := httpsig.ParseSignatureInput(f.request.Header.Get("Signature-Input"))
 	params := inputs["sig1"]
 	f.checker.now = func() time.Time { return time.Unix(params.Expires, 0).Add(time.Second) }

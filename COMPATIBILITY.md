@@ -48,6 +48,15 @@ expected to work. Cross a major version (e.g. `jwx/v3` → `v4`) only after it i
 Until the SDK reaches v1.0.0, breaking public API changes increment the minor version. Features
 increment the minor version and backward-compatible fixes increment the patch version.
 
+### Web Bot Auth draft -01
+
+The Web Bot Auth profile now targets
+[draft-ietf-webbotauth-httpsig-protocol-01](https://datatracker.ietf.org/doc/html/draft-ietf-webbotauth-httpsig-protocol-01).
+This is a breaking API and wire-format change from draft -00. Upgrade signers,
+directory servers, and verifiers together; this profile has no draft -00 fallback.
+Explicit `Config.DirectoryURL` values must identify the full directory endpoint;
+append `/.well-known/http-message-signatures-directory` to existing origin-only values.
+
 ### Unified registration
 
 Ordinary registration now preserves explicit GI/root selectors and omits legacy

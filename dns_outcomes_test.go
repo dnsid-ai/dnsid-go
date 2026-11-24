@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"syscall"
 	"testing"
 	"time"
 
@@ -142,19 +143,33 @@ func TestDNSResolvers_WireOutcomes(t *testing.T) {
 	}
 }
 
+func listenTestDNS(t *testing.T) (net.PacketConn, net.Listener) {
+	t.Helper()
+	for range 10 {
+		tcp, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// TCP and UDP allocate ports independently; reserve both before serving.
+		udp, err := net.ListenPacket("udp", tcp.Addr().String())
+		if err == nil {
+			t.Cleanup(func() { udp.Close() })
+			t.Cleanup(func() { tcp.Close() })
+			return udp, tcp
+		}
+		tcp.Close()
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("could not reserve a shared TCP/UDP DNS port after 10 attempts")
+	return nil, nil
+}
+
 // startDNSOutcomeServer serves deterministic replies over UDP or a UDP-to-TCP retry.
 func startDNSOutcomeServer(t *testing.T, tcpRetry bool, rcode dnsmessage.RCode, values []string, drop bool) string {
 	t.Helper()
-	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { udp.Close() })
-	tcp, err := net.Listen("tcp", udp.LocalAddr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { tcp.Close() })
+	udp, tcp := listenTestDNS(t)
 	answer := func(query []byte, truncated bool) []byte {
 		var msg dnsmessage.Message
 		if err := msg.Unpack(query); err != nil {
