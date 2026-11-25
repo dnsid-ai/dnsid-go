@@ -368,6 +368,11 @@ func (n NoopLogReader) VerifyOperationalContinuity(context.Context, string, stri
 	return n.err()
 }
 
+// VerifyGovernanceRelationship always fails with the unregistered-method error.
+func (n NoopLogReader) VerifyGovernanceRelationship(context.Context, string, string) error {
+	return n.err()
+}
+
 // VerifyNonRevocation implements LogReader; it always fails.
 func (n NoopLogReader) VerifyNonRevocation(context.Context, string, time.Time) (LoggedStateEvidence, error) {
 	return LoggedStateEvidence{}, n.err()
