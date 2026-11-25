@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.49.1] - 2026-11-25
+
+### Bug Fixes
+
+- fix: report missing log reader for delegated governance ([#166](https://github.com/dnsid-ai/dnsid-go/pull/166))
+
+### Documentation
+
+- docs: add multiple trusted log providers example ([#165](https://github.com/dnsid-ai/dnsid-go/pull/165))
+
 ## [0.49.0] - 2026-11-24
 
 ### Features
