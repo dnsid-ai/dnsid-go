@@ -138,6 +138,9 @@ func NewLocalKeyProvider(path string) (*LocalKeyProvider, error) {
 }
 
 // LoadOrCreateLocalKeyProvider loads a JWK keypair from disk, or creates one if path does not exist.
+//
+// Initial creation requires filesystem hard-link support to publish a complete key store
+// without overwriting an existing file. See OPERATIONS.md for durability requirements.
 func LoadOrCreateLocalKeyProvider(path string, alg JoseAlg) (*LocalKeyProvider, error) {
 	return loadOrCreateLocalKeyProvider(path, alg, (*os.File).Sync)
 }
@@ -174,25 +177,30 @@ func loadOrCreateLocalKeyProvider(path string, alg JoseAlg, syncFile func(*os.Fi
 	if err != nil {
 		return nil, fmt.Errorf("dnsid: marshaling key store: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- Application-selected key store; exclusive creation prevents overwrites.
+	f, err := os.CreateTemp(filepath.Dir(path), ".dnsid-keys-*.tmp")
 	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return NewLocalKeyProvider(path)
-		}
 		return nil, fmt.Errorf("dnsid: writing key file: %w", err)
 	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
 	_, writeErr := f.Write(append(data, '\n'))
 	if writeErr == nil {
 		writeErr = syncFile(f)
 	}
 	closeErr := f.Close()
 	if writeErr != nil {
-		_ = os.Remove(path)
 		return nil, fmt.Errorf("dnsid: writing key file: %w", writeErr)
 	}
 	if closeErr != nil {
-		_ = os.Remove(path)
 		return nil, fmt.Errorf("dnsid: closing key file: %w", closeErr)
+	}
+	// Publish only the complete file, without replacing a concurrent winner.
+	// Cleanup owns only tmp, never the published path.
+	if err := os.Link(tmp, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return NewLocalKeyProvider(path)
+		}
+		return nil, fmt.Errorf("dnsid: publishing key file: %w", err)
 	}
 	if err := syncKeyDirectory(path, syncFile); err != nil {
 		return nil, err

@@ -18,6 +18,8 @@ Package gcpkms implements an optional Google Cloud KMS\-backed DNSid key provide
 
 Supply an official \*kms.KeyManagementClient to New; the caller owns and closes that client. Official client options can select a local gRPC endpoint for credential\-free integration tests. The provider never creates local files.
 
+CreateOrReuse is a separate explicit initial\-provisioning operation: it creates or reuses one caller\-named key in an existing key ring and validates immutable version 1. The injected BootstrapClient remains caller\-owned. It never creates ancestors, registers agents or recovers rotation state. Applications obtain the key successfully before separately creating or reusing their agent identity. Established identities instead open their persisted authorized version.
+
 Importing this package also registers the google\-kms configuration factory:
 
 ```
@@ -36,6 +38,10 @@ Copyright 2026 Known Systems AI, Inc.
 
 ## Index
 
+- [type BootstrapClient](<#BootstrapClient>)
+- [type BootstrapConfig](<#BootstrapConfig>)
+- [type BootstrapResult](<#BootstrapResult>)
+  - [func CreateOrReuse\(ctx context.Context, client BootstrapClient, cfg BootstrapConfig\) \(\*BootstrapResult, error\)](<#CreateOrReuse>)
 - [type Client](<#Client>)
 - [type Config](<#Config>)
 - [type Provider](<#Provider>)
@@ -52,6 +58,62 @@ Copyright 2026 Known Systems AI, Inc.
   - [func \(p \*Provider\) SignKey\(kid string, payload \[\]byte\) \(\*dnsid.KeySignature, error\)](<#Provider.SignKey>)
   - [func \(p \*Provider\) Supersede\(kid string\) error](<#Provider.Supersede>)
 
+
+<a name="BootstrapClient"></a>
+## type [BootstrapClient](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/bootstrap.go#L19-L24>)
+
+BootstrapClient is the caller\-owned KMS surface for explicit initial key provisioning. An official \*kms.KeyManagementClient implements it directly. Bootstrap does not require ancestor creation or rotation operations.
+
+```go
+type BootstrapClient interface {
+    Client
+    GetCryptoKey(context.Context, *kmspb.GetCryptoKeyRequest, ...gax.CallOption) (*kmspb.CryptoKey, error)
+    CreateCryptoKey(context.Context, *kmspb.CreateCryptoKeyRequest, ...gax.CallOption) (*kmspb.CryptoKey, error)
+    GetCryptoKeyVersion(context.Context, *kmspb.GetCryptoKeyVersionRequest, ...gax.CallOption) (*kmspb.CryptoKeyVersion, error)
+}
+```
+
+<a name="BootstrapConfig"></a>
+## type [BootstrapConfig](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/bootstrap.go#L30-L35>)
+
+BootstrapConfig selects the exact caller\-allocated identity to create or reuse. Names are not normalized or randomly suffixed; the key ring must already exist.
+
+```go
+type BootstrapConfig struct {
+    // Parent is projects/{project}/locations/{location}/keyRings/{ring}.
+    Parent string
+    // CryptoKeyID is a stable name containing 1–63 letters, digits, underscores or hyphens.
+    CryptoKeyID string
+}
+```
+
+<a name="BootstrapResult"></a>
+## type [BootstrapResult](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/bootstrap.go#L39-L43>)
+
+BootstrapResult contains a validated initial key, not an agent registration. Closing Provider does not close the caller's BootstrapClient.
+
+```go
+type BootstrapResult struct {
+    // KeyVersionName is the exact named key's immutable cryptoKeyVersions/1 reference.
+    KeyVersionName string
+    Provider       *Provider
+}
+```
+
+<a name="CreateOrReuse"></a>
+### func [CreateOrReuse](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/bootstrap.go#L65>)
+
+```go
+func CreateOrReuse(ctx context.Context, client BootstrapClient, cfg BootstrapConfig) (*BootstrapResult, error)
+```
+
+CreateOrReuse explicitly provisions or reuses one named software Ed25519 key. Only an exact\-key NotFound permits creation. An AlreadyExists create response causes one reread of the winner; all other service and context errors are returned unchanged. No application retry or backoff is added.
+
+The key template and enabled immutable version 1 must be compatible. New then validates the public key and constructs the provider. Missing or incompatible versions never authorize another version, fallback signer or ancestor creation. A failed attempt returns no result, even if creation committed remotely; a fresh explicit call with the same scope can discover that committed key.
+
+This is initial provisioning, not rotation recovery: open an established identity's persisted authorized version with New or Open. Bootstrap never registers an agent; applications perform that separate step after key success.
+
+Bootstrap adds no deadline; supply a context with the required deadline or cancellation. The injected client's transport timeouts and retries also apply.
 
 <a name="Client"></a>
 ## type [Client](<https://github.com/dnsid-ai/dnsid-go/blob/main/key/gcp/provider.go#L27-L30>)

@@ -89,6 +89,76 @@ the Go module release; the two versions are intentionally separate.
 | `.../dnsid-go/oidc` | Mint and verify DNSid OIDC tokens. |
 | `.../dnsid-go/httpsig` · `.../webbotauth` | RFC 9421 HTTP Message Signatures and the Web Bot Auth profile. |
 
+## Explicit AWS operational-key bootstrap
+
+The optional `github.com/dnsid-ai/dnsid-go/key/aws` module exposes an explicit
+key-first operation. Supply an AWS SDK KMS client configured for your account
+and region (and import this module as `awskms`):
+
+```go
+client := awskms.SDKClient{Client: kms.NewFromConfig(awsCfg)}
+result, err := awskms.CreateOrReuse(ctx, client, awskms.BootstrapConfig{
+    AliasName: "alias/dnsid/my-org/my-agent",
+    Algorithm: types.SigningAlgorithmSpecEcdsaSha256,
+})
+if err != nil {
+    return err
+}
+provider := result.KeyProvider // validated active signer
+keyRef := result.KeyRef       // immutable KMS key reference, not the alias
+```
+
+Empty Algorithm defaults to ES256; `types.SigningAlgorithmSpecEd25519Sha512`
+selects EdDSA. This operation reuses a compatible alias winner, creates a key
+only after native initial absence, and resolves concurrent alias acquisition
+with one winner read. It does not poll; unavailable winners and ambiguous
+acquisition errors are returned unchanged. A later explicit call can recover
+from a committed acquisition whose response was lost.
+
+Create or reuse the operational key **first**; create or reuse the agent ID
+separately afterward. Bootstrap does not register an agent, publish DNS or log
+records, or change server key custody. `Load`, `New`, and configuration factories
+still open existing keys only; `GenerateKey` still creates a fresh pending
+rotation key. Bootstrap never deletes or retargets resources. Losing and
+ambiguous candidates can remain in KMS; their disposition is deferred and must
+be addressed separately. Persist the winner's reference/state for later loading.
+
+### Bootstrap authorization
+
+- **Reuse:** `GetPublicKey` requires `kms:GetPublicKey` on the KMS key
+  selected by the alias, not on the alias ARN.
+- **Create after absence:** `CreateKey` requires `kms:CreateKey` in an IAM
+  policy (`Resource: "*"`, because the key does not yet exist). `CreateAlias`
+  requires `kms:CreateAlias` on **both** the chosen alias (IAM policy) and
+  the candidate KMS key (key-policy authorization).
+- **Subsequent signing:** the returned provider's `Sign` operation requires
+  `kms:Sign` on the winning KMS key. Bootstrap itself does not sign.
+
+Key operations require effective KMS key-policy authorization, directly or
+through enabled IAM delegation; an IAM allow alone is not sufficient if the
+key policy does not permit it. Scope key permissions to the intended keys and
+alias creation to the chosen alias. See the official
+[KMS permissions reference](https://docs.aws.amazon.com/kms/latest/developerguide/kms-api-permissions-reference.html),
+[CreateKey requirements](https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateKey.html),
+and [CreateAlias requirements](https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateAlias.html).
+This is operation-level authorization guidance, not a complete policy or proof
+that a deployed principal can bootstrap or sign.
+
+## Explicit Google Cloud operational-key bootstrap
+
+The optional `github.com/dnsid-ai/dnsid-go/key/gcp` module exposes
+`gcpkms.CreateOrReuse` for one caller-named software Ed25519 key in an existing
+key ring. See the [package bootstrap guide](key/gcp/README.md) and
+[API reference](https://docs.dnsid.ai/reference/go/key-gcp/).
+Successful calls converge on the named key's enabled immutable version **1**;
+bootstrap does not guarantee immediate readiness. `PENDING_GENERATION` returns
+an error and no usable signer. There is no internal retry or polling. A later,
+separate explicit invocation with the same project, location, key ring and key
+ID may succeed once that same version 1 is enabled and passes validation.
+Bootstrap never replaces the key, creates a replacement version or deletes
+resources. Obtain the key successfully before separately creating or reusing the
+agent ID. Configuration and ordinary opening remain existing-key-only.
+
 ## Negotiated signed responses
 
 Request signing alone does not authenticate the responder. Opt in through the
